@@ -1,0 +1,35 @@
+<Window x:Class="Universa.Desktop.Views.VerificationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Verify Device" Height="400" Width="400"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,20">
+            <Run Text="For security, please verify that these emojis match exactly what you see on your other device."/>
+            <LineBreak/>
+            <Run Text="If they don't match, someone might be intercepting your messages!"/>
+        </TextBlock>
+
+        <ItemsControl x:Name="EmojiList" Grid.Row="1">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal" Margin="0,5">
+                        <TextBlock Text="{Binding emoji}" FontSize="24" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <TextBlock Text="{Binding description}" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button x:Name="CancelButton" Content="They Don't Match" Width="120" Margin="0,0,10,0" Click="CancelButton_Click"/>
+            <Button x:Name="ConfirmButton" Content="They Match" Width="100" Click="ConfirmButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window> 

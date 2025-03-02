@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Universa.Desktop.EditorTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:Universa.Desktop"
+             xmlns:models="clr-namespace:Universa.Desktop.Models"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top Toolbar -->
+        <ToolBar Grid.Row="0" Background="{DynamicResource WindowBackgroundBrush}" BorderBrush="{DynamicResource BorderBrush}">
+            <Button x:Name="TTSButton" 
+                    Background="Transparent" 
+                    BorderThickness="0"
+                    Click="TTSButton_Click"
+                    Visibility="{Binding Source={x:Static models:Configuration.Instance}, Path=EnableTTS, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding _isPlaying, RelativeSource={RelativeSource AncestorType=local:EditorTab}}" Value="True">
+                                <Setter Property="Content">
+                                    <Setter.Value>
+                                        <TextBlock Text="⏹" Foreground="#FFE0E000"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="ToolTip" Value="Stop Text-to-Speech"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding _isPlaying, RelativeSource={RelativeSource AncestorType=local:EditorTab}}" Value="False">
+                                <Setter Property="Content">
+                                    <Setter.Value>
+                                        <TextBlock Text="🔊" Foreground="{DynamicResource TextBrush}"/>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="ToolTip" Value="Play Text-to-Speech"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </ToolBar>
+
+        <!-- Search Panel -->
+        <Border x:Name="SearchPanel" 
+                Grid.Row="1" 
+                Background="{DynamicResource WindowBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="0,0,0,1"
+                Visibility="Collapsed"
+                Padding="5">
+            <StackPanel Orientation="Horizontal" Margin="5">
+                <TextBox x:Name="SearchBox" 
+                         Width="200" 
+                         Margin="0,0,5,0"
+                         VerticalAlignment="Center"/>
+                <Button x:Name="FindPreviousButton" 
+                        Content="Previous" 
+                        Margin="0,0,5,0"
+                        Padding="5,2"/>
+                <Button x:Name="FindNextButton" 
+                        Content="Next" 
+                        Margin="0,0,5,0"
+                        Padding="5,2"/>
+                <Button x:Name="CloseSearchButton" 
+                        Content="✕"
+                        Padding="5,2"/>
+            </StackPanel>
+        </Border>
+
+        <TextBox x:Name="Editor" 
+                 Grid.Row="2"
+                 AcceptsReturn="True" 
+                 AcceptsTab="True" 
+                 TextWrapping="Wrap" 
+                 HorizontalScrollBarVisibility="Auto" 
+                 VerticalScrollBarVisibility="Auto" 
+                 BorderThickness="0"
+                 FontFamily="Cascadia Code"
+                 Background="Transparent"
+                 TextChanged="Editor_TextChanged"/>
+    </Grid>
+</UserControl> 

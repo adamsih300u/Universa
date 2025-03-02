@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Universa.Desktop.ChatTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:Universa.Desktop"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="800">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250" MinWidth="200" />
+            <ColumnDefinition Width="5" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Room List -->
+        <Border Grid.Column="0" 
+                BorderThickness="0,0,1,0" 
+                BorderBrush="{DynamicResource BorderBrush}">
+            <DockPanel>
+                <TextBox DockPanel.Dock="Top"
+                         x:Name="SearchBox"
+                         Margin="10,10,10,5"
+                         Height="30"
+                         VerticalContentAlignment="Center"
+                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource SearchBoxStyle}"/>
+                
+                <ListBox x:Name="RoomList"
+                         DockPanel.Dock="Bottom"
+                         ItemsSource="{Binding Rooms}"
+                         SelectedItem="{Binding SelectedRoom}"
+                         SelectionChanged="RoomList_SelectionChanged"
+                         Margin="5">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,2">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Name}" 
+                                         TextTrimming="CharacterEllipsis"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+        </Border>
+
+        <!-- Splitter -->
+        <GridSplitter Grid.Column="1" 
+                      Width="5" 
+                      HorizontalAlignment="Stretch" 
+                      Background="{DynamicResource BorderBrush}"/>
+
+        <!-- Chat Area -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Messages -->
+            <ScrollViewer x:Name="MessageScroller" 
+                         Grid.Row="0" 
+                         Margin="10"
+                         VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Messages}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Margin="0,5" 
+                                    Padding="10"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    CornerRadius="4">
+                                <StackPanel>
+                                    <DockPanel>
+                                        <TextBlock Text="{Binding Sender}" 
+                                                 FontWeight="Bold"/>
+                                        <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}"
+                                                 Margin="10,0,0,0"
+                                                 Opacity="0.6"/>
+                                    </DockPanel>
+                                    <TextBlock Text="{Binding Content}"
+                                             TextWrapping="Wrap"
+                                             Margin="0,5,0,0"/>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <!-- Input Area -->
+            <Grid Grid.Row="1" Margin="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBox x:Name="MessageInput" 
+                         Text="{Binding MessageText, UpdateSourceTrigger=PropertyChanged}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         MinHeight="50"
+                         MaxHeight="100"
+                         Padding="5"
+                         VerticalContentAlignment="Center"
+                         KeyDown="MessageInput_KeyDown" />
+                <Button x:Name="SendButton" 
+                        Grid.Column="1" 
+                        Content="Send"
+                        Width="70"
+                        Height="35"
+                        Margin="10,0,0,0"
+                        Click="SendButton_Click" />
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl> 

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl x:Class="Universa.Desktop.Views.AudiobookshelfTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:converters="clr-namespace:Universa.Desktop.Converters"
+             mc:Ignorable="d"
+             d:DesignHeight="450" d:DesignWidth="800">
+
+    <UserControl.Resources>
+        <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
+        <converters:ProgressVisibilityConverter x:Key="ProgressVisibilityConverter"/>
+    </UserControl.Resources>
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Top toolbar -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="5">
+            <ComboBox x:Name="LibrarySelector" Width="200" DisplayMemberPath="Name" SelectionChanged="LibrarySelector_SelectionChanged"/>
+            <Button x:Name="RefreshButton" Margin="5,0,0,0" Click="RefreshButton_Click">
+                <StackPanel Orientation="Horizontal">
+                    <Image Source="/Resources/refresh.png" Width="16" Height="16" Margin="0,0,5,0"/>
+                    <TextBlock Text="Refresh"/>
+                </StackPanel>
+            </Button>
+        </StackPanel>
+
+        <!-- Main content -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="250"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Navigation tree -->
+            <TreeView x:Name="NavigationTree" Grid.Column="0" Margin="5" SelectedItemChanged="NavigationTree_SelectedItemChanged">
+                <TreeViewItem Header="Library" x:Name="LibraryNode">
+                    <TreeViewItem Header="Authors" x:Name="AuthorsNode"/>
+                    <TreeViewItem Header="Series" x:Name="SeriesNode"/>
+                </TreeViewItem>
+            </TreeView>
+
+            <!-- Item list -->
+            <ListView x:Name="ItemList" Grid.Column="1" Margin="5" SelectionChanged="ItemList_SelectionChanged" BorderThickness="0" Background="Transparent">
+                <ListView.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Image Source="{Binding CoverPath}" Width="50" Height="50" Margin="0,0,10,0"/>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="{Binding DisplayTitle}" FontWeight="Bold"/>
+                                <TextBlock>
+                                    <Run Text="{Binding DisplayDuration, Mode=OneWay}"/>
+                                    <Run Text=" - "/>
+                                    <Run Text="{Binding DisplayProgress, Mode=OneWay}"/>
+                                </TextBlock>
+                                <ProgressBar Value="{Binding Progress, Mode=OneWay}" Maximum="100" Height="2" Margin="0,2,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Grid>
+
+        <!-- Loading overlay -->
+        <Grid x:Name="LoadingOverlay" Grid.Row="1" Background="#80000000" Visibility="Collapsed">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="200" Height="2" Margin="0,0,0,10"/>
+                <TextBlock x:Name="LoadingText" Text="Loading..." Foreground="White" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl> 

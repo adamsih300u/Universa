@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Universa.Desktop.Controls.TTSButtonsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             mc:Ignorable="d">
+    <Button x:Name="TTSButton" 
+            Background="Transparent" 
+            BorderThickness="0"
+            Click="TTSButton_Click">
+        <Button.Style>
+            <Style TargetType="Button">
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsPlaying, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="True">
+                        <Setter Property="Content">
+                            <Setter.Value>
+                                <TextBlock Text="⏹" Foreground="#FFE0E000"/>
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="ToolTip" Value="Stop Text-to-Speech"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsPlaying, RelativeSource={RelativeSource AncestorType=UserControl}}" Value="False">
+                        <Setter Property="Content">
+                            <Setter.Value>
+                                <TextBlock Text="🔊" Foreground="{DynamicResource TextBrush}"/>
+                            </Setter.Value>
+                        </Setter>
+                        <Setter Property="ToolTip" Value="Play Text-to-Speech"/>
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Button.Style>
+    </Button>
+</UserControl> 

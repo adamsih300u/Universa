@@ -1,0 +1,67 @@
+<Window x:Class="Universa.Desktop.Dialogs.FileConflictDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="File Conflict" Height="400" Width="600"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,20">
+            <Run Text="A conflict was detected for file:"/>
+            <LineBreak/>
+            <Run x:Name="FilePathText" FontWeight="Bold"/>
+        </TextBlock>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Local Version -->
+            <Border Grid.Column="0" BorderBrush="#FFCCCCCC" BorderThickness="1" Margin="0,0,10,0">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Local Version" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <StackPanel Grid.Row="1">
+                        <TextBlock Text="Modified:" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="LocalModifiedText" Text="" Margin="20,0,0,10" TextWrapping="Wrap"/>
+                        <TextBlock Text="Size:" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="LocalSizeText" Text="" Margin="20,0,0,10"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- Remote Version -->
+            <Border Grid.Column="1" BorderBrush="#FFCCCCCC" BorderThickness="1" Margin="10,0,0,0">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Remote Version" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <StackPanel Grid.Row="1">
+                        <TextBlock Text="Modified:" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="RemoteModifiedText" Text="" Margin="20,0,0,10" TextWrapping="Wrap"/>
+                        <TextBlock Text="Size:" Margin="0,0,0,5"/>
+                        <TextBlock x:Name="RemoteSizeText" Text="" Margin="20,0,0,10"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+            <Button x:Name="KeepLocalButton" Content="Keep Local Version" Width="120" Margin="0,0,10,0" Click="KeepLocalButton_Click"/>
+            <Button x:Name="KeepRemoteButton" Content="Keep Remote Version" Width="120" Margin="0,0,10,0" Click="KeepRemoteButton_Click"/>
+            <Button x:Name="KeepBothButton" Content="Keep Both Versions" Width="120" Click="KeepBothButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window> 

@@ -1,0 +1,337 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl x:Class="Universa.Desktop.Views.ChatSidebar"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:Universa.Desktop.Views"
+             xmlns:viewmodels="clr-namespace:Universa.Desktop.ViewModels"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="300">
+    <UserControl.DataContext>
+        <viewmodels:ChatSidebarViewModel/>
+    </UserControl.DataContext>
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <local:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
+        
+        <!-- Message Background Converter -->
+        <local:MessageBackgroundConverter x:Key="MessageBackgroundConverter"/>
+        <local:MessageAlignmentConverter x:Key="MessageAlignmentConverter"/>
+        
+        <!-- Chat Input TextBox Style -->
+        <Style x:Key="ChatInputTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="AcceptsReturn" Value="True"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Padding" Value="5"/>
+            <Setter Property="AcceptsTab" Value="True"/>
+            <Setter Property="MinHeight" Value="50"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3">
+                            <ScrollViewer x:Name="PART_ContentHost" 
+                                        Margin="{TemplateBinding Padding}"
+                                        VerticalScrollBarVisibility="{TemplateBinding VerticalScrollBarVisibility}"
+                                        HorizontalScrollBarVisibility="Disabled"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Mode Toggle Button Style -->
+        <Style x:Key="ModeToggleButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid Width="40" Height="20">
+                            <Border x:Name="ToggleBorder"
+                                Background="{DynamicResource WindowBackgroundBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="10"/>
+                            
+                            <Grid Margin="2">
+                                <Ellipse x:Name="Thumb"
+                                        Width="16" 
+                                        Height="16"
+                                        Fill="{DynamicResource TextBrush}"
+                                        HorizontalAlignment="Left">
+                                    <Ellipse.Effect>
+                                        <DropShadowEffect ShadowDepth="1" 
+                                                        BlurRadius="2" 
+                                                        Opacity="0.3"/>
+                                    </Ellipse.Effect>
+                                </Ellipse>
+                            </Grid>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Thumb" Property="HorizontalAlignment" Value="Right"/>
+                                <Setter TargetName="ToggleBorder" Property="Background" Value="{DynamicResource BorderBrush}"/>
+                                <Setter TargetName="Thumb" Property="Fill" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Message Style -->
+        <Style x:Key="MessageStyle" TargetType="Border">
+            <Setter Property="Margin" Value="5,3,5,3"/>
+            <Setter Property="Padding" Value="12,8"/>
+            <Setter Property="CornerRadius" Value="18,18,18,4"/>
+            <Setter Property="MinWidth" Value="200"/>
+            <Setter Property="MaxWidth" Value="600"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Effect">
+                <Setter.Value>
+                    <DropShadowEffect ShadowDepth="1" 
+                                    BlurRadius="4" 
+                                    Opacity="0.15"/>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsUserMessage}" Value="True">
+                    <Setter Property="CornerRadius" Value="18,18,4,18"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsUserMessage}" Value="False">
+                    <Setter Property="CornerRadius" Value="18,18,18,4"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Message Container Style -->
+        <Style x:Key="MessageContainerStyle" TargetType="Grid">
+            <Setter Property="Margin" Value="8,4"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsUserMessage}" Value="True">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="HorizontalAlignment" Value="Right"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsUserMessage}" Value="False">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="HorizontalAlignment" Value="Left"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- Sender Text Style -->
+        <Style x:Key="SenderTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Opacity" Value="0.7"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+
+        <!-- Message Text Style -->
+        <Style x:Key="MessageTextStyle" TargetType="RichTextBox">
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="IsDocumentEnabled" Value="True"/>
+        </Style>
+
+        <!-- Timestamp Style -->
+        <Style x:Key="TimestampStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10"/>
+            <Setter Property="Opacity" Value="0.6"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+        </Style>
+    </UserControl.Resources>
+    
+    <!-- Main Content -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Model Selection -->
+        <Grid Grid.Row="0" Margin="10">
+            <ComboBox x:Name="ModelSelector"
+                      HorizontalAlignment="Center"
+                      MinWidth="200"
+                      ItemsSource="{Binding AvailableModels}"
+                      SelectedItem="{Binding SelectedModel}"
+                      Background="{DynamicResource WindowBackgroundBrush}"
+                      Foreground="{DynamicResource TextBrush}">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DisplayName}"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+            </ComboBox>
+        </Grid>
+
+        <!-- Messages -->
+        <ScrollViewer Grid.Row="1" 
+                      x:Name="MessagesScrollViewer"
+                      VerticalScrollBarVisibility="Auto"
+                      Margin="5,0">
+            <ItemsControl ItemsSource="{Binding Messages}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Style="{StaticResource MessageContainerStyle}"
+                              HorizontalAlignment="{Binding IsUserMessage, Converter={StaticResource MessageAlignmentConverter}}"
+                              Width="Auto">
+                            <Border Style="{StaticResource MessageStyle}"
+                                    Background="{Binding IsUserMessage, Converter={StaticResource MessageBackgroundConverter}}"
+                                    HorizontalAlignment="Stretch">
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Sender}" 
+                                             Style="{StaticResource SenderTextStyle}"
+                                             Foreground="{DynamicResource TextBrush}"/>
+                                    <RichTextBox Style="{StaticResource MessageTextStyle}"
+                                                Foreground="{DynamicResource TextBrush}">
+                                        <FlowDocument>
+                                            <Paragraph>
+                                                <Run Text="{Binding Content}"/>
+                                            </Paragraph>
+                                        </FlowDocument>
+                                    </RichTextBox>
+                                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}" 
+                                             Style="{StaticResource TimestampStyle}"
+                                             Foreground="{DynamicResource TextBrush}"/>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Input Area with Mode Toggle -->
+        <Grid Grid.Row="2" Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Mode Toggle -->
+            <DockPanel Grid.Row="0" 
+                       HorizontalAlignment="Center"
+                       Margin="0,0,0,5">
+                <TextBlock Text="Chat" 
+                         Margin="0,0,5,0" 
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextBrush}"/>
+                <ToggleButton x:Name="ModeToggle"
+                            Style="{StaticResource ModeToggleButtonStyle}"
+                            IsChecked="{Binding IsContextMode, Mode=TwoWay}"
+                            Command="{Binding ToggleModeCommand}"
+                            Width="40"
+                            Height="20"
+                            Margin="0,0,5,0"/>
+                <TextBlock Text="Context" 
+                         Margin="5,0,15,0" 
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextBrush}"/>
+                <Border Width="1" 
+                        Height="16" 
+                        Background="{DynamicResource BorderBrush}" 
+                        Margin="0,0,15,0"
+                        VerticalAlignment="Center"/>
+                <CheckBox Content="Beta Chains"
+                         IsChecked="{Binding UseBetaChains}"
+                         Margin="10,0,0,0"
+                         VerticalAlignment="Center"
+                         Foreground="{DynamicResource TextBrush}">
+                    <CheckBox.Style>
+                        <Style TargetType="CheckBox">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="CheckBox">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <Border x:Name="Border"
+                                                    Grid.Column="0"
+                                                    Width="16"
+                                                    Height="16"
+                                                    CornerRadius="3"
+                                                    BorderThickness="1"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    Background="{DynamicResource WindowBackgroundBrush}">
+                                                <Path x:Name="Checkmark"
+                                                      Width="10"
+                                                      Height="10"
+                                                      Stretch="Uniform"
+                                                      Fill="{DynamicResource TextBrush}"
+                                                      Data="M 0,4 L 3,8 8,0"
+                                                      StrokeThickness="2"
+                                                      Visibility="Collapsed"/>
+                                            </Border>
+                                            <ContentPresenter Grid.Column="1"
+                                                            Margin="8,0,0,0"
+                                                            VerticalAlignment="Center"
+                                                            HorizontalAlignment="Left"
+                                                            RecognizesAccessKey="True"/>
+                                        </Grid>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Checkmark" Property="Visibility" Value="Visible"/>
+                                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource BorderBrush}"/>
+                                            </Trigger>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource TextBrush}"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </CheckBox.Style>
+                </CheckBox>
+            </DockPanel>
+
+            <!-- Input Box and Send Button -->
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBox Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
+                         Style="{StaticResource ChatInputTextBoxStyle}"
+                         AcceptsReturn="True"
+                         TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto"
+                         MinHeight="50"
+                         MaxHeight="100"
+                         AcceptsTab="True"
+                         PreviewKeyDown="InputTextBox_PreviewKeyDown"/>
+                <Button Grid.Column="1" 
+                        Content="Send"
+                        Command="{Binding SendCommand}"
+                        Margin="5,0,0,0"
+                        Style="{StaticResource {x:Type Button}}"
+                        Background="{DynamicResource ControlBackgroundBrush}"
+                        Foreground="{DynamicResource TextBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        Padding="15,5"/>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl> 

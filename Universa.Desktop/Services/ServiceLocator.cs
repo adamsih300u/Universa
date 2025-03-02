@@ -1,0 +1,49 @@
+using Microsoft.Extensions.DependencyInjection;
+using System;
+using Universa.Desktop.Core.Configuration;
+using Universa.Desktop.Managers;
+
+namespace Universa.Desktop.Services
+{
+    public class ServiceLocator
+    {
+        private static ServiceLocator _instance;
+        private readonly IServiceProvider _serviceProvider;
+
+        private ServiceLocator(IServiceProvider serviceProvider)
+        {
+            _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        }
+
+        public static void RegisterServices(IServiceCollection services)
+        {
+            // Register additional services not registered in App.xaml.cs
+            services.AddSingleton<WeatherManager>();
+            services.AddSingleton<Managers.SyncManager>();
+            services.AddSingleton<MediaPlayerManager>();
+            services.AddSingleton<TTSManager>();
+            services.AddSingleton<CharacterizationService>();
+            services.AddSingleton<ModelProvider>();
+            services.AddSingleton<ISubsonicService, SubsonicService>();
+            services.AddSingleton<JellyfinService>();
+            services.AddSingleton<AudiobookshelfService>();
+        }
+
+        public static void Initialize(IServiceProvider serviceProvider)
+        {
+            _instance = new ServiceLocator(serviceProvider);
+        }
+
+        public T GetService<T>() where T : class
+        {
+            return _serviceProvider.GetService<T>();
+        }
+
+        public T GetRequiredService<T>() where T : class
+        {
+            return _serviceProvider.GetRequiredService<T>();
+        }
+
+        public static ServiceLocator Instance => _instance ?? throw new InvalidOperationException("ServiceLocator has not been initialized");
+    }
+} 

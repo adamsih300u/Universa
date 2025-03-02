@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl x:Class="Universa.Desktop.ToDoTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:Universa.Desktop"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             xmlns:converters="clr-namespace:System.Windows.Controls;assembly=PresentationFramework"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800">
+    <UserControl.Resources>
+        <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <local:BoolToAngleConverter x:Key="BoolToAngleConverter"/>
+        
+        <!-- Checkbox Style -->
+        <Style x:Key="CustomCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Border x:Name="Border"
+                                    Width="16"
+                                    Height="16"
+                                    CornerRadius="3"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    Background="{DynamicResource WindowBackgroundBrush}">
+                                <TextBlock x:Name="XMark"
+                                         Text="✕"
+                                         FontSize="12"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center"
+                                         Foreground="{DynamicResource TextBrush}"
+                                         Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter x:Name="Content"
+                                            Margin="20,0,0,0"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Left"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="XMark" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource BorderBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+        </Style>
+
+        <Style x:Key="SearchBoxStyle" TargetType="TextBox">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Grid>
+                            <TextBox Text="{Binding Path=Text, RelativeSource={RelativeSource TemplatedParent}, UpdateSourceTrigger=PropertyChanged}"
+                                     Background="{DynamicResource WindowBackgroundBrush}"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     BorderBrush="{DynamicResource BorderBrush}"
+                                     BorderThickness="{TemplateBinding BorderThickness}"
+                                     Padding="{TemplateBinding Padding}"
+                                     x:Name="SearchTextBox"/>
+                            <TextBlock IsHitTestVisible="False"
+                                     Text="Search todos..."
+                                     Foreground="{DynamicResource TextBrush}"
+                                     Opacity="0.5"
+                                     Margin="5,2,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=SearchTextBox}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Text, ElementName=SearchTextBox}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Text, ElementName=SearchTextBox}" Value=""/>
+                                                    <Condition Binding="{Binding IsFocused, ElementName=SearchTextBox}" Value="True"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Hidden"/>
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                        <Setter Property="Visibility" Value="Hidden"/>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsFocused" Value="True">
+                    <Setter Property="BorderBrush" Value="{DynamicResource TextBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="ExpanderButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="16"/>
+            <Setter Property="Height" Value="16"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent">
+                            <Path Width="8" 
+                                  Height="8" 
+                                  Data="M 0,0 L 8,4 L 0,8 Z" 
+                                  Fill="{DynamicResource TextBrush}"
+                                  Stretch="Uniform"
+                                  HorizontalAlignment="Center"
+                                  VerticalAlignment="Center"
+                                  RenderTransformOrigin="0.5,0.5">
+                                <Path.RenderTransform>
+                                    <RotateTransform Angle="{Binding IsExpanded, Converter={StaticResource BoolToAngleConverter}}"/>
+                                </Path.RenderTransform>
+                            </Path>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Cursor" Value="Hand"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="ExpandedContentStyle" TargetType="StackPanel">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                    <Setter Property="Visibility" Value="Visible"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding IsExpanded}" Value="False">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <DockPanel Grid.Row="0" Margin="10">
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" Margin="10,0">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Style="{StaticResource CustomCheckBoxStyle}"
+                                 IsChecked="{Binding ShowCompletedItems}"/>
+                        <TextBlock Text="Show Completed Items" 
+                                 Foreground="{DynamicResource TextBrush}"
+                                 VerticalAlignment="Center"
+                                 Margin="5,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="10,0">
+                    <StackPanel Orientation="Horizontal">
+                        <CheckBox Style="{StaticResource CustomCheckBoxStyle}"
+                                 IsChecked="{Binding HideFutureItems}"/>
+                        <TextBlock Text="Hide Future Items" 
+                                 Foreground="{DynamicResource TextBrush}"
+                                 VerticalAlignment="Center"
+                                 Margin="5,0,0,0"/>
+                    </StackPanel>
+                </StackPanel>
+                <Button Content="Add ToDo" 
+                        Click="AddToDo_Click"
+                        Padding="10,5"
+                        Margin="10,0,0,0"/>
+            </StackPanel>
+            <TextBox x:Name="SearchBox" 
+                     Style="{StaticResource SearchBoxStyle}"
+                     TextChanged="SearchBox_TextChanged"
+                     Margin="0,0,10,0"
+                     Padding="5"/>
+        </DockPanel>
+
+        <!-- ToDo List -->
+        <ListView x:Name="TodosListView" 
+                  Grid.Row="1" 
+                  Margin="10"
+                  ItemsSource="{Binding Todos}">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.View>
+                <GridView>
+                    <GridViewColumn Width="30">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsCompleted}" 
+                                         Style="{StaticResource CustomCheckBoxStyle}"
+                                         Checked="ToDo_CheckedChanged" 
+                                         Unchecked="ToDo_CheckedChanged"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Width="30">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource ExpanderButtonStyle}" 
+                                        Click="ExpandButton_Click"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="Title" Width="300">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}" 
+                                            BorderThickness="0"
+                                            Background="Transparent"/>
+                                    <StackPanel Visibility="{Binding IsExpanded, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                                                TextWrapping="Wrap"
+                                                AcceptsReturn="True"
+                                                MinHeight="60"
+                                                MaxHeight="200"
+                                                VerticalScrollBarVisibility="Auto"
+                                                Margin="20,5,0,5"/>
+                                        
+                                        <!-- Recurrence Settings -->
+                                        <StackPanel Orientation="Horizontal" Margin="20,5,0,5">
+                                            <CheckBox Style="{StaticResource CustomCheckBoxStyle}"
+                                                    IsChecked="{Binding IsRecurring}"
+                                                    VerticalAlignment="Center"
+                                                    Margin="0,0,5,0"/>
+                                            <TextBlock Text="Recurring"
+                                                     VerticalAlignment="Center"
+                                                     Margin="0,0,10,0"/>
+                                            <TextBox Text="{Binding RecurrenceInterval}"
+                                                    Width="50"
+                                                    VerticalAlignment="Center"
+                                                    Margin="0,0,5,0"
+                                                    IsEnabled="{Binding IsRecurring}"/>
+                                            <ComboBox SelectedValue="{Binding RecurrenceUnit}"
+                                                    Width="100"
+                                                    VerticalAlignment="Center"
+                                                    IsEnabled="{Binding IsRecurring}">
+                                                <ComboBoxItem Content="Hour"/>
+                                                <ComboBoxItem Content="Day"/>
+                                                <ComboBoxItem Content="Week"/>
+                                                <ComboBoxItem Content="Month"/>
+                                                <ComboBoxItem Content="Year"/>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        
+                                        <Button Content="Add Subtask" 
+                                                Command="{Binding DataContext.AddSubTaskCommand, 
+                                                          RelativeSource={RelativeSource AncestorType={x:Type local:ToDoTab}}}"
+                                                CommandParameter="{Binding}"
+                                                HorizontalAlignment="Left"
+                                                Margin="20,0,0,5"/>
+                                        <ItemsControl ItemsSource="{Binding SubTasks}"
+                                                    Margin="20,0,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <StackPanel Margin="0,0,0,5">
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <CheckBox IsChecked="{Binding IsCompleted, UpdateSourceTrigger=PropertyChanged}" 
+                                                                    Style="{StaticResource CustomCheckBoxStyle}"
+                                                                    Checked="ToDo_CheckedChanged" 
+                                                                    Unchecked="ToDo_CheckedChanged"/>
+                                                            <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                                                                    BorderThickness="0"
+                                                                    Background="Transparent"
+                                                                    Width="220"/>
+                                                            <Button Content="×"
+                                                                    Click="DeleteSubTask_Click"
+                                                                    Margin="5,0,0,0"
+                                                                    Width="20"
+                                                                    Height="20"
+                                                                    Padding="0"
+                                                                    VerticalAlignment="Center"
+                                                                    Background="Transparent"
+                                                                    BorderThickness="0"
+                                                                    FontSize="16"
+                                                                    Foreground="{DynamicResource TextBrush}"/>
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </StackPanel>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="Start Date" Width="100">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <DatePicker SelectedDate="{Binding StartDate}" BorderThickness="0"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="Due Date" Width="100">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <DatePicker SelectedDate="{Binding DueDate}" BorderThickness="0"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Header="Completed Date" Width="100">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding CompletedDate, StringFormat={}{0:MM/dd/yyyy}}"
+                                         Visibility="{Binding DataContext.ShowCompletedItems, 
+                                                    RelativeSource={RelativeSource AncestorType={x:Type local:ToDoTab}}, 
+                                                    Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                    <GridViewColumn Width="30">
+                        <GridViewColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Content="×"
+                                        Command="{Binding DataContext.DeleteCommand, 
+                                                  RelativeSource={RelativeSource AncestorType={x:Type local:ToDoTab}}}"
+                                        CommandParameter="{Binding}"
+                                        Width="20"
+                                        Height="20"
+                                        Padding="0"
+                                        VerticalAlignment="Center"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        FontSize="16"
+                                        Foreground="{DynamicResource TextBrush}"/>
+                            </DataTemplate>
+                        </GridViewColumn.CellTemplate>
+                    </GridViewColumn>
+                </GridView>
+            </ListView.View>
+        </ListView>
+    </Grid>
+</UserControl> 

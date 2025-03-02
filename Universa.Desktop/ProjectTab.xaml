@@ -1,0 +1,628 @@
+<UserControl x:Class="Universa.Desktop.ProjectTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:Universa.Desktop"
+             xmlns:converters="clr-namespace:Universa.Desktop.Converters"
+             xmlns:models="clr-namespace:Universa.Desktop.Models"
+             xmlns:sys="clr-namespace:System;assembly=mscorlib"
+             xmlns:data="clr-namespace:System.Windows.Data;assembly=PresentationFramework"
+             xmlns:scm="clr-namespace:System.ComponentModel;assembly=WindowsBase"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800">
+    <UserControl.Resources>
+        <Style x:Key="SmallButtonStyle" TargetType="Button">
+            <Setter Property="Margin" Value="5,0,0,0"/>
+            <Setter Property="Padding" Value="3,0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+        </Style>
+        
+        <Style x:Key="MenuButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
+            <Setter Property="Padding" Value="5,3"/>
+        </Style>
+
+        <Style x:Key="ProjectComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="5,3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <StackPanel>
+                            <TextBlock Text="{TemplateBinding Tag}"
+                                     Margin="0,0,0,2"
+                                     Foreground="{DynamicResource TextBrush}"/>
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}">
+                                <Grid>
+                                    <ToggleButton x:Name="ToggleButton"
+                                                IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                                Template="{StaticResource ComboBoxToggleButton}"/>
+                                    <ContentPresenter x:Name="ContentSite"
+                                                    Content="{TemplateBinding SelectionBoxItem}"
+                                                    ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                    IsHitTestVisible="False"
+                                                    Margin="{TemplateBinding Padding}"/>
+                                    <Popup x:Name="Popup"
+                                           Placement="Bottom"
+                                           IsOpen="{TemplateBinding IsDropDownOpen}"
+                                           AllowsTransparency="True"
+                                           Focusable="False"
+                                           PopupAnimation="Slide">
+                                        <Grid x:Name="DropDown"
+                                              SnapsToDevicePixels="True"
+                                              MinWidth="{TemplateBinding ActualWidth}"
+                                              MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                            <Border x:Name="DropDownBorder"
+                                                    Background="{DynamicResource WindowBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"/>
+                                            <ScrollViewer Margin="4,6,4,6"
+                                                        SnapsToDevicePixels="True">
+                                                <StackPanel IsItemsHost="True"/>
+                                            </ScrollViewer>
+                                        </Grid>
+                                    </Popup>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Resources>
+                <Style TargetType="ComboBoxItem">
+                    <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource ListItemHoverBackgroundBrush}"/>
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{DynamicResource ListItemSelectedBackgroundBrush}"/>
+                            <Setter Property="Foreground" Value="{DynamicResource HighlightTextBrush}"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Style.Resources>
+        </Style>
+        
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <converters:GreaterThanZeroConverter x:Key="GreaterThanZeroConverter"/>
+
+        <CollectionViewSource x:Key="SortedLogEntries" 
+                            Source="{Binding Project.LogEntries}">
+            <CollectionViewSource.SortDescriptions>
+                <scm:SortDescription PropertyName="Timestamp" Direction="Descending"/>
+            </CollectionViewSource.SortDescriptions>
+        </CollectionViewSource>
+    </UserControl.Resources>
+    
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <DockPanel Grid.Row="0" Margin="10">
+            <TextBlock Text="{Binding Title}" 
+                       FontSize="24" 
+                       FontWeight="SemiBold"
+                       Margin="0,0,10,0"/>
+            
+            <Button Content="Save" 
+                    Click="SaveButton_Click"
+                    DockPanel.Dock="Right"
+                    Padding="15,5"/>
+
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="0,0,10,0">
+                <!-- Hard Dependencies -->
+                <ComboBox x:Name="HardDependenciesComboBox"
+                          Width="150"
+                          Margin="0,0,5,0"
+                          ItemsSource="{Binding Project.Dependencies}"
+                          Style="{StaticResource ProjectComboBoxStyle}"
+                          Tag="Hard Dependencies">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding FilePath}" Grid.Column="0"/>
+                                <Button Content="×" 
+                                        Grid.Column="1"
+                                        Click="RemoveDependency_Click"
+                                        Style="{StaticResource SmallButtonStyle}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Content="+" 
+                        Click="AddHardDependency_Click"
+                        Padding="5,0"
+                        ToolTip="Add Hard Dependency"/>
+
+                <!-- Soft Dependencies -->
+                <ComboBox x:Name="SoftDependenciesComboBox"
+                          Width="150"
+                          Margin="10,0,5,0"
+                          ItemsSource="{Binding Project.Dependencies}"
+                          Style="{StaticResource ProjectComboBoxStyle}"
+                          Tag="Soft Dependencies">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding FilePath}" Grid.Column="0"/>
+                                <Button Content="×" 
+                                        Grid.Column="1"
+                                        Click="RemoveDependency_Click"
+                                        Style="{StaticResource SmallButtonStyle}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Content="+" 
+                        Click="AddSoftDependency_Click"
+                        Padding="5,0"
+                        ToolTip="Add Soft Dependency"/>
+
+                <!-- References -->
+                <ComboBox x:Name="ReferencesComboBox"
+                          Width="150"
+                          Margin="10,0,5,0"
+                          ItemsSource="{Binding Project.RelativeReferences}"
+                          Style="{StaticResource ProjectComboBoxStyle}"
+                          Tag="References">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding RelativePath}" Grid.Column="0"/>
+                                <Button Content="×" 
+                                        Grid.Column="1"
+                                        Click="RemoveReference_Click"
+                                        Style="{StaticResource SmallButtonStyle}"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Content="+" 
+                        Click="AddReference_Click"
+                        Padding="5,0"
+                        ToolTip="Add Reference"/>
+            </StackPanel>
+        </DockPanel>
+
+        <!-- Project Details with ScrollViewer -->
+        <ScrollViewer Grid.Row="1" 
+                     VerticalScrollBarVisibility="Auto"
+                     Margin="0,0,0,10">
+            <StackPanel>
+                <!-- Title -->
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock Text="Project Title:" 
+                             Width="100"
+                             VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                             FontSize="16"/>
+                </DockPanel>
+
+                <!-- Status -->
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock Text="Status:" 
+                             Width="100"
+                             VerticalAlignment="Center"/>
+                    <ComboBox x:Name="StatusComboBox"
+                             SelectedItem="{Binding Project.Status}"
+                             Width="200"
+                             HorizontalAlignment="Left">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock>
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding}" Value="NotStarted">
+                                                    <Setter Property="Text" Value="Not Started"/>
+                                                    <Setter Property="Foreground" Value="Gray"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding}" Value="NotReady">
+                                                    <Setter Property="Text" Value="Not Ready"/>
+                                                    <Setter Property="Foreground" Value="Red"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding}" Value="Started">
+                                                    <Setter Property="Text" Value="Started"/>
+                                                    <Setter Property="Foreground" Value="Green"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding}" Value="Deferred">
+                                                    <Setter Property="Text" Value="Deferred"/>
+                                                    <Setter Property="Foreground" Value="Orange"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding}" Value="Completed">
+                                                    <Setter Property="Text" Value="Completed"/>
+                                                    <Setter Property="Foreground" Value="Blue"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </DockPanel>
+
+                <!-- Goal -->
+                <DockPanel Margin="0,0,0,8">
+                    <TextBlock Text="Project Goal:" 
+                             Width="100"
+                             VerticalAlignment="Top"/>
+                    <TextBox Text="{Binding Project.Goal, UpdateSourceTrigger=PropertyChanged}" 
+                             AcceptsReturn="True" 
+                             TextWrapping="Wrap" 
+                             Height="80" 
+                             Background="Transparent"
+                             BorderBrush="{DynamicResource BorderBrush}"
+                             BorderThickness="1"
+                             Padding="5"
+                             Foreground="{DynamicResource TextBrush}"/>
+                </DockPanel>
+
+                <!-- Dates -->
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Created Date -->
+                    <TextBlock Text="Created:" 
+                             Width="100"
+                             VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" 
+                             Text="{Binding Project.CreatedDate, StringFormat='{}{0:dddd, MMMM d, yyyy}'}"
+                             Margin="0,0,20,0"
+                             VerticalAlignment="Center"/>
+
+                    <!-- Due Date -->
+                    <TextBlock Grid.Column="2" 
+                             Text="Due Date:"
+                             Width="80"
+                             VerticalAlignment="Center"/>
+                    <DatePicker Grid.Column="3"
+                              SelectedDate="{Binding Project.DueDate}"
+                              VerticalAlignment="Center"/>
+                </Grid>
+
+                <!-- Log Entries Header -->
+                <Grid Margin="0,5,0,2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="Log Entries" 
+                                 FontSize="20"
+                                 FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextBrush}"
+                                 VerticalAlignment="Center"/>
+                                 
+                        <Button Content="Add Log Entry"
+                                Click="AddLogEntry_Click"
+                                Background="{DynamicResource AccentBrush}"
+                                Foreground="{DynamicResource HighlightTextBrush}"
+                                Padding="10,3"
+                                Margin="10,0,10,0"
+                                VerticalAlignment="Center"/>
+
+                        <ToggleButton x:Name="LogEntriesExpandButton"
+                                    Content="▼"
+                                    Width="24"
+                                    Height="24"
+                                    VerticalAlignment="Center"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Log Entries List and Input -->
+                <Grid Margin="0,0,0,5">
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsChecked, ElementName=LogEntriesExpandButton}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <ListView MaxHeight="150" 
+                              ScrollViewer.VerticalScrollBarVisibility="Auto"
+                              BorderThickness="1"
+                              BorderBrush="{DynamicResource BorderBrush}"
+                              Margin="0,0,0,5"
+                              Background="{DynamicResource WindowBackgroundBrush}"
+                              ItemsSource="{Binding Source={StaticResource SortedLogEntries}}">
+                        <ListView.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,2">
+                                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:MM/dd/yyyy HH:mm:ss}'}" 
+                                             Foreground="{DynamicResource SubtleBrush}"
+                                             FontSize="11"/>
+                                    <TextBlock Text="{Binding Content}" 
+                                             TextWrapping="Wrap"
+                                             Foreground="{DynamicResource TextBrush}"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <TextBox x:Name="NewLogEntryTextBox" 
+                             Grid.Row="1"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MinHeight="40"
+                             MaxHeight="80"
+                             Margin="0,0,0,5"/>
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Tasks -->
+        <Grid Grid.Row="2" Margin="0,5,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Tasks Header -->
+            <Grid Margin="0,0,0,2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="Tasks"
+                              FontSize="20"
+                              FontWeight="SemiBold"
+                              VerticalAlignment="Center"/>
+
+                    <Button Content="+ Add Task"
+                            Click="AddTask_Click"
+                            Padding="10,3"
+                            Margin="10,0,10,0"
+                            VerticalAlignment="Center"/>
+
+                    <ToggleButton x:Name="TasksExpandButton"
+                                Content="▼"
+                                Width="24"
+                                Height="24"
+                                IsChecked="True"
+                                VerticalAlignment="Center"/>
+                </StackPanel>
+            </Grid>
+
+            <!-- Tasks List -->
+            <ScrollViewer Grid.Row="1"
+                         VerticalScrollBarVisibility="Auto">
+                <Grid>
+                    <Grid.Style>
+                        <Style TargetType="Grid">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsChecked, ElementName=TasksExpandButton}" Value="False">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Grid.Style>
+
+                    <ItemsControl x:Name="TasksItemsControl">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="4"
+                                        Margin="0,0,0,10"
+                                        Padding="10"
+                                        Background="{DynamicResource WindowBackgroundBrush}"
+                                        MouseMove="Task_MouseMove"
+                                        PreviewMouseLeftButtonDown="Task_PreviewMouseLeftButtonDown"
+                                        AllowDrop="True"
+                                        Drop="Task_Drop"
+                                        DragEnter="Task_DragEnter"
+                                        DragLeave="Task_DragLeave">
+                                    <Border.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="Delete Task" Click="DeleteTask_Click"/>
+                                        </ContextMenu>
+                                    </Border.ContextMenu>
+                                    <StackPanel>
+                                        <!-- Task Header -->
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <CheckBox IsChecked="{Binding IsCompleted}"
+                                                      VerticalAlignment="Center"
+                                                      Margin="0,0,10,0"/>
+                                            <TextBox Grid.Column="1"
+                                                     Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                                                     FontWeight="SemiBold"/>
+                                            <!-- Dependencies indicator -->
+                                            <Button Grid.Column="2"
+                                                    Content="🔗"
+                                                    Width="24"
+                                                    Height="24"
+                                                    Margin="10,0,0,0"
+                                                    Background="Transparent"
+                                                    BorderThickness="0"
+                                                    Padding="0"
+                                                    ToolTip="View Dependencies"
+                                                    Click="ViewDependencies_Click"
+                                                    Foreground="{DynamicResource AccentBrush}"
+                                                    FontSize="16">
+                                                <Button.Style>
+                                                    <Style TargetType="Button">
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Dependencies.Count}" Value="0">
+                                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                            <ToggleButton Grid.Column="3"
+                                                    x:Name="ExpandButton"
+                                                    Content="▼"
+                                                    Width="24"
+                                                    Height="24"
+                                                    Margin="10,0,0,0"/>
+                                        </Grid>
+
+                                        <!-- Task Details -->
+                                        <Grid Margin="0,10,0,0">
+                                            <Grid.Style>
+                                                <Style TargetType="Grid">
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsChecked, ElementName=ExpandButton}" Value="False">
+                                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Grid.Style>
+                                            <StackPanel>
+                                                <!-- Description -->
+                                                <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"
+                                                         TextWrapping="Wrap"
+                                                         AcceptsReturn="True"
+                                                         MinHeight="60"
+                                                         Margin="0,0,0,10"
+                                                         Background="Transparent"
+                                                         BorderBrush="{DynamicResource BorderBrush}"
+                                                         BorderThickness="1"/>
+
+                                                <!-- Dates -->
+                                                <Grid Margin="0,0,0,10">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="Start:"
+                                                             Margin="0,0,10,0"
+                                                             VerticalAlignment="Center"/>
+                                                    <DatePicker Grid.Column="1"
+                                                              SelectedDate="{Binding StartDate}"
+                                                              Margin="0,0,20,0"/>
+                                                    <TextBlock Grid.Column="2"
+                                                             Text="Due:"
+                                                             Margin="0,0,10,0"
+                                                             VerticalAlignment="Center"/>
+                                                    <DatePicker Grid.Column="3"
+                                                              SelectedDate="{Binding DueDate}"/>
+                                                </Grid>
+
+                                                <!-- Dependencies -->
+                                                <Expander Header="Dependencies">
+                                                    <StackPanel Margin="0,10,0,0">
+                                                        <ItemsControl ItemsSource="{Binding Dependencies}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <DockPanel Margin="0,0,0,5">
+                                                                        <Button DockPanel.Dock="Right"
+                                                                                Content="✕"
+                                                                                Click="RemoveTaskDependency_Click"/>
+                                                                        <TextBlock Text="{Binding}"
+                                                                                 VerticalAlignment="Center"/>
+                                                                    </DockPanel>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <Button Content="Add Dependency"
+                                                                Click="AddTaskDependency_Click"
+                                                                HorizontalAlignment="Left"
+                                                                Margin="0,5,0,0"/>
+                                                    </StackPanel>
+                                                </Expander>
+
+                                                <!-- Subtasks -->
+                                                <Expander Header="Subtasks" 
+                                                          Margin="0,10,0,0">
+                                                    <StackPanel Margin="0,10,0,0">
+                                                        <ItemsControl ItemsSource="{Binding Subtasks}">
+                                                            <ItemsControl.ItemTemplate>
+                                                                <DataTemplate>
+                                                                    <Grid Margin="0,0,0,5">
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                            <ColumnDefinition Width="*"/>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        <CheckBox IsChecked="{Binding IsCompleted}"
+                                                                                  VerticalAlignment="Center"
+                                                                                  Margin="0,0,10,0"/>
+                                                                        <TextBox Grid.Column="1"
+                                                                                 Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}">
+                                                                            <TextBox.ContextMenu>
+                                                                                <ContextMenu>
+                                                                                    <MenuItem Header="Delete Subtask" Click="DeleteSubtask_Click"/>
+                                                                                </ContextMenu>
+                                                                            </TextBox.ContextMenu>
+                                                                        </TextBox>
+                                                                        <Button Grid.Column="2"
+                                                                                Content="✕"
+                                                                                Click="RemoveSubtask_Click"
+                                                                                Margin="10,0,0,0"/>
+                                                                    </Grid>
+                                                                </DataTemplate>
+                                                            </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                        <Button Content="Add Subtask"
+                                                                Click="AddSubtask_Click"
+                                                                HorizontalAlignment="Left"
+                                                                Margin="0,5,0,0"/>
+                                                    </StackPanel>
+                                                </Expander>
+                                            </StackPanel>
+                                        </Grid>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl> 

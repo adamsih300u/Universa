@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window x:Class="Universa.Desktop.Views.DeviceSelectionWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Select Device to Verify" 
+        Height="300" 
+        Width="400"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Select a device to verify:" 
+                 FontSize="16" 
+                 Margin="0,0,0,10"/>
+
+        <ListBox Grid.Row="1" 
+                 x:Name="DevicesList"
+                 SelectionMode="Single"
+                 Margin="0,0,0,10">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Margin="5">
+                        <TextBlock Text="{Binding DisplayName, Mode=OneWay}" 
+                                 FontWeight="Bold"/>
+                        <TextBlock>
+                            <Run Text="Device ID: "/>
+                            <Run Text="{Binding DeviceId, Mode=OneWay}"/>
+                        </TextBlock>
+                        <TextBlock>
+                            <Run Text="Last Seen: "/>
+                            <Run Text="{Binding LastSeen, Mode=OneWay, StringFormat='{}{0:g}'}"/>
+                        </TextBlock>
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+
+        <StackPanel Grid.Row="2" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Right">
+            <Button Content="Cancel" 
+                    Click="CancelButton_Click"
+                    Width="80"
+                    Margin="0,0,10,0"/>
+            <Button Content="Verify" 
+                    Click="VerifyButton_Click"
+                    Width="80"
+                    IsDefault="True"/>
+        </StackPanel>
+    </Grid>
+</Window> 
