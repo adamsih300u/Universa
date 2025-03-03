@@ -29,6 +29,9 @@ namespace Universa.Desktop.Views
         private bool _splitOnHeadings = true;
         private bool _includeCover = true;
         private bool[] _splitOnHeadingLevels = new bool[] { true, true, false, false, false, false };
+        
+        // Heading alignments
+        private Dictionary<int, ExportOptions.TextAlignment> _headingAlignments = new Dictionary<int, ExportOptions.TextAlignment>();
 
         public ExportWindow(IFileTab currentTab)
         {
@@ -40,10 +43,29 @@ namespace Universa.Desktop.Views
             // Initialize metadata
             _metadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             
+            // Initialize heading alignments with defaults
+            for (int i = 1; i <= 6; i++)
+            {
+                _headingAlignments[i] = ExportOptions.TextAlignment.Left;
+            }
+            
             // Set default metadata values
             _metadata["title"] = Path.GetFileNameWithoutExtension(_currentTab?.FilePath ?? "Untitled");
             _metadata["author"] = Environment.UserName;
             _metadata["language"] = System.Globalization.CultureInfo.CurrentCulture.TwoLetterISOLanguageName;
+            
+            // Get metadata from the MarkdownTab if available
+            if (_currentTab is MarkdownTab markdownTab)
+            {
+                var tabMetadata = markdownTab.GetDocumentMetadata();
+                if (tabMetadata != null)
+                {
+                    foreach (var kvp in tabMetadata)
+                    {
+                        _metadata[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
             
             // Set default file name and directory
             _defaultFileName = "Untitled";
@@ -244,7 +266,8 @@ namespace Universa.Desktop.Views
                     IncludeToc = _includeToc,
                     SplitOnHeadings = _splitOnHeadings,
                     IncludeCover = _includeCover,
-                    Metadata = _metadata
+                    Metadata = new Dictionary<string, string>(_metadata), // Create a copy of the metadata
+                    HeadingAlignments = new Dictionary<int, ExportOptions.TextAlignment>(_headingAlignments) // Copy heading alignments
                 };
                 
                 // Add heading levels to split on
@@ -287,8 +310,26 @@ namespace Universa.Desktop.Views
                 
                 if (success)
                 {
-                    MessageBox.Show($"Document exported successfully to:\n{options.OutputPath}", 
-                        "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                    // Check if there were any warnings
+                    if (options.Warnings != null && options.Warnings.Count > 0)
+                    {
+                        // Build the warning message
+                        StringBuilder warningMessage = new StringBuilder();
+                        warningMessage.AppendLine("Document exported with the following warnings:");
+                        
+                        foreach (string warning in options.Warnings)
+                        {
+                            warningMessage.AppendLine($"• {warning}");
+                        }
+                        
+                        MessageBox.Show(warningMessage.ToString(), 
+                            "Export Warnings", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                    else
+                    {
+                        MessageBox.Show($"Document exported successfully to:\n{options.OutputPath}", 
+                            "Export Successful", MessageBoxButton.OK, MessageBoxImage.Information);
+                    }
                     
                     // Ask if the user wants to open the exported file
                     var result = MessageBox.Show("Do you want to open the exported file?", 
@@ -422,6 +463,31 @@ namespace Universa.Desktop.Views
                 return;
                 
             checkmark.Background = isChecked ? new SolidColorBrush(Colors.Green) : new SolidColorBrush(Colors.Transparent);
+        }
+
+        /// <summary>
+        /// Handles changes to heading alignment combo boxes
+        /// </summary>
+        private void HeadingAlignmentComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (sender is ComboBox comboBox && comboBox.Tag != null)
+            {
+                // Get the heading level from the Tag property
+                if (int.TryParse(comboBox.Tag.ToString(), out int headingLevel) && headingLevel >= 1 && headingLevel <= 6)
+                {
+                    // Get the selected alignment
+                    if (comboBox.SelectedItem is ComboBoxItem selectedItem)
+                    {
+                        string alignmentText = selectedItem.Content.ToString();
+                        
+                        // Parse the alignment
+                        if (Enum.TryParse<ExportOptions.TextAlignment>(alignmentText, out var alignment))
+                        {
+                            _headingAlignments[headingLevel] = alignment;
+                        }
+                    }
+                }
+            }
         }
     }
 } 

@@ -29,6 +29,9 @@ namespace Universa.Desktop.Services.Export
             {
                 Debug.WriteLine("Starting custom ePub export...");
                 
+                // Track issues for reporting back to the user
+                List<string> warnings = new List<string>();
+                
                 // Create a temporary directory for the ePub contents
                 string tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
                 Directory.CreateDirectory(tempDir);
@@ -37,8 +40,8 @@ namespace Universa.Desktop.Services.Export
                 {
                     // Create the required directory structure
                     Directory.CreateDirectory(Path.Combine(tempDir, "META-INF"));
-                    Directory.CreateDirectory(Path.Combine(tempDir, "OEBPS"));
-                    Directory.CreateDirectory(Path.Combine(tempDir, "OEBPS", "images"));
+                    Directory.CreateDirectory(Path.Combine(tempDir, "OPS"));
+                    Directory.CreateDirectory(Path.Combine(tempDir, "OPS", "images"));
                     
                     // Create the mimetype file
                     File.WriteAllText(Path.Combine(tempDir, "mimetype"), "application/epub+zip");
@@ -46,36 +49,202 @@ namespace Universa.Desktop.Services.Export
                     // Process the content to extract chapters based on headings
                     var chapters = new List<(string title, string content)>();
                     string coverImagePath = null;
+                    bool coverImageSpecifiedButNotFound = false;
                     
                     // Extract cover image if present
                     if (options.IncludeCover)
                     {
-                        var coverMatch = _imageRegex.Match(content);
-                        if (coverMatch.Success)
+                        // First check if there's a cover specified in the metadata (from frontmatter)
+                        string coverPathFromMetadata = null;
+                        if (options.Metadata != null && 
+                            options.Metadata.TryGetValue("cover", out coverPathFromMetadata) && 
+                            !string.IsNullOrWhiteSpace(coverPathFromMetadata))
                         {
-                            string altText = coverMatch.Groups[1].Value;
-                            string imagePath = coverMatch.Groups[2].Value;
+                            Debug.WriteLine($"Found cover image in frontmatter: {coverPathFromMetadata}");
                             
-                            // Handle relative paths
-                            if (!Path.IsPathRooted(imagePath))
+                            // Debug all metadata
+                            Debug.WriteLine("All metadata from frontmatter:");
+                            foreach (var kvp in options.Metadata)
                             {
-                                string baseDir = Path.GetDirectoryName(options.OutputPath);
-                                imagePath = Path.Combine(baseDir, imagePath);
+                                Debug.WriteLine($"  {kvp.Key}: {kvp.Value}");
                             }
                             
-                            if (File.Exists(imagePath))
+                            string originalImagePath = coverPathFromMetadata;
+                            
+                            // Handle relative paths
+                            if (!Path.IsPathRooted(coverPathFromMetadata))
                             {
-                                string coverFileName = "cover" + Path.GetExtension(imagePath);
-                                coverImagePath = Path.Combine("images", coverFileName);
+                                string baseDir = Path.GetDirectoryName(options.OutputPath);
+                                if (baseDir == null)
+                                {
+                                    baseDir = Directory.GetCurrentDirectory();
+                                }
                                 
-                                // Copy the image to the OEBPS/images directory
-                                File.Copy(imagePath, Path.Combine(tempDir, "OEBPS", coverImagePath), true);
+                                // Get the source file directory if available
+                                string sourceFileDir = null;
+                                if (options.Metadata.TryGetValue("_sourcePath", out string sourcePath) && !string.IsNullOrEmpty(sourcePath))
+                                {
+                                    sourceFileDir = Path.GetDirectoryName(sourcePath);
+                                    Debug.WriteLine($"Source file directory: {sourceFileDir}");
+                                }
                                 
-                                // Remove the cover image from the content
-                                content = content.Replace(coverMatch.Value, "");
+                                // Try different approaches to find the image
+                                var possiblePathsList = new List<string>
+                                {
+                                    Path.Combine(baseDir, coverPathFromMetadata),
+                                    coverPathFromMetadata,
+                                    Path.Combine(Path.GetDirectoryName(Path.GetFullPath(options.OutputPath)), coverPathFromMetadata)
+                                };
+                                
+                                // Add source file directory path if available
+                                if (!string.IsNullOrEmpty(sourceFileDir))
+                                {
+                                    possiblePathsList.Add(Path.Combine(sourceFileDir, coverPathFromMetadata));
+                                    
+                                    // If the path starts with ./ or ../, it's relative to the source file
+                                    if (coverPathFromMetadata.StartsWith("./") || coverPathFromMetadata.StartsWith("../"))
+                                    {
+                                        string resolvedPath = Path.GetFullPath(Path.Combine(sourceFileDir, coverPathFromMetadata));
+                                        possiblePathsList.Add(resolvedPath);
+                                    }
+                                }
+                                
+                                string[] possiblePaths = possiblePathsList.ToArray();
+                                
+                                Debug.WriteLine("Trying to find cover image at the following paths:");
+                                foreach (string path in possiblePaths)
+                                {
+                                    Debug.WriteLine($"  Checking: {path} - Exists: {File.Exists(path)}");
+                                }
+                                
+                                bool found = false;
+                                foreach (string path in possiblePaths)
+                                {
+                                    if (File.Exists(path))
+                                    {
+                                        coverPathFromMetadata = path;
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                
+                                if (!found)
+                                {
+                                    coverImageSpecifiedButNotFound = true;
+                                    warnings.Add($"Cover image specified in frontmatter not found: {originalImagePath}");
+                                    Debug.WriteLine($"Cover image from frontmatter not found: {originalImagePath}");
+                                }
+                            }
+                            else if (!File.Exists(coverPathFromMetadata))
+                            {
+                                coverImageSpecifiedButNotFound = true;
+                                warnings.Add($"Cover image specified in frontmatter not found: {originalImagePath}");
+                                Debug.WriteLine($"Cover image from frontmatter not found: {originalImagePath}");
+                            }
+                            
+                            if (File.Exists(coverPathFromMetadata))
+                            {
+                                // Use a standardized filename for the cover image
+                                string coverFileName = "cover" + Path.GetExtension(coverPathFromMetadata);
+                                
+                                // Set the path relative to OPS directory for use in HTML references
+                                coverImagePath = "images/" + coverFileName;
+                                
+                                // Copy the image to the OPS/images directory
+                                File.Copy(coverPathFromMetadata, Path.Combine(tempDir, "OPS", "images", coverFileName), true);
+                                
+                                Debug.WriteLine($"Cover image from frontmatter copied: {coverPathFromMetadata} to {coverImagePath}");
+                            }
+                        }
+                        
+                        // If no cover was found in metadata, look for the first image in the content
+                        if (coverImagePath == null)
+                        {
+                            var coverMatch = _imageRegex.Match(content);
+                            if (coverMatch.Success)
+                            {
+                                string altText = coverMatch.Groups[1].Value;
+                                string imagePath = coverMatch.Groups[2].Value;
+                                string originalImagePath = imagePath; // Store original path for error reporting
+                                
+                                // Handle relative paths
+                                if (!Path.IsPathRooted(imagePath))
+                                {
+                                    string baseDir = Path.GetDirectoryName(options.OutputPath);
+                                    if (baseDir == null)
+                                    {
+                                        baseDir = Directory.GetCurrentDirectory();
+                                    }
+                                    
+                                    // Try different approaches to find the image
+                                    string[] possiblePaths = new string[]
+                                    {
+                                        Path.Combine(baseDir, imagePath),
+                                        imagePath,
+                                        Path.Combine(Path.GetDirectoryName(Path.GetFullPath(options.OutputPath)), imagePath)
+                                    };
+                                    
+                                    Debug.WriteLine("Trying to find cover image at the following paths:");
+                                    foreach (string path in possiblePaths)
+                                    {
+                                        Debug.WriteLine($"  Checking: {path} - Exists: {File.Exists(path)}");
+                                    }
+                                    
+                                    bool found = false;
+                                    foreach (string path in possiblePaths)
+                                    {
+                                        if (File.Exists(path))
+                                        {
+                                            imagePath = path;
+                                            found = true;
+                                            break;
+                                        }
+                                    }
+                                    
+                                    if (!found)
+                                    {
+                                        coverImageSpecifiedButNotFound = true;
+                                        warnings.Add($"Cover image not found: {originalImagePath}");
+                                        Debug.WriteLine($"Cover image not found: {originalImagePath}");
+                                    }
+                                }
+                                else if (!File.Exists(imagePath))
+                                {
+                                    coverImageSpecifiedButNotFound = true;
+                                    warnings.Add($"Cover image not found: {originalImagePath}");
+                                    Debug.WriteLine($"Cover image not found: {originalImagePath}");
+                                }
+                                
+                                if (File.Exists(imagePath))
+                                {
+                                    // Use a standardized filename for the cover image
+                                    string coverFileName = "cover" + Path.GetExtension(imagePath);
+                                    
+                                    // Set the path relative to OPS directory for use in HTML references
+                                    coverImagePath = "images/" + coverFileName;
+                                    
+                                    // Copy the image to the OPS/images directory
+                                    File.Copy(imagePath, Path.Combine(tempDir, "OPS", "images", coverFileName), true);
+                                    
+                                    // Remove the cover image from the content
+                                    content = content.Replace(coverMatch.Value, "");
+                                    
+                                    Debug.WriteLine($"Cover image found and copied: {imagePath} to {coverImagePath}");
+                                }
+                            }
+                            else
+                            {
+                                if (coverImagePath == null && !coverImageSpecifiedButNotFound)
+                                {
+                                    warnings.Add("Cover image option was selected, but no image was found in the document or frontmatter.");
+                                    Debug.WriteLine("No cover image found in content or frontmatter");
+                                }
                             }
                         }
                     }
+                    
+                    // Copy all images in the content to the images directory
+                    CopyContentImagesToImagesDirectory(content, tempDir, Path.GetDirectoryName(options.OutputPath), warnings);
                     
                     // Split content into chapters if requested
                     if (options.SplitOnHeadings)
@@ -128,13 +297,29 @@ namespace Universa.Desktop.Services.Export
                         else
                         {
                             // No headings found, use the entire content as a single chapter
-                            chapters.Add(("Chapter 1", content));
+                            string title = "Chapter 1";
+                            
+                            // Try to get a title from metadata
+                            if (options.Metadata != null && options.Metadata.TryGetValue("title", out string metadataTitle))
+                            {
+                                title = metadataTitle;
+                            }
+                            
+                            chapters.Add((title, content));
                         }
                     }
                     else
                     {
                         // No splitting, use the entire content as a single chapter
-                        chapters.Add(("Chapter 1", content));
+                        string title = "Chapter 1";
+                        
+                        // Try to get a title from metadata
+                        if (options.Metadata != null && options.Metadata.TryGetValue("title", out string metadataTitle))
+                        {
+                            title = metadataTitle;
+                        }
+                        
+                        chapters.Add((title, content));
                     }
                     
                     // Create HTML files for each chapter
@@ -142,20 +327,30 @@ namespace Universa.Desktop.Services.Export
                     for (int i = 0; i < chapters.Count; i++)
                     {
                         string chapterFileName = $"chapter{i + 1}.html";
-                        string chapterPath = Path.Combine(tempDir, "OEBPS", chapterFileName);
+                        string chapterPath = Path.Combine(tempDir, "OPS", chapterFileName);
                         
                         // Convert markdown to HTML (simple conversion)
-                        string htmlContent = ConvertMarkdownToHtml(chapters[i].content);
+                        string htmlContent = ConvertMarkdownToHtml(chapters[i].content, options);
                         
-                        // Create the HTML file
+                        // Create the HTML file with CSS for heading alignments
+                        StringBuilder cssBuilder = new StringBuilder();
+                        cssBuilder.AppendLine("        body { font-family: serif; margin: 5%; line-height: 1.5; }");
+                        cssBuilder.AppendLine("        h1, h2, h3, h4, h5, h6 { font-family: sans-serif; }");
+                        
+                        // Add alignment styles for each heading level
+                        foreach (var alignment in options.HeadingAlignments)
+                        {
+                            string textAlign = alignment.Value.ToString().ToLower();
+                            cssBuilder.AppendLine($"        h{alignment.Key} {{ text-align: {textAlign}; }}");
+                        }
+                        
                         string chapterHtml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <!DOCTYPE html>
 <html xmlns=""http://www.w3.org/1999/xhtml"">
 <head>
     <title>{chapters[i].title}</title>
     <style>
-        body {{ font-family: serif; margin: 5%; line-height: 1.5; }}
-        h1, h2, h3, h4, h5, h6 {{ font-family: sans-serif; }}
+{cssBuilder.ToString()}
     </style>
 </head>
 <body>
@@ -170,32 +365,53 @@ namespace Universa.Desktop.Services.Export
                     // Create a cover HTML file if needed
                     if (coverImagePath != null)
                     {
+                        // Get the book title for the cover page
+                        string bookTitle = "Cover";
+                        if (options.Metadata != null && options.Metadata.TryGetValue("title", out string metadataTitle))
+                        {
+                            bookTitle = metadataTitle;
+                        }
+                        
+                        // Create CSS for the cover page
+                        StringBuilder coverCssBuilder = new StringBuilder();
+                        coverCssBuilder.AppendLine("        body { margin: 0; padding: 0; text-align: center; }");
+                        coverCssBuilder.AppendLine("        img { max-width: 100%; max-height: 100vh; }");
+                        coverCssBuilder.AppendLine("        h1, h2, h3, h4, h5, h6 { font-family: sans-serif; }");
+                        
+                        // Add alignment styles for each heading level
+                        foreach (var alignment in options.HeadingAlignments)
+                        {
+                            string textAlign = alignment.Value.ToString().ToLower();
+                            coverCssBuilder.AppendLine($"        h{alignment.Key} {{ text-align: {textAlign}; }}");
+                        }
+                        
                         string coverHtml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <!DOCTYPE html>
 <html xmlns=""http://www.w3.org/1999/xhtml"">
 <head>
-    <title>Cover</title>
+    <title>Cover - {bookTitle}</title>
     <style>
-        body {{ margin: 0; padding: 0; text-align: center; }}
-        img {{ max-width: 100%; max-height: 100vh; }}
+{coverCssBuilder.ToString()}
     </style>
 </head>
 <body>
     <div>
-        <img src=""{coverImagePath}"" alt=""Cover"" />
+        <img src=""{coverImagePath}"" alt=""Cover for {bookTitle}"" />
     </div>
 </body>
 </html>";
                         
-                        File.WriteAllText(Path.Combine(tempDir, "OEBPS", "cover.html"), coverHtml);
+                        File.WriteAllText(Path.Combine(tempDir, "OPS", "cover.html"), coverHtml);
                         chapterFiles.Insert(0, "cover.html");
+                        
+                        Debug.WriteLine("Cover HTML file created with image reference: " + coverImagePath);
                     }
                     
                     // Create a simple container.xml
                     string containerXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <container version=""1.0"" xmlns=""urn:oasis:names:tc:opendocument:xmlns:container"">
     <rootfiles>
-        <rootfile full-path=""OEBPS/content.opf"" media-type=""application/oebps-package+xml""/>
+        <rootfile full-path=""OPS/content.opf"" media-type=""application/oebps-package+xml""/>
     </rootfiles>
 </container>";
                     
@@ -205,6 +421,19 @@ namespace Universa.Desktop.Services.Export
                     string tocNavHtml = "";
                     if (options.IncludeToc)
                     {
+                        // Create CSS for the TOC
+                        StringBuilder tocCssBuilder = new StringBuilder();
+                        tocCssBuilder.AppendLine("        body { font-family: sans-serif; margin: 5%; }");
+                        tocCssBuilder.AppendLine("        nav[epub|type='toc'] > ol { list-style-type: none; }");
+                        tocCssBuilder.AppendLine("        nav[epub|type='toc'] > ol > li { margin: 0.5em 0; }");
+                        
+                        // Add alignment styles for each heading level
+                        foreach (var alignment in options.HeadingAlignments)
+                        {
+                            string textAlign = alignment.Value.ToString().ToLower();
+                            tocCssBuilder.AppendLine($"        h{alignment.Key} {{ text-align: {textAlign}; }}");
+                        }
+                        
                         StringBuilder tocBuilder = new StringBuilder();
                         tocBuilder.AppendLine(@"<?xml version=""1.0"" encoding=""utf-8""?>
 <!DOCTYPE html>
@@ -212,9 +441,7 @@ namespace Universa.Desktop.Services.Export
 <head>
     <title>Table of Contents</title>
     <style>
-        body { font-family: sans-serif; margin: 5%; }
-        nav[epub|type='toc'] > ol { list-style-type: none; }
-        nav[epub|type='toc'] > ol > li { margin: 0.5em 0; }
+" + tocCssBuilder.ToString() + @"
     </style>
 </head>
 <body>
@@ -222,9 +449,18 @@ namespace Universa.Desktop.Services.Export
         <h1>Table of Contents</h1>
         <ol>");
                         
+                        // Do NOT add cover page to TOC
+                        
+                        // Add chapters to TOC
                         for (int i = 0; i < chapters.Count; i++)
                         {
-                            tocBuilder.AppendLine($"            <li><a href=\"{chapterFiles[i]}\">{chapters[i].title}</a></li>");
+                            // Get the correct chapter file index based on whether we have a cover
+                            int fileIndex = coverImagePath != null ? i + 1 : i;
+                            
+                            // Use the actual chapter title instead of "Chapter X"
+                            string chapterTitle = chapters[i].title;
+                            
+                            tocBuilder.AppendLine($"            <li><a href=\"{chapterFiles[fileIndex]}\">{chapterTitle}</a></li>");
                         }
                         
                         tocBuilder.AppendLine(@"        </ol>
@@ -233,8 +469,11 @@ namespace Universa.Desktop.Services.Export
 </html>");
                         
                         tocNavHtml = tocBuilder.ToString();
-                        File.WriteAllText(Path.Combine(tempDir, "OEBPS", "toc.html"), tocNavHtml);
-                        chapterFiles.Insert(coverImagePath != null ? 1 : 0, "toc.html");
+                        File.WriteAllText(Path.Combine(tempDir, "OPS", "toc.html"), tocNavHtml);
+                        
+                        // Insert the TOC after the cover (if present) or at the beginning
+                        int tocInsertPosition = coverImagePath != null ? 1 : 0;
+                        chapterFiles.Insert(tocInsertPosition, "toc.html");
                     }
                     
                     // Create the content.opf file
@@ -260,7 +499,15 @@ namespace Universa.Desktop.Services.Export
                     for (int i = 0; i < chapterFiles.Count; i++)
                     {
                         string id = chapterFiles[i].Replace(".", "-");
-                        contentOpfBuilder.AppendLine($"        <item id=\"{id}\" href=\"{chapterFiles[i]}\" media-type=\"application/xhtml+xml\"/>");
+                        string properties = "";
+                        
+                        // Mark the cover.html file as the cover
+                        if (chapterFiles[i] == "cover.html")
+                        {
+                            properties = " properties=\"cover\"";
+                        }
+                        
+                        contentOpfBuilder.AppendLine($"        <item id=\"{id}\" href=\"{chapterFiles[i]}\" media-type=\"application/xhtml+xml\"{properties}/>");
                     }
                     
                     // Add cover image to manifest if present
@@ -268,7 +515,25 @@ namespace Universa.Desktop.Services.Export
                     {
                         string extension = Path.GetExtension(coverImagePath).ToLower();
                         string mediaType = extension == ".jpg" || extension == ".jpeg" ? "image/jpeg" : "image/png";
-                        contentOpfBuilder.AppendLine($"        <item id=\"cover-image\" href=\"{coverImagePath}\" media-type=\"{mediaType}\"/>");
+                        contentOpfBuilder.AppendLine($"        <item id=\"cover-image\" href=\"{coverImagePath}\" media-type=\"{mediaType}\" properties=\"cover-image\"/>");
+                    }
+                    
+                    // Add all content images to manifest
+                    var contentImages = GetContentImages(content);
+                    foreach (string imagePath in contentImages)
+                    {
+                        // Skip if this is the cover image (already added)
+                        if (coverImagePath != null && imagePath == coverImagePath)
+                            continue;
+                            
+                        string extension = Path.GetExtension(imagePath).ToLower();
+                        string mediaType = extension == ".jpg" || extension == ".jpeg" ? "image/jpeg" : 
+                                          extension == ".png" ? "image/png" : 
+                                          extension == ".gif" ? "image/gif" : 
+                                          extension == ".svg" ? "image/svg+xml" : "image/png";
+                        
+                        string id = "image-" + Path.GetFileNameWithoutExtension(imagePath).Replace(" ", "-").Replace(".", "-");
+                        contentOpfBuilder.AppendLine($"        <item id=\"{id}\" href=\"{imagePath}\" media-type=\"{mediaType}\"/>");
                     }
                     
                     // Add TOC to manifest if present
@@ -290,7 +555,7 @@ namespace Universa.Desktop.Services.Export
                     contentOpfBuilder.AppendLine(@"    </spine>
 </package>");
                     
-                    File.WriteAllText(Path.Combine(tempDir, "OEBPS", "content.opf"), contentOpfBuilder.ToString());
+                    File.WriteAllText(Path.Combine(tempDir, "OPS", "content.opf"), contentOpfBuilder.ToString());
                     
                     // Create the ePub file (ZIP archive)
                     if (File.Exists(options.OutputPath))
@@ -301,27 +566,36 @@ namespace Universa.Desktop.Services.Export
                     // Ensure the output directory exists
                     Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath));
                     
-                    // Create a temporary file for the ZIP archive
-                    string tempZipPath = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName() + ".zip");
-                    
                     try
                     {
-                        // Create the ZIP archive
-                        ZipFile.CreateFromDirectory(tempDir, tempZipPath);
-                        
-                        // Move the temporary ZIP file to the output path
-                        File.Move(tempZipPath, options.OutputPath);
+                        // Create the ZIP archive manually to ensure mimetype is first and uncompressed
+                        using (var zipArchive = ZipFile.Open(options.OutputPath, ZipArchiveMode.Create))
+                        {
+                            // Add mimetype file first without compression
+                            var mimetypeEntry = zipArchive.CreateEntry("mimetype", CompressionLevel.NoCompression);
+                            using (var writer = new StreamWriter(mimetypeEntry.Open()))
+                            {
+                                writer.Write("application/epub+zip");
+                            }
+                            
+                            // Add the rest of the files
+                            AddDirectoryToZip(zipArchive, tempDir, "");
+                        }
                         
                         Debug.WriteLine($"ePub export completed successfully: {options.OutputPath}");
+                        
+                        // If there were warnings, return them to the caller
+                        if (warnings.Count > 0)
+                        {
+                            options.Warnings = warnings;
+                        }
+                        
                         return true;
                     }
-                    finally
+                    catch (Exception ex)
                     {
-                        // Clean up the temporary ZIP file if it still exists
-                        if (File.Exists(tempZipPath))
-                        {
-                            File.Delete(tempZipPath);
-                        }
+                        Debug.WriteLine($"Error creating ZIP archive: {ex.Message}");
+                        return false;
                     }
                 }
                 finally
@@ -348,13 +622,16 @@ namespace Universa.Desktop.Services.Export
         /// <summary>
         /// Converts markdown to HTML (simple implementation)
         /// </summary>
-        private string ConvertMarkdownToHtml(string markdown)
+        private string ConvertMarkdownToHtml(string markdown, ExportOptions options)
         {
-            // Replace headings
+            // Replace headings with alignment
             markdown = _headingRegex.Replace(markdown, m => 
             {
                 int level = m.Groups[1].Value.Length;
                 string title = m.Groups[2].Value;
+                
+                // We'll handle alignment through CSS in the HTML file, not inline styles
+                // This ensures the alignment is applied consistently
                 return $"<h{level}>{title}</h{level}>";
             });
             
@@ -370,7 +647,13 @@ namespace Universa.Desktop.Services.Export
                     src = Path.GetFileName(src);
                 }
                 
-                return $"<img src=\"images/{src}\" alt=\"{alt}\" />";
+                // Ensure the image path is relative to the images directory
+                if (!src.StartsWith("images/"))
+                {
+                    src = "images/" + src;
+                }
+                
+                return $"<img src=\"{src}\" alt=\"{alt}\" />";
             });
             
             // Replace paragraphs (simple implementation)
@@ -418,6 +701,150 @@ namespace Universa.Desktop.Services.Export
             }
             
             return htmlBuilder.ToString();
+        }
+        
+        /// <summary>
+        /// Copies all images found in the content to the images directory
+        /// </summary>
+        private void CopyContentImagesToImagesDirectory(string content, string tempDir, string baseDir, List<string> warnings)
+        {
+            try
+            {
+                // Find all images in the content
+                var matches = _imageRegex.Matches(content);
+                foreach (Match match in matches)
+                {
+                    string imagePath = match.Groups[2].Value;
+                    string originalImagePath = imagePath; // Store for error reporting
+                    
+                    // Skip if this is a URL
+                    if (imagePath.StartsWith("http://") || imagePath.StartsWith("https://"))
+                        continue;
+                    
+                    // Handle relative paths
+                    if (!Path.IsPathRooted(imagePath))
+                    {
+                        if (baseDir == null)
+                        {
+                            baseDir = Directory.GetCurrentDirectory();
+                        }
+                        
+                        // Try different approaches to find the image
+                        string[] possiblePaths = new string[]
+                        {
+                            Path.Combine(baseDir, imagePath),
+                            imagePath,
+                            Path.Combine(Path.GetDirectoryName(Path.GetFullPath(baseDir)), imagePath)
+                        };
+                        
+                        Debug.WriteLine("Trying to find cover image at the following paths:");
+                        foreach (string path in possiblePaths)
+                        {
+                            Debug.WriteLine($"  Checking: {path} - Exists: {File.Exists(path)}");
+                        }
+                        
+                        bool found = false;
+                        foreach (string path in possiblePaths)
+                        {
+                            if (File.Exists(path))
+                            {
+                                imagePath = path;
+                                found = true;
+                                break;
+                            }
+                        }
+                        
+                        if (!found)
+                        {
+                            warnings.Add($"Image not found: {originalImagePath}");
+                            Debug.WriteLine($"Content image not found: {originalImagePath}");
+                            continue;
+                        }
+                    }
+                    else if (!File.Exists(imagePath))
+                    {
+                        warnings.Add($"Image not found: {originalImagePath}");
+                        Debug.WriteLine($"Content image not found: {originalImagePath}");
+                        continue;
+                    }
+                    
+                    if (File.Exists(imagePath))
+                    {
+                        string fileName = Path.GetFileName(imagePath);
+                        string destPath = Path.Combine(tempDir, "OPS", "images", fileName);
+                        
+                        // Copy the image to the OPS/images directory
+                        File.Copy(imagePath, destPath, true);
+                        
+                        Debug.WriteLine($"Content image copied: {imagePath} to images/{fileName}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                warnings.Add($"Error processing images: {ex.Message}");
+                Debug.WriteLine($"Error copying content images: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Gets all image paths from the content
+        /// </summary>
+        private List<string> GetContentImages(string content)
+        {
+            var images = new List<string>();
+            var matches = _imageRegex.Matches(content);
+            
+            foreach (Match match in matches)
+            {
+                string imagePath = match.Groups[2].Value;
+                
+                // Skip URLs
+                if (imagePath.StartsWith("http://") || imagePath.StartsWith("https://"))
+                    continue;
+                
+                // Ensure the path is relative to the images directory
+                if (Path.IsPathRooted(imagePath))
+                {
+                    imagePath = "images/" + Path.GetFileName(imagePath);
+                }
+                else if (!imagePath.StartsWith("images/"))
+                {
+                    imagePath = "images/" + imagePath;
+                }
+                
+                if (!images.Contains(imagePath))
+                {
+                    images.Add(imagePath);
+                }
+            }
+            
+            return images;
+        }
+        
+        /// <summary>
+        /// Adds a directory to a ZIP archive
+        /// </summary>
+        private void AddDirectoryToZip(ZipArchive archive, string sourceDir, string entryDir)
+        {
+            // Add files
+            foreach (string filePath in Directory.GetFiles(sourceDir))
+            {
+                // Skip mimetype file (already added)
+                if (Path.GetFileName(filePath) == "mimetype")
+                    continue;
+                    
+                string entryName = Path.Combine(entryDir, Path.GetFileName(filePath)).Replace('\\', '/');
+                archive.CreateEntryFromFile(filePath, entryName);
+            }
+            
+            // Add subdirectories
+            foreach (string dirPath in Directory.GetDirectories(sourceDir))
+            {
+                string dirName = Path.GetFileName(dirPath);
+                string newEntryDir = Path.Combine(entryDir, dirName).Replace('\\', '/');
+                AddDirectoryToZip(archive, dirPath, newEntryDir);
+            }
         }
     }
 } 

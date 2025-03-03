@@ -9,6 +9,17 @@ namespace Universa.Desktop.Services.Export
     public class ExportOptions
     {
         /// <summary>
+        /// Defines possible text alignment options
+        /// </summary>
+        public enum TextAlignment
+        {
+            Left,
+            Center,
+            Right,
+            Justify
+        }
+        
+        /// <summary>
         /// Gets or sets the output path for the exported document
         /// </summary>
         public string OutputPath { get; set; }
@@ -39,12 +50,30 @@ namespace Universa.Desktop.Services.Export
         public Dictionary<string, string> Metadata { get; set; }
         
         /// <summary>
+        /// Gets or sets warnings that occurred during export
+        /// </summary>
+        public List<string> Warnings { get; set; }
+        
+        /// <summary>
+        /// Gets or sets the alignment for each heading level (1-6)
+        /// </summary>
+        public Dictionary<int, TextAlignment> HeadingAlignments { get; set; }
+        
+        /// <summary>
         /// Initializes a new instance of the ExportOptions class
         /// </summary>
         public ExportOptions()
         {
             SplitOnHeadingLevels = new List<int>();
             Metadata = new Dictionary<string, string>();
+            Warnings = new List<string>();
+            HeadingAlignments = new Dictionary<int, TextAlignment>();
+            
+            // Set default alignments
+            for (int i = 1; i <= 6; i++)
+            {
+                HeadingAlignments[i] = TextAlignment.Left;
+            }
         }
     }
 } 

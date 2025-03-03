@@ -1746,6 +1746,12 @@ namespace Universa.Desktop
         {
             var metadata = new Dictionary<string, string>();
             
+            // Add the source file path to help with resolving relative paths
+            if (!string.IsNullOrEmpty(FilePath))
+            {
+                metadata["_sourcePath"] = FilePath;
+            }
+            
             // Add frontmatter metadata if available
             if (_frontmatter != null && _frontmatter.Count > 0)
             {

@@ -92,6 +92,7 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="Title:" Margin="0,0,10,5" VerticalAlignment="Center"/>
@@ -148,6 +149,76 @@
                                 </StackPanel>
                             </Button>
                         </StackPanel>
+                        
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Heading Alignment:" Margin="0,0,10,5" VerticalAlignment="Top"/>
+                        <Grid Grid.Row="4" Grid.Column="1" Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- H1 Alignment -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="H1:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="H1AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="1">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H2 Alignment -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="H2:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="H2AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="2">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H3 Alignment -->
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="H3:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="H3AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="3">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H4 Alignment -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="H4:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="3" Grid.Column="1" x:Name="H4AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="4">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H5 Alignment -->
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="H5:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="4" Grid.Column="1" x:Name="H5AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="5">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H6 Alignment -->
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="H6:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <ComboBox Grid.Row="5" Grid.Column="1" x:Name="H6AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="6">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                        </Grid>
                     </Grid>
                 </StackPanel>
                 
