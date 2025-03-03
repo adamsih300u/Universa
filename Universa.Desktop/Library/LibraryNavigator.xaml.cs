@@ -586,8 +586,11 @@ namespace Universa.Desktop.Library
                         ParentMainWindow?.OpenOverviewTab();
                         break;
                     case Models.LibraryItemType.Service:
-                    case Models.LibraryItemType.Category:
                         ParentMainWindow?.HandleServiceNavigation(item);
+                        break;
+                    case Models.LibraryItemType.Category:
+                        // Category nodes should just expand/collapse
+                        item.IsExpanded = !item.IsExpanded;
                         break;
                     case Models.LibraryItemType.File:
                         if (File.Exists(item.Path))
