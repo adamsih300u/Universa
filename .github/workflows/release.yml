@@ -1,0 +1,45 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on tags starting with 'v', e.g., v1.0.0
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '8.0.x'
+        
+    - name: Restore dependencies
+      run: dotnet restore Universa.Desktop/Universa.Desktop.csproj
+      
+    - name: Build
+      run: dotnet build Universa.Desktop/Universa.Desktop.csproj --configuration Release --no-restore
+      
+    - name: Publish Windows x64
+      run: dotnet publish Universa.Desktop/Universa.Desktop.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:PublishReadyToRun=true -o publish/win-x64
+      
+    - name: Create Windows ZIP
+      run: |
+        Compress-Archive -Path publish/win-x64/* -DestinationPath Universa-Windows-x64.zip
+      
+    - name: Create Release
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          Universa-Windows-x64.zip
+        name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: false
+        generate_release_notes: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} 
