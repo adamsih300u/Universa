@@ -17,6 +17,8 @@ namespace Universa.Desktop.Models
         private bool _isError;
         private string _sender;
         private bool _isUserMessage;
+        private bool _canRetry;
+        private string _lastUserMessage;
 
         public string Role
         {
@@ -92,6 +94,11 @@ namespace Universa.Desktop.Models
                 {
                     _isError = value;
                     OnPropertyChanged();
+                    // Update CanRetry when IsError changes
+                    if (value)
+                    {
+                        CanRetry = true;
+                    }
                 }
             }
         }
@@ -122,6 +129,32 @@ namespace Universa.Desktop.Models
             }
         }
 
+        public bool CanRetry
+        {
+            get => _canRetry;
+            set
+            {
+                if (_canRetry != value)
+                {
+                    _canRetry = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string LastUserMessage
+        {
+            get => _lastUserMessage;
+            set
+            {
+                if (_lastUserMessage != value)
+                {
+                    _lastUserMessage = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public ChatMessage()
         {
             Timestamp = DateTime.UtcNow;
@@ -135,6 +168,7 @@ namespace Universa.Desktop.Models
             IsError = isError;
             IsUserMessage = role == "user";
             Sender = role == "user" ? "You" : "Assistant";
+            CanRetry = isError;
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

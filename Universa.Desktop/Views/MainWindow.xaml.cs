@@ -122,7 +122,7 @@ namespace Universa.Desktop.Views
             // Only initialize MediaPlayerManager if we have a valid MediaElement
             if (_mediaElement != null)
             {
-                base._mediaPlayerManager = new MediaPlayerManager(this, _mediaElement, _configService);
+                base._mediaPlayerManager = new MediaPlayerManager(this);
                 
                 // Initialize MediaControlBar
                 if (mediaControlBar != null)
@@ -868,7 +868,9 @@ namespace Universa.Desktop.Views
                 case "music":
                 case "subsonic":
                 case "navidrome":
-                    OpenMusicTab();
+                    var config = _configService.Provider;
+                    var displayName = !string.IsNullOrEmpty(config.SubsonicName) ? config.SubsonicName : "Music";
+                    OpenMusicTab(displayName);
                     break;
                 case "jellyfin":
                     var jellyfinService = ServiceLocator.Instance.GetRequiredService<JellyfinService>();

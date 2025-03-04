@@ -104,22 +104,30 @@ namespace Universa.Desktop.Windows
         {
             if (MediaPlayer != null)
             {
-                _mediaPlayerManager = new MediaPlayerManager(this as IMediaWindow, MediaPlayer, _configService);
+                // Get the MediaPlayerManager from the service provider
+                _mediaPlayerManager = ServiceLocator.Instance.GetRequiredService<MediaPlayerManager>();
+                
+                // Initialize it with this window
+                _mediaPlayerManager.InitializeWithWindow(this as IMediaWindow);
+                
+                // Create the media controls manager
                 _mediaControlsManager = new MediaControlsManager(
                     this as IMediaWindow,
                     _mediaPlayerManager,
                     MediaControlsGrid,
                     PlayPauseButton,
-                    StopButton,
                     PreviousButton,
                     NextButton,
-                    MuteButton,
+                    ShuffleButton,
+                    VolumeButton,
                     VolumeSlider,
                     TimeInfo,
                     TimelineSlider,
                     NowPlayingText,
                     MediaControlsGrid
                 );
+                
+                // Set the controls manager on the media player manager
                 _mediaPlayerManager.SetControlsManager(_mediaControlsManager);
             }
         }

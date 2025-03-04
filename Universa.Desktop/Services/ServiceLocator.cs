@@ -20,13 +20,20 @@ namespace Universa.Desktop.Services
             // Register additional services not registered in App.xaml.cs
             services.AddSingleton<WeatherManager>();
             services.AddSingleton<Managers.SyncManager>();
-            services.AddSingleton<MediaPlayerManager>();
             services.AddSingleton<TTSManager>();
             services.AddSingleton<CharacterizationService>();
             services.AddSingleton<ModelProvider>();
             services.AddSingleton<ISubsonicService, SubsonicService>();
             services.AddSingleton<JellyfinService>();
             services.AddSingleton<AudiobookshelfService>();
+            services.AddSingleton<IMusicDataService, MusicDataService>();
+            
+            // Register MediaPlayerManager with a factory method that resolves IMediaWindow
+            services.AddSingleton<MediaPlayerManager>(provider => {
+                // The IMediaWindow will be resolved when MainWindow is created
+                // and then the MediaPlayerManager will be properly initialized
+                return new MediaPlayerManager(null);
+            });
         }
 
         public static void Initialize(IServiceProvider serviceProvider)

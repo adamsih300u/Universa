@@ -24,6 +24,7 @@
             <converters:IsCurrentTTSTabConverter x:Key="IsCurrentTTSTabConverter"/>
             <converters:MessageAlignmentConverter x:Key="MessageAlignmentConverter"/>
             <converters:VerificationStatusConverter x:Key="VerificationStatusConverter"/>
+            <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
 
             <!-- Default Styles -->
             <Style x:Key="BaseTextStyle">

@@ -114,14 +114,14 @@ namespace Universa.Desktop.Services
                 {
                     System.Diagnostics.Debug.WriteLine("Creating new FictionWritingBeta instance");
                     _instance = new FictionWritingBeta(apiKey, model, provider, null, filePath, libraryPath);
-                    await _instance.UpdateContentAndInitialize(null);
+                    // Don't initialize with null content, let the caller handle it
                 }
                 else if (_instance.CurrentProvider != provider || _instance.CurrentModel != model)
                 {
                     System.Diagnostics.Debug.WriteLine($"Updating existing FictionWritingBeta instance. Provider change: {_instance.CurrentProvider != provider}, Model change: {_instance.CurrentModel != model}");
                     // Create new instance if provider or model changed
                     _instance = new FictionWritingBeta(apiKey, model, provider, null, filePath, libraryPath);
-                    await _instance.UpdateContentAndInitialize(null);
+                    // Don't initialize with null content, let the caller handle it
                 }
                 else
                 {
@@ -147,6 +147,8 @@ namespace Universa.Desktop.Services
 
         public async Task UpdateContentAndInitialize(string content)
         {
+            System.Diagnostics.Debug.WriteLine($"UpdateContentAndInitialize called with content length: {content?.Length ?? 0}");
+            
             // Store only the most recent conversation context
             var recentMessages = _memory.Where(m => !m.Role.Equals("system", StringComparison.OrdinalIgnoreCase))
                                       .TakeLast(MESSAGE_HISTORY_LIMIT)
@@ -167,10 +169,23 @@ namespace Universa.Desktop.Services
             // Reset refresh counter
             _messagesSinceRefresh = 0;
             _needsRefresh = false;
+            
+            System.Diagnostics.Debug.WriteLine("UpdateContentAndInitialize completed");
         }
 
         private async Task UpdateContent(string content)
         {
+            System.Diagnostics.Debug.WriteLine($"UpdateContent called with content length: {content?.Length ?? 0}");
+            
+            // Check for null content
+            if (string.IsNullOrEmpty(content))
+            {
+                System.Diagnostics.Debug.WriteLine("UpdateContent: content is null or empty");
+                _fictionContent = string.Empty;
+                _frontmatter = new Dictionary<string, string>();
+                return;
+            }
+            
             _fictionContent = content;
             
             // Process frontmatter if present
@@ -229,8 +244,9 @@ namespace Universa.Desktop.Services
                     await ProcessOutlineReference(outlineRef);
                 }
                 
-                // Check for fiction tag
-                if (_frontmatter.ContainsKey("fiction"))
+                // Check for fiction tag or type: fiction
+                if (_frontmatter.ContainsKey("fiction") || 
+                    (_frontmatter.TryGetValue("type", out string docType) && docType.Equals("fiction", StringComparison.OrdinalIgnoreCase)))
                 {
                     // Fiction tag is present in frontmatter
                     System.Diagnostics.Debug.WriteLine("Fiction tag found in frontmatter");
@@ -374,6 +390,8 @@ namespace Universa.Desktop.Services
         /// </summary>
         private Dictionary<string, string> ExtractFrontmatter(string content, out string contentWithoutFrontmatter)
         {
+            System.Diagnostics.Debug.WriteLine($"ExtractFrontmatter called with content length: {content?.Length ?? 0}");
+            
             contentWithoutFrontmatter = content;
             var frontmatter = new Dictionary<string, string>();
             
@@ -393,6 +411,8 @@ namespace Universa.Desktop.Services
                     {
                         // Extract frontmatter content
                         string frontmatterContent = content.Substring(startIndex, endIndex - startIndex);
+                        
+                        System.Diagnostics.Debug.WriteLine($"Extracted frontmatter content: {frontmatterContent}");
                         
                         // Parse frontmatter
                         string[] lines = frontmatterContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -694,6 +714,8 @@ CRITICAL INSTRUCTIONS:
         {
             try
             {
+                System.Diagnostics.Debug.WriteLine($"ProcessRequest called with content length: {content?.Length ?? 0}");
+                
                 // Check if we need to refresh core materials
                 _messagesSinceRefresh++;
                 if (_messagesSinceRefresh >= REFRESH_INTERVAL)
@@ -704,6 +726,7 @@ CRITICAL INSTRUCTIONS:
                 // If content has changed or refresh is needed, update
                 if (_fictionContent != content || _needsRefresh)
                 {
+                    System.Diagnostics.Debug.WriteLine($"Content has changed or refresh is needed. _fictionContent length: {_fictionContent?.Length ?? 0}, content length: {content?.Length ?? 0}");
                     await UpdateContentAndInitialize(content);
                 }
 
@@ -786,6 +809,7 @@ CRITICAL INSTRUCTIONS:
             // Check for empty content
             if (string.IsNullOrEmpty(content))
             {
+                System.Diagnostics.Debug.WriteLine("GetRelevantContent: Content is empty");
                 return string.Empty;
             }
 
@@ -796,16 +820,25 @@ CRITICAL INSTRUCTIONS:
             // If it's a full story analysis or content is small, return everything
             if (needsFullStory || content.Length < 2000)
             {
-                System.Diagnostics.Debug.WriteLine($"Returning full story content for analysis. Triggered by request: {request}");
+                if (needsFullStory)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Returning full story content for analysis. Triggered by keyword in request: {request}");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Returning full story content because it's small ({content.Length} characters < 2000)");
+                }
                 return content;
             }
 
             // Split content into lines to find chapter boundaries
             var lines = content.Split('\n');
+            System.Diagnostics.Debug.WriteLine($"Content has {lines.Length} lines");
 
             // If no lines, return empty
             if (lines.Length == 0)
             {
+                System.Diagnostics.Debug.WriteLine("GetRelevantContent: No lines in content");
                 return string.Empty;
             }
             
@@ -830,17 +863,20 @@ CRITICAL INSTRUCTIONS:
                 // If cursor is beyond the end of the file, use last line
                 if (_currentCursorPosition >= currentPosition)
                 {
+                    System.Diagnostics.Debug.WriteLine($"Cursor position {_currentCursorPosition} is beyond end of file, using last line");
                     currentLineIndex = lines.Length - 1;
                 }
                 // If cursor is at the start or invalid, use first line
                 else
                 {
+                    System.Diagnostics.Debug.WriteLine($"Cursor position {_currentCursorPosition} is invalid, using first line");
                     currentLineIndex = 0;
                 }
             }
 
             // Ensure currentLineIndex is within bounds
             currentLineIndex = Math.Max(0, Math.Min(currentLineIndex, lines.Length - 1));
+            System.Diagnostics.Debug.WriteLine($"Current line index: {currentLineIndex}, line content: '{lines[currentLineIndex]}'");
 
             // Find all chapter boundaries in the document
             var chapterBoundaries = new List<int>();
@@ -848,11 +884,74 @@ CRITICAL INSTRUCTIONS:
             for (int i = 0; i < lines.Length; i++)
             {
                 var line = lines[i].Trim();
+                
+                // Check for Markdown headings (H1-H6)
                 if (line.StartsWith("# ", StringComparison.OrdinalIgnoreCase) || 
+                    line.StartsWith("## ", StringComparison.OrdinalIgnoreCase) ||
+                    line.StartsWith("### ", StringComparison.OrdinalIgnoreCase) ||
+                    line.StartsWith("#### ", StringComparison.OrdinalIgnoreCase) ||
+                    line.StartsWith("##### ", StringComparison.OrdinalIgnoreCase) ||
+                    line.StartsWith("###### ", StringComparison.OrdinalIgnoreCase) ||
+                    // Check for "Chapter" variations (case-insensitive)
                     line.StartsWith("CHAPTER ", StringComparison.OrdinalIgnoreCase) ||
-                    line.Equals("CHAPTER", StringComparison.OrdinalIgnoreCase))
+                    line.Equals("CHAPTER", StringComparison.OrdinalIgnoreCase) ||
+                    // Check for "Part" or "Section" headings (must be standalone or followed by number)
+                    (line.StartsWith("Part ", StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(line, @"^Part\s+\d+", RegexOptions.IgnoreCase)) ||
+                    line.Equals("Part", StringComparison.OrdinalIgnoreCase) ||
+                    (line.StartsWith("Section ", StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(line, @"^Section\s+\d+", RegexOptions.IgnoreCase)) ||
+                    line.Equals("Section", StringComparison.OrdinalIgnoreCase))
                 {
+                    System.Diagnostics.Debug.WriteLine($"Found chapter boundary at line {i}: '{line}' (Markdown heading or explicit chapter marker)");
                     chapterBoundaries.Add(i);
+                }
+                // Check for numbered headings (e.g., "1.", "1)") ONLY if they appear to be chapter headings
+                // This avoids treating numbered list items as chapter boundaries
+                else if ((Regex.IsMatch(line, @"^\d+[\.\)]") && 
+                         // Only consider it a chapter heading if it's followed by a title-like string
+                         // (capitalized words, not just a continuation of a sentence)
+                         Regex.IsMatch(line, @"^\d+[\.\)]\s+[A-Z][a-zA-Z\s]+$")) ||
+                         // Or if it's just a number by itself (like "1" or "I" for chapter numbers)
+                         Regex.IsMatch(line, @"^(\d+|[IVXLCDM]+)$"))
+                {
+                    // Additional check: if this is part of a numbered list, don't treat it as a chapter boundary
+                    bool isPartOfNumberedList = false;
+                    
+                    // Check if previous line is also a numbered item
+                    if (i > 0)
+                    {
+                        var prevLine = lines[i - 1].Trim();
+                        if (Regex.IsMatch(prevLine, @"^\d+[\.\)]"))
+                        {
+                            isPartOfNumberedList = true;
+                            System.Diagnostics.Debug.WriteLine($"Line {i} appears to be part of a numbered list (previous line is also numbered)");
+                        }
+                    }
+                    
+                    // Check if next line is also a numbered item
+                    if (i < lines.Length - 1 && !isPartOfNumberedList)
+                    {
+                        var nextLine = lines[i + 1].Trim();
+                        if (Regex.IsMatch(nextLine, @"^\d+[\.\)]"))
+                        {
+                            isPartOfNumberedList = true;
+                            System.Diagnostics.Debug.WriteLine($"Line {i} appears to be part of a numbered list (next line is also numbered)");
+                        }
+                    }
+                    
+                    if (!isPartOfNumberedList)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Found chapter boundary at line {i}: '{line}' (Numbered heading)");
+                        chapterBoundaries.Add(i);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"NOT treating as chapter boundary at line {i}: '{line}' (Part of a numbered list)");
+                    }
+                }
+                // Debug log for numbered list items that are NOT considered chapter boundaries
+                else if (Regex.IsMatch(line, @"^\d+[\.\)]"))
+                {
+                    System.Diagnostics.Debug.WriteLine($"NOT treating as chapter boundary at line {i}: '{line}' (Appears to be a numbered list item)");
                 }
             }
             if (!chapterBoundaries.Contains(lines.Length))
@@ -870,6 +969,9 @@ CRITICAL INSTRUCTIONS:
                     break;
                 }
             }
+            
+            System.Diagnostics.Debug.WriteLine($"Found {chapterBoundaries.Count} chapter boundaries");
+            System.Diagnostics.Debug.WriteLine($"Current chapter index: {currentChapterIndex} (boundaries: {chapterBoundaries[currentChapterIndex]} to {chapterBoundaries[currentChapterIndex + 1]})");
 
             // Build the content with context
             var result = new StringBuilder();
@@ -877,76 +979,100 @@ CRITICAL INSTRUCTIONS:
             // Add a marker if we're not starting from the beginning and there's a previous chapter
             if (currentChapterIndex > 0 && chapterBoundaries.Count > 1)
             {
-                result.AppendLine("... (Previous content omitted) ...\n");
+                result.AppendLine("... (Previous content omitted) ...");
                 
                 // Add the entire previous chapter
-                result.AppendLine("=== PREVIOUS CHAPTER ===");
                 var previousChapterStart = chapterBoundaries[currentChapterIndex - 1];
                 var previousChapterEnd = chapterBoundaries[currentChapterIndex] - 1;
                 if (previousChapterEnd >= previousChapterStart)
                 {
+                    // Get the complete previous chapter content
                     var previousChapterContent = string.Join("\n", 
                         lines.Skip(previousChapterStart)
                              .Take(previousChapterEnd - previousChapterStart + 1));
-                    result.AppendLine(previousChapterContent);
-                    result.AppendLine();
+                    
+                    if (!string.IsNullOrEmpty(previousChapterContent))
+                    {
+                        result.AppendLine("=== PREVIOUS CHAPTER ===");
+                        result.AppendLine(previousChapterContent);
+                        System.Diagnostics.Debug.WriteLine($"Added complete previous chapter (lines {previousChapterStart}-{previousChapterEnd})");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("Previous chapter was empty");
+                    }
                 }
             }
 
             // Add current chapter content with cursor position
-            result.AppendLine("=== CURRENT CHAPTER ===");
-            if (currentChapterIndex < chapterBoundaries.Count - 1)
+            var chapterStart = chapterBoundaries[currentChapterIndex];
+            var chapterEnd = chapterBoundaries[Math.Min(currentChapterIndex + 1, chapterBoundaries.Count - 1)];
+            System.Diagnostics.Debug.WriteLine($"Current chapter spans lines {chapterStart}-{chapterEnd}");
+            
+            // Get the complete current chapter content
+            var currentChapterContent = string.Join("\n",
+                lines.Skip(chapterStart)
+                     .Take(chapterEnd - chapterStart));
+            
+            if (!string.IsNullOrEmpty(currentChapterContent))
             {
-                var chapterStart = chapterBoundaries[currentChapterIndex];
-                var chapterEnd = chapterBoundaries[currentChapterIndex + 1];
+                result.AppendLine("\n=== CURRENT CHAPTER ===");
+                // Insert cursor position marker at the appropriate line
+                var currentChapterLines = currentChapterContent.Split('\n');
+                var cursorLineInChapter = currentLineIndex - chapterStart;
                 
-                // Get content before cursor
-                if (currentLineIndex > chapterStart)
+                // Ensure cursorLineInChapter is within bounds
+                cursorLineInChapter = Math.Max(0, Math.Min(cursorLineInChapter, currentChapterLines.Length - 1));
+                
+                // Add the complete chapter content with cursor position marker
+                for (int i = 0; i < currentChapterLines.Length; i++)
                 {
-                    var beforeCursor = string.Join("\n", 
-                        lines.Skip(chapterStart)
-                             .Take(currentLineIndex - chapterStart));
-                    if (!string.IsNullOrEmpty(beforeCursor))
+                    // If we're at the cursor line, add the cursor marker before the line
+                    if (i == cursorLineInChapter)
                     {
-                        result.AppendLine(beforeCursor);
+                        result.AppendLine("<<CURSOR POSITION>>");
                     }
+                    result.AppendLine(currentChapterLines[i]);
                 }
-
-                // Add cursor position marker and current line
+                
+                System.Diagnostics.Debug.WriteLine($"Added complete current chapter with cursor marker at line {cursorLineInChapter} relative to chapter start");
+            }
+            else
+            {
+                result.AppendLine("\n=== CURRENT CHAPTER ===");
                 result.AppendLine("<<CURSOR POSITION>>");
-                result.AppendLine(lines[currentLineIndex]);
+                System.Diagnostics.Debug.WriteLine("Current chapter was empty");
+            }
 
-                // Get content after cursor
-                if (currentLineIndex < chapterEnd - 1)
+            // Add next chapter if it exists
+            if (currentChapterIndex < chapterBoundaries.Count - 2)
+            {
+                var nextChapterStart = chapterBoundaries[currentChapterIndex + 1];
+                var nextChapterEnd = chapterBoundaries[currentChapterIndex + 2] - 1;
+                if (nextChapterEnd >= nextChapterStart)
                 {
-                    var afterCursor = string.Join("\n", 
-                        lines.Skip(currentLineIndex + 1)
-                             .Take(chapterEnd - currentLineIndex - 1));
-                    if (!string.IsNullOrEmpty(afterCursor))
+                    // Get the complete next chapter content
+                    var nextChapterContent = string.Join("\n",
+                        lines.Skip(nextChapterStart)
+                             .Take(nextChapterEnd - nextChapterStart + 1));
+                    
+                    if (!string.IsNullOrEmpty(nextChapterContent))
                     {
-                        result.AppendLine(afterCursor);
+                        result.AppendLine("\n=== NEXT CHAPTER ===");
+                        result.AppendLine(nextChapterContent);
+                        System.Diagnostics.Debug.WriteLine($"Added complete next chapter (lines {nextChapterStart}-{nextChapterEnd})");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("Next chapter was empty");
                     }
                 }
-
-                // Add next chapter if it exists
-                if (currentChapterIndex < chapterBoundaries.Count - 2)
+                
+                // Add marker if there are more chapters after this
+                if (currentChapterIndex < chapterBoundaries.Count - 3)
                 {
-                    result.AppendLine("\n=== NEXT CHAPTER ===");
-                    var nextChapterStart = chapterBoundaries[currentChapterIndex + 1];
-                    var nextChapterEnd = chapterBoundaries[currentChapterIndex + 2] - 1;
-                    if (nextChapterEnd >= nextChapterStart)
-                    {
-                        var nextChapterContent = string.Join("\n",
-                            lines.Skip(nextChapterStart)
-                                 .Take(nextChapterEnd - nextChapterStart + 1));
-                        result.AppendLine(nextChapterContent);
-                    }
-                    
-                    // Add marker if there are more chapters after this
-                    if (currentChapterIndex < chapterBoundaries.Count - 3)
-                    {
-                        result.AppendLine("\n... (Subsequent content omitted) ...");
-                    }
+                    result.AppendLine("\n... (Subsequent content omitted) ...");
+                    System.Diagnostics.Debug.WriteLine("Added marker for subsequent content");
                 }
             }
 
@@ -954,7 +1080,11 @@ CRITICAL INSTRUCTIONS:
             System.Diagnostics.Debug.WriteLine($"Current chapter index: {currentChapterIndex}");
             System.Diagnostics.Debug.WriteLine($"Current line index: {currentLineIndex}");
             
-            return result.ToString();
+            // Log the size of the selected content vs. full content
+            var selectedContent = result.ToString();
+            System.Diagnostics.Debug.WriteLine($"Selected content size: {selectedContent.Length} characters ({(selectedContent.Length * 100.0 / content.Length):F1}% of full content)");
+            
+            return selectedContent;
         }
 
         public void UpdateCursorPosition(int position)

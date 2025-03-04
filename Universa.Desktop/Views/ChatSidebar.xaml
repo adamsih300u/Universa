@@ -213,6 +213,29 @@
                                     <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}" 
                                              Style="{StaticResource TimestampStyle}"
                                              Foreground="{DynamicResource TextBrush}"/>
+                                    
+                                    <!-- Retry Button for Error Messages -->
+                                    <Button Content="Retry" 
+                                            Visibility="{Binding CanRetry, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                            Command="{Binding DataContext.RetryCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}"
+                                            Margin="0,8,0,0"
+                                            Padding="8,4"
+                                            HorizontalAlignment="Right"
+                                            Background="{DynamicResource ListItemSelectedBackgroundBrush}"
+                                            Foreground="{DynamicResource TextBrush}"
+                                            BorderBrush="{DynamicResource BorderBrush}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                <Setter Property="Opacity" Value="0.8"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Opacity" Value="1"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
                                 </StackPanel>
                             </Border>
                         </Grid>

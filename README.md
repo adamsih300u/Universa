@@ -41,24 +41,6 @@ The project is structured as follows:
 - **Universa.Web**: Web components (if applicable)
 - **Docs**: Documentation
 
-## Creating Releases
-
-Universa uses GitHub Actions to automatically build and publish releases. To create a new release:
-
-1. Ensure all changes are committed and pushed to the main branch
-2. Create and push a new tag with a version number:
-   ```
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-3. GitHub Actions will automatically:
-   - Build the application
-   - Package it as a self-contained executable
-   - Create a ZIP archive
-   - Publish a new release on GitHub with the ZIP attached
-
-The release will be available for download on the [Releases page](https://github.com/adamsih300u/Universa/releases).
-
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

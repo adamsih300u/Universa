@@ -28,5 +28,7 @@ namespace Universa.Desktop.Services
         public TimeSpan Duration { get; set; }
         public string Artist { get; set; }
         public string Album { get; set; }
+        public string StreamUrl { get; set; }
+        public string CoverArtUrl { get; set; }
     }
 } 

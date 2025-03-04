@@ -40,6 +40,7 @@ namespace Universa.Desktop.ViewModels
         private bool _useBetaChains;
         private MusicTab _currentMusicTab;
         private bool _isInitializing = true;
+        private string _lastUserMessage;
 
         public ObservableCollection<Models.ChatMessage> Messages
         {
@@ -154,9 +155,10 @@ namespace Universa.Desktop.ViewModels
             }
         }
 
-        public ICommand SendCommand { get; }
-        public ICommand ToggleModeCommand { get; }
-        public ICommand VerifyDeviceCommand { get; }
+        public ICommand SendCommand { get; private set; }
+        public ICommand ToggleModeCommand { get; private set; }
+        public ICommand VerifyDeviceCommand { get; private set; }
+        public ICommand RetryCommand { get; private set; }
 
         public string MatrixUserId
         {
@@ -195,6 +197,7 @@ namespace Universa.Desktop.ViewModels
             SendCommand = new RelayCommand(async _ => await SendMessageAsync());
             ToggleModeCommand = new RelayCommand(_ => UpdateMode());
             VerifyDeviceCommand = new RelayCommand(async _ => await VerifyDeviceAsync());
+            RetryCommand = new RelayCommand(async param => await RetryMessageAsync(param as Models.ChatMessage));
 
             // Subscribe to messages collection changes
             _messages.CollectionChanged += Messages_CollectionChanged;
@@ -584,19 +587,43 @@ namespace Universa.Desktop.ViewModels
                         // Check for frontmatter if this is a MarkdownTab
                         if (selectedTab?.Content is MarkdownTab markdownTab && markdownTab.HasFrontmatter())
                         {
-                            // Check if the frontmatter contains the fiction tag
-                            isFiction = isFiction || 
-                                       markdownTab.GetFrontmatterValue("fiction") != null;
-                                       
-                            // Check if the frontmatter contains reference tags
-                            isReference = isReference || 
-                                         markdownTab.GetFrontmatterValue("reference") != null ||
-                                         markdownTab.GetFrontmatterValue("ref") != null ||
-                                         markdownTab.GetFrontmatterKeys().Any(k => k.StartsWith("ref "));
-                                         
-                            // Check if the frontmatter contains screenplay tag
-                            isScreenplay = isScreenplay || 
-                                          markdownTab.GetFrontmatterValue("screenplay") != null;
+                            // Check for type field in frontmatter
+                            string documentType = markdownTab.GetFrontmatterValue("type");
+                            if (!string.IsNullOrEmpty(documentType))
+                            {
+                                // Set flags based on type value
+                                switch (documentType.ToLowerInvariant())
+                                {
+                                    case "fiction":
+                                        isFiction = true;
+                                        break;
+                                    case "reference":
+                                    case "ref":
+                                        isReference = true;
+                                        break;
+                                    case "screenplay":
+                                        isScreenplay = true;
+                                        break;
+                                }
+                                Debug.WriteLine($"Document type from frontmatter: {documentType}");
+                            }
+                            else
+                            {
+                                // Maintain backward compatibility with existing boolean flags
+                                // Check if the frontmatter contains the fiction tag
+                                isFiction = isFiction || 
+                                           markdownTab.GetFrontmatterValue("fiction") != null;
+                                           
+                                // Check if the frontmatter contains reference tags
+                                isReference = isReference || 
+                                             markdownTab.GetFrontmatterValue("reference") != null ||
+                                             markdownTab.GetFrontmatterValue("ref") != null ||
+                                             markdownTab.GetFrontmatterKeys().Any(k => k.StartsWith("ref "));
+                                             
+                                // Check if the frontmatter contains screenplay tag
+                                isScreenplay = isScreenplay || 
+                                              markdownTab.GetFrontmatterValue("screenplay") != null;
+                            }
                                           
                             Debug.WriteLine("Checked frontmatter for tags");
                         }
@@ -651,10 +678,18 @@ namespace Universa.Desktop.ViewModels
                     if (UseBetaChains)
                     {
                         Debug.WriteLine("Creating FictionWritingBeta service");
+                        Debug.WriteLine($"File path: {filePath}");
+                        Debug.WriteLine($"File content length: {fileContent?.Length ?? 0}");
+                        
                         _currentService = await FictionWritingBeta.GetInstance(apiKey, SelectedModel.Name, SelectedModel.Provider, filePath, libraryPath);
                         if (_currentService is FictionWritingBeta fictionBeta && !string.IsNullOrEmpty(fileContent))
                         {
+                            Debug.WriteLine($"Initializing FictionWritingBeta with content length: {fileContent.Length}");
                             await fictionBeta.UpdateContentAndInitialize(fileContent);
+                        }
+                        else
+                        {
+                            Debug.WriteLine($"Could not initialize FictionWritingBeta. _currentService is FictionWritingBeta: {_currentService is FictionWritingBeta}, fileContent is null or empty: {string.IsNullOrEmpty(fileContent)}");
                         }
                     }
                     else
@@ -687,10 +722,18 @@ namespace Universa.Desktop.ViewModels
             else if (isFiction)
             {
                 Debug.WriteLine("Creating FictionWritingBeta service");
+                Debug.WriteLine($"File path: {filePath}");
+                Debug.WriteLine($"File content length: {fileContent?.Length ?? 0}");
+                
                 _currentService = await FictionWritingBeta.GetInstance(apiKey, SelectedModel.Name, SelectedModel.Provider, filePath, libraryPath);
                 if (_currentService is FictionWritingBeta fictionBeta && !string.IsNullOrEmpty(fileContent))
                 {
+                    Debug.WriteLine($"Initializing FictionWritingBeta with content length: {fileContent.Length}");
                     await fictionBeta.UpdateContentAndInitialize(fileContent);
+                }
+                else
+                {
+                    Debug.WriteLine($"Could not initialize FictionWritingBeta. _currentService is FictionWritingBeta: {_currentService is FictionWritingBeta}, fileContent is null or empty: {string.IsNullOrEmpty(fileContent)}");
                 }
             }
 
@@ -716,6 +759,7 @@ namespace Universa.Desktop.ViewModels
 
             var userInput = InputText;
             InputText = string.Empty;
+            _lastUserMessage = userInput;
 
             try
             {
@@ -761,7 +805,10 @@ namespace Universa.Desktop.ViewModels
                     if (service == null)
                     {
                         Messages.Remove(thinkingMessage);
-                        Messages.Add(new Models.ChatMessage("system", "Failed to create language service. Please check your settings and try again.", true));
+                        Messages.Add(new Models.ChatMessage("system", "Failed to create language service. Please check your settings and try again.", true)
+                        {
+                            LastUserMessage = userInput
+                        });
                         return;
                     }
                     Debug.WriteLine("Service created, processing request...");
@@ -771,7 +818,10 @@ namespace Universa.Desktop.ViewModels
                 {
                     Debug.WriteLine($"Error processing request: {ex}");
                     Messages.Remove(thinkingMessage);
-                    Messages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true));
+                    Messages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true)
+                    {
+                        LastUserMessage = userInput
+                    });
                     return;
                 }
 
@@ -785,8 +835,33 @@ namespace Universa.Desktop.ViewModels
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in SendMessageAsync: {ex}");
-                Messages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true));
+                Messages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true)
+                {
+                    LastUserMessage = userInput
+                });
             }
+        }
+
+        private async Task RetryMessageAsync(Models.ChatMessage errorMessage)
+        {
+            if (errorMessage == null || string.IsNullOrEmpty(errorMessage.LastUserMessage))
+            {
+                Debug.WriteLine("Cannot retry: No message to retry or LastUserMessage is empty");
+                return;
+            }
+
+            // Store the last user message
+            string userInput = errorMessage.LastUserMessage;
+            Debug.WriteLine($"Retrying message: {userInput}");
+
+            // Remove the error message
+            Messages.Remove(errorMessage);
+
+            // Set the input text to the last user message
+            InputText = userInput;
+
+            // Send the message again
+            await SendMessageAsync();
         }
 
         private string GetApiKey(AIProvider provider)

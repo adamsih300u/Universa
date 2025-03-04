@@ -6,6 +6,7 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Threading;
 using System.Diagnostics;
 using Universa.Desktop.Windows;
+using Universa.Desktop.Models;
 
 namespace Universa.Desktop.Managers
 {
@@ -59,67 +60,327 @@ namespace Universa.Desktop.Managers
 
         private void InitializePlaybackControls()
         {
-            Debug.WriteLine("========== INITIALIZE PLAYBACK CONTROLS START ==========");
-            try
+            Debug.WriteLine("Initializing playback controls");
+            
+            // Set up play/pause button
+            if (_playPauseButton != null)
             {
+                Debug.WriteLine("Setting up play/pause button click handler");
+                
+                // Remove any existing handlers to avoid duplicates
+                _playPauseButton.Click -= PlayPauseButton_Click;
+                _playPauseButton.Click += PlayPauseButton_Click;
+                
+                Debug.WriteLine("Play/pause button click handler set up");
+                
+                // Set initial button state
+                UpdatePlayPauseButton(_mediaPlayerManager.IsPlaying);
+            }
+            else
+            {
+                Debug.WriteLine("WARNING: _playPauseButton is null");
+            }
+            
+            // Set up previous button
+            if (_previousButton != null)
+            {
+                Debug.WriteLine("Setting up previous button click handler");
+                
+                // Remove any existing handlers to avoid duplicates
+                _previousButton.Click -= PreviousButton_Click;
+                _previousButton.Click += PreviousButton_Click;
+                
+                Debug.WriteLine("Previous button click handler set up");
+            }
+            else
+            {
+                Debug.WriteLine("WARNING: _previousButton is null");
+            }
+            
+            // Set up next button
+            if (_nextButton != null)
+            {
+                Debug.WriteLine("Setting up next button click handler");
+                
+                // Remove any existing handlers to avoid duplicates
+                _nextButton.Click -= NextButton_Click;
+                _nextButton.Click += NextButton_Click;
+                
+                Debug.WriteLine("Next button click handler set up");
+            }
+            else
+            {
+                Debug.WriteLine("WARNING: _nextButton is null");
+            }
+            
+            // Set up shuffle button
+            if (_shuffleButton != null)
+            {
+                Debug.WriteLine("Setting up shuffle button click handler");
+                
+                // Remove any existing handlers to avoid duplicates
+                _shuffleButton.Click -= ShuffleButton_Click;
+                _shuffleButton.Click += ShuffleButton_Click;
+                
+                Debug.WriteLine("Shuffle button click handler set up");
+                
+                // Set initial button state
+                UpdateShuffleButton(_mediaPlayerManager.IsShuffleEnabled);
+            }
+            else
+            {
+                Debug.WriteLine("WARNING: _shuffleButton is null");
+            }
+            
+            // Subscribe to media player events
+            Debug.WriteLine("Subscribing to media player events");
+            
+            // Unsubscribe first to avoid duplicates
+            _mediaPlayerManager.PlaybackStarted -= MediaPlayerManager_PlaybackStarted;
+            _mediaPlayerManager.PlaybackPaused -= MediaPlayerManager_PlaybackPaused;
+            _mediaPlayerManager.PlaybackStopped -= MediaPlayerManager_PlaybackStopped;
+            _mediaPlayerManager.ShuffleChanged -= MediaPlayerManager_ShuffleChanged;
+            _mediaPlayerManager.TrackChanged -= MediaPlayerManager_TrackChanged;
+            
+            // Subscribe to events
+            _mediaPlayerManager.PlaybackStarted += MediaPlayerManager_PlaybackStarted;
+            _mediaPlayerManager.PlaybackPaused += MediaPlayerManager_PlaybackPaused;
+            _mediaPlayerManager.PlaybackStopped += MediaPlayerManager_PlaybackStopped;
+            _mediaPlayerManager.ShuffleChanged += MediaPlayerManager_ShuffleChanged;
+            _mediaPlayerManager.TrackChanged += MediaPlayerManager_TrackChanged;
+            
+            Debug.WriteLine("Media player event handlers set up");
+        }
+        
+        private void PlayPauseButton_Click(object sender, RoutedEventArgs e)
+        {
+            Debug.WriteLine($"Play/Pause button clicked. Current state: {(_mediaPlayerManager.IsPlaying ? "Playing" : "Paused")}");
+            if (_mediaPlayerManager.IsPlaying)
+            {
+                Debug.WriteLine("Calling Pause()");
+                _mediaPlayerManager.Pause();
+            }
+            else
+            {
+                Debug.WriteLine("Calling Play()");
+                _mediaPlayerManager.Play();
+            }
+        }
+        
+        private void PreviousButton_Click(object sender, RoutedEventArgs e)
+        {
+            Debug.WriteLine("Previous button clicked");
+            _mediaPlayerManager.Previous();
+        }
+        
+        private void NextButton_Click(object sender, RoutedEventArgs e)
+        {
+            Debug.WriteLine("Next button clicked");
+            _mediaPlayerManager.Next();
+        }
+        
+        private void ShuffleButton_Click(object sender, RoutedEventArgs e)
+        {
+            Debug.WriteLine("Shuffle button clicked");
+            _mediaPlayerManager.ToggleShuffle();
+        }
+        
+        private void MediaPlayerManager_PlaybackStarted(object sender, EventArgs e)
+        {
+            Debug.WriteLine("PlaybackStarted event received");
+            UpdatePlayPauseButton(true);
+            UpdateControlsVisibility(_mediaPlayerManager.IsPlayingVideo);
+        }
+        
+        private void MediaPlayerManager_PlaybackPaused(object sender, EventArgs e)
+        {
+            Debug.WriteLine("PlaybackPaused event received");
+            UpdatePlayPauseButton(false);
+        }
+        
+        private void MediaPlayerManager_PlaybackStopped(object sender, EventArgs e)
+        {
+            Debug.WriteLine("PlaybackStopped event received");
+            UpdatePlayPauseButton(false);
+            UpdateControlsVisibility(false);
+        }
+        
+        private void MediaPlayerManager_ShuffleChanged(object sender, bool isEnabled)
+        {
+            Debug.WriteLine($"ShuffleChanged event received: {isEnabled}");
+            UpdateShuffleButton(isEnabled);
+        }
+        
+        private void MediaPlayerManager_TrackChanged(object sender, Universa.Desktop.Models.Track track)
+        {
+            Debug.WriteLine($"TrackChanged event received: {track?.Title}");
+            UpdateControlsVisibility(track?.IsVideo ?? false);
+        }
+        
+        private void UpdateControlsVisibility(bool isPlayingVideo)
+        {
+            Debug.WriteLine($"UpdateControlsVisibility called with isPlayingVideo={isPlayingVideo}");
+            
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                // When playing a video, we still want to show the controls
+                // but we might want to adjust some of them
+                
+                // Always show the play/pause button
+                if (_playPauseButton != null)
+                {
+                    _playPauseButton.Visibility = Visibility.Visible;
+                }
+                
+                // Show previous/next buttons for both audio and video
+                if (_previousButton != null)
+                {
+                    _previousButton.Visibility = Visibility.Visible;
+                }
+                
+                if (_nextButton != null)
+                {
+                    _nextButton.Visibility = Visibility.Visible;
+                }
+                
+                // Show shuffle button only for audio
+                if (_shuffleButton != null)
+                {
+                    _shuffleButton.Visibility = isPlayingVideo ? Visibility.Collapsed : Visibility.Visible;
+                }
+                
+                // Update the timeline slider visibility
+                if (_timelineSlider != null)
+                {
+                    _timelineSlider.Visibility = isPlayingVideo ? Visibility.Collapsed : Visibility.Visible;
+                }
+                
+                // Update the time info visibility
                 if (_timeInfo != null)
                 {
-                    _timeInfo.Visibility = Visibility.Visible;
-                    _timeInfo.Text = "00:00 / 00:00";
+                    _timeInfo.Visibility = isPlayingVideo ? Visibility.Collapsed : Visibility.Visible;
                 }
-
-                // Remove the duplicate timer since MediaPlayerManager already handles updates
-                Debug.WriteLine("Playback controls initialized successfully");
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"ERROR initializing playback controls: {ex.Message}");
-                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-            }
-            Debug.WriteLine("========== INITIALIZE PLAYBACK CONTROLS END ==========\n");
+                
+                Debug.WriteLine("Updated controls visibility based on video playback state");
+            });
         }
-
+        
         public void ShowMediaControls()
         {
             Debug.WriteLine("\n========== SHOW MEDIA CONTROLS ==========");
             try
             {
-                if (_controlsPanel == null)
-                {
-                    Debug.WriteLine("ERROR: _controlsPanel is null");
-                    return;
-                }
-
-                // Make sure we're on the UI thread
+                // Make sure we're on the UI thread for all UI operations
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    Debug.WriteLine("Setting controls panel visibility...");
+                    Debug.WriteLine("ShowMediaControls: Running on UI thread");
                     
-                    // Only update visibility if it's not already visible
-                    if (_controlsPanel.Visibility != Visibility.Visible)
+                    // Try multiple approaches to ensure the controls are visible
+                    
+                    // Approach 1: Use the controls panel if available
+                    if (_controlsPanel != null)
                     {
+                        Debug.WriteLine("ShowMediaControls: Setting _controlsPanel visibility to Visible");
                         _controlsPanel.Visibility = Visibility.Visible;
-                        Debug.WriteLine("Media controls panel made visible");
                     }
                     else
                     {
-                        Debug.WriteLine("Media controls panel already visible, skipping update");
+                        Debug.WriteLine("ShowMediaControls: _controlsPanel is null");
                     }
                     
-                    if (_mediaControlsGrid != null && _mediaControlsGrid.Visibility != Visibility.Visible)
+                    // Approach 2: Use the media controls grid if available
+                    if (_mediaControlsGrid != null)
                     {
+                        Debug.WriteLine("ShowMediaControls: Setting _mediaControlsGrid visibility to Visible");
                         _mediaControlsGrid.Visibility = Visibility.Visible;
                     }
-
-                    // Show/hide playlist controls based on media type
-                    bool isPlayingVideo = Application.Current.Windows.OfType<VideoWindow>().Any();
-                    if (_previousButton != null) _previousButton.Visibility = isPlayingVideo ? Visibility.Collapsed : Visibility.Visible;
-                    if (_nextButton != null) _nextButton.Visibility = isPlayingVideo ? Visibility.Collapsed : Visibility.Visible;
+                    else
+                    {
+                        Debug.WriteLine("ShowMediaControls: _mediaControlsGrid is null");
+                    }
+                    
+                    // Approach 3: Use the main window's media control bar if available
+                    if (_mainWindow != null && _mainWindow.MediaControlBar != null)
+                    {
+                        Debug.WriteLine("ShowMediaControls: Setting _mainWindow.MediaControlBar visibility to Visible");
+                        _mainWindow.MediaControlBar.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        Debug.WriteLine("ShowMediaControls: _mainWindow or its MediaControlBar is null");
+                    }
+                    
+                    // Approach 4: Try to get the main window as a last resort
+                    var mainWindow = Application.Current.MainWindow as IMediaWindow;
+                    if (mainWindow != null)
+                    {
+                        Debug.WriteLine("ShowMediaControls: Found Application.Current.MainWindow");
+                        
+                        if (mainWindow.MediaControlBar != null)
+                        {
+                            Debug.WriteLine("ShowMediaControls: Setting mainWindow.MediaControlBar visibility to Visible");
+                            mainWindow.MediaControlBar.Visibility = Visibility.Visible;
+                        }
+                        else
+                        {
+                            Debug.WriteLine("ShowMediaControls: mainWindow.MediaControlBar is null");
+                        }
+                        
+                        if (mainWindow.MediaControlsGrid != null)
+                        {
+                            Debug.WriteLine("ShowMediaControls: Setting mainWindow.MediaControlsGrid visibility to Visible");
+                            mainWindow.MediaControlsGrid.Visibility = Visibility.Visible;
+                        }
+                        else
+                        {
+                            Debug.WriteLine("ShowMediaControls: mainWindow.MediaControlsGrid is null");
+                        }
+                    }
+                    else
+                    {
+                        Debug.WriteLine("ShowMediaControls: Could not find Application.Current.MainWindow as IMediaWindow");
+                    }
+                    
+                    // Approach 5: Try to find the media control bar by name in the main window
+                    if (Application.Current.MainWindow != null)
+                    {
+                        Debug.WriteLine("ShowMediaControls: Trying to find media control bar by name");
+                        
+                        try
+                        {
+                            var mediaControlBar = Application.Current.MainWindow.FindName("MediaControlBar") as UIElement;
+                            if (mediaControlBar != null)
+                            {
+                                Debug.WriteLine("ShowMediaControls: Found MediaControlBar by name, setting visibility to Visible");
+                                mediaControlBar.Visibility = Visibility.Visible;
+                            }
+                            else
+                            {
+                                Debug.WriteLine("ShowMediaControls: Could not find MediaControlBar by name");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"ShowMediaControls: Error finding MediaControlBar by name: {ex.Message}");
+                        }
+                    }
+                    
+                    // Make sure the playback controls are visible
+                    if (_playPauseButton != null) _playPauseButton.Visibility = Visibility.Visible;
+                    if (_previousButton != null) _previousButton.Visibility = Visibility.Visible;
+                    if (_nextButton != null) _nextButton.Visibility = Visibility.Visible;
+                    if (_shuffleButton != null) _shuffleButton.Visibility = Visibility.Visible;
+                    
+                    // Update the visibility of playlist controls based on media type
+                    bool isPlayingVideo = _mediaPlayerManager != null && _mediaPlayerManager.IsPlayingVideo;
+                    UpdateControlsVisibility(isPlayingVideo);
+                    
+                    Debug.WriteLine("ShowMediaControls: Completed setting visibility");
                 });
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"ERROR showing media controls: {ex.Message}");
+                Debug.WriteLine($"Error in ShowMediaControls: {ex.Message}");
                 Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
             Debug.WriteLine("========== SHOW MEDIA CONTROLS END ==========\n");
@@ -153,11 +414,42 @@ namespace Universa.Desktop.Managers
             }
         }
 
-        public void UpdatePlaybackButton(bool isPlaying)
+        public void UpdatePlayPauseButton(bool isPlaying)
         {
-            if (_playPauseButton != null)
+            Debug.WriteLine($"UpdatePlayPauseButton called with isPlaying={isPlaying}");
+            
+            try
             {
-                _playPauseButton.Content = isPlaying ? "⏸" : "▶";
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    if (_playPauseButton != null)
+                    {
+                        // When playing, show pause icon (⏸)
+                        // When paused, show play icon (▶)
+                        if (isPlaying)
+                        {
+                            Debug.WriteLine("Setting play/pause button to PAUSE icon");
+                            _playPauseButton.Content = "⏸"; // Pause symbol
+                            _playPauseButton.ToolTip = "Pause";
+                        }
+                        else
+                        {
+                            Debug.WriteLine("Setting play/pause button to PLAY icon");
+                            _playPauseButton.Content = "▶"; // Play symbol
+                            _playPauseButton.ToolTip = "Play";
+                        }
+                        
+                        Debug.WriteLine($"Play/Pause button updated. Content: {_playPauseButton.Content}, ToolTip: {_playPauseButton.ToolTip}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine("Play/Pause button is null, cannot update");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in UpdatePlayPauseButton: {ex.Message}");
             }
         }
 
@@ -189,6 +481,8 @@ namespace Universa.Desktop.Managers
 
         public void UpdateNowPlaying(string title, string artist = null, string series = null, string season = null)
         {
+            Debug.WriteLine($"MediaControlsManager.UpdateNowPlaying called with title: {title}, artist: {artist}, series: {series}, season: {season}");
+            
             try
             {
                 Application.Current.Dispatcher.Invoke(() =>
@@ -196,28 +490,57 @@ namespace Universa.Desktop.Managers
                     if (_nowPlayingText == null)
                     {
                         Debug.WriteLine("WARNING: _nowPlayingText is null");
+                        
+                        // Try to get the now playing text from the main window as a last resort
+                        var mainWindow = Application.Current.MainWindow as IMediaWindow;
+                        if (mainWindow != null && mainWindow.NowPlayingText != null)
+                        {
+                            Debug.WriteLine("Found main window's NowPlayingText, updating it directly");
+                            
+                            string displayText = title;
+                            if (!string.IsNullOrEmpty(series))
+                            {
+                                displayText = $"{series} - {displayText}";
+                                if (!string.IsNullOrEmpty(season))
+                                {
+                                    displayText = $"{displayText} - {season}";
+                                }
+                            }
+                            else if (!string.IsNullOrEmpty(artist))
+                            {
+                                displayText = $"{artist} - {displayText}";
+                            }
+                            
+                            mainWindow.NowPlayingText.Text = displayText;
+                            Debug.WriteLine($"Updated main window's now playing text to: {displayText}");
+                        }
+                        else
+                        {
+                            Debug.WriteLine("Could not find main window or its NowPlayingText");
+                        }
+                        
                         return;
                     }
 
-                    string displayText = title;
+                    string nowPlayingText = title;
                     if (!string.IsNullOrEmpty(series))
                     {
-                        displayText = $"{series} - {displayText}";
+                        nowPlayingText = $"{series} - {nowPlayingText}";
                         if (!string.IsNullOrEmpty(season))
                         {
-                            displayText = $"{displayText} - {season}";
+                            nowPlayingText = $"{nowPlayingText} - {season}";
                         }
                     }
                     else if (!string.IsNullOrEmpty(artist))
                     {
-                        displayText = $"{artist} - {displayText}";
+                        nowPlayingText = $"{artist} - {nowPlayingText}";
                     }
 
                     // Only update if the text has actually changed
-                    if (_nowPlayingText.Text != displayText)
+                    if (_nowPlayingText.Text != nowPlayingText)
                     {
-                        _nowPlayingText.Text = displayText;
-                        Debug.WriteLine($"Updated now playing text to: {displayText}");
+                        _nowPlayingText.Text = nowPlayingText;
+                        Debug.WriteLine($"Updated now playing text to: {nowPlayingText}");
                     }
                     else
                     {
@@ -227,7 +550,7 @@ namespace Universa.Desktop.Managers
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error updating now playing display: {ex.Message}");
+                Debug.WriteLine($"Error in UpdateNowPlaying: {ex.Message}");
                 Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }

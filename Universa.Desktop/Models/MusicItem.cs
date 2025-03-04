@@ -34,6 +34,9 @@ namespace Universa.Desktop.Models
         public new MusicItemType Type { get; set; }
         public new string StreamUrl { get; set; }
         public new DateTime DateAdded { get; set; }
+        
+        // Original name before formatting (e.g., album name without artist prefix)
+        public string OriginalName { get; set; }
 
         // Artist-specific properties
         public string ImageUrl { get; set; }
@@ -42,6 +45,7 @@ namespace Universa.Desktop.Models
         public string ArtistId { get; set; }
         public string ArtistName { get; set; }
         public int Year { get; set; }
+        public string CoverArtUrl { get; set; }
 
         // Track-specific properties
         public string Artist { get; set; }
@@ -71,7 +75,7 @@ namespace Universa.Desktop.Models
         [JsonIgnore]
         public bool HasChildren
         {
-            get => _items?.Any() == true;
+            get => _items?.Any(item => item.Type != MusicItemType.Track) == true;
             set
             {
                 if (value != HasChildren)
@@ -117,6 +121,26 @@ namespace Universa.Desktop.Models
 
         [JsonIgnore]
         public Geometry IconData { get; set; }
+
+        [JsonIgnore]
+        public ObservableCollection<MusicItem> FilteredItems
+        {
+            get
+            {
+                // Albums should not be expandable in the navigation tree
+                if (Type == MusicItemType.Album)
+                    return null;
+                
+                if (_items == null)
+                    return null;
+                
+                // Filter out Track items for the navigation tree
+                var filteredItems = new ObservableCollection<MusicItem>(
+                    _items.Where(item => item.Type != MusicItemType.Track));
+                
+                return filteredItems.Any() ? filteredItems : null;
+            }
+        }
 
         public void InitializeIconData()
         {
