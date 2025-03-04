@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'  # Trigger on any tag that starts with 'v'
 
+# Add permissions section here
+permissions:
+  contents: write
+  packages: write
+  
 jobs:
   build:
     runs-on: windows-latest
