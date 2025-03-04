@@ -21,7 +21,6 @@
   <ItemGroup>
     <Compile Include="**\*.cs" Exclude="obj\**\*.cs;bin\**\*.cs;*.temp;*.new;**\*.bak" />
     <None Remove="**\*.xaml" />
-    <Page Include="**\*.xaml" />
   </ItemGroup>
 
   <ItemGroup>
