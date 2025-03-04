@@ -341,6 +341,8 @@ namespace Universa.Desktop.Services
                 var systemPrompt = new StringBuilder();
                 systemPrompt.AppendLine("You are a reference material assistant. Help analyze and provide insights about the reference content. When answering questions, focus on the specific reference material provided.");
                 systemPrompt.AppendLine();
+                systemPrompt.AppendLine($"Current Date/Time: {DateTime.Now:F}");
+                systemPrompt.AppendLine();
 
                 // Add referenced data files first
                 if (_references.Any())

@@ -336,6 +336,9 @@ namespace Universa.Desktop.Services.Export
                         StringBuilder cssBuilder = new StringBuilder();
                         cssBuilder.AppendLine("        body { font-family: serif; margin: 5%; line-height: 1.5; }");
                         cssBuilder.AppendLine("        h1, h2, h3, h4, h5, h6 { font-family: sans-serif; }");
+                        cssBuilder.AppendLine("        p { margin: 0.5em 0; }");
+                        cssBuilder.AppendLine("        .indented-line { margin-left: 0; display: inline; }");
+                        cssBuilder.AppendLine("        .indented-para { text-indent: 0; }");
                         
                         // Add alignment styles for each heading level
                         foreach (var alignment in options.HeadingAlignments)
@@ -663,9 +666,14 @@ namespace Universa.Desktop.Services.Export
             
             foreach (string line in lines)
             {
-                string trimmedLine = line.Trim();
+                // Check if the line is empty (without trimming to preserve indentation)
+                bool isEmptyLine = string.IsNullOrWhiteSpace(line);
                 
-                if (string.IsNullOrWhiteSpace(trimmedLine))
+                // Check if the line starts with HTML tags (after trimming)
+                string trimmedLine = line.Trim();
+                bool isHtmlTag = trimmedLine.StartsWith("<h") || trimmedLine.StartsWith("<img");
+                
+                if (isEmptyLine)
                 {
                     if (inParagraph)
                     {
@@ -673,7 +681,7 @@ namespace Universa.Desktop.Services.Export
                         inParagraph = false;
                     }
                 }
-                else if (trimmedLine.StartsWith("<h") || trimmedLine.StartsWith("<img"))
+                else if (isHtmlTag)
                 {
                     if (inParagraph)
                     {
@@ -687,11 +695,60 @@ namespace Universa.Desktop.Services.Export
                 {
                     if (!inParagraph)
                     {
-                        htmlBuilder.AppendLine("<p>");
+                        // Count leading whitespace for paragraph start
+                        int leadingWhitespace = 0;
+                        foreach (char c in line)
+                        {
+                            if (c == ' ')
+                                leadingWhitespace++;
+                            else if (c == '\t')
+                                leadingWhitespace += 4; // Convert tab to 4 spaces
+                            else
+                                break;
+                        }
+
+                        string indentClass = leadingWhitespace > 0 ? " class=\"indented-para\"" : "";
+                        htmlBuilder.AppendLine($"<p{indentClass}>");
+                        
+                        string content = line.TrimStart();
+                        if (leadingWhitespace > 0)
+                        {
+                            htmlBuilder.AppendLine($"<span style=\"padding-left: {leadingWhitespace * 0.5}em;\">{content}</span>");
+                        }
+                        else
+                        {
+                            htmlBuilder.AppendLine(content);
+                        }
+                        
                         inParagraph = true;
                     }
-                    
-                    htmlBuilder.AppendLine(trimmedLine);
+                    else
+                    {
+                        // Add a line break between lines in the same paragraph
+                        htmlBuilder.AppendLine("<br/>");
+                        
+                        // Handle indentation for continuation lines
+                        int leadingWhitespace = 0;
+                        foreach (char c in line)
+                        {
+                            if (c == ' ')
+                                leadingWhitespace++;
+                            else if (c == '\t')
+                                leadingWhitespace += 4; // Convert tab to 4 spaces
+                            else
+                                break;
+                        }
+                        
+                        string content = line.TrimStart();
+                        if (leadingWhitespace > 0)
+                        {
+                            htmlBuilder.AppendLine($"<span class=\"indented-line\" style=\"padding-left: {leadingWhitespace * 0.5}em;\">{content}</span>");
+                        }
+                        else
+                        {
+                            htmlBuilder.AppendLine(content);
+                        }
+                    }
                 }
             }
             
