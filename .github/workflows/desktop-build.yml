@@ -35,9 +35,10 @@ jobs:
     - name: Publish
       run: dotnet publish Universa.Desktop/Universa.csproj --configuration Release --no-build --output ./publish
       
-    - name: Remove problematic files
+    - name: Create release directory
       run: |
-        Remove-Item -Path "./publish/Xceed.Wpf.AvalonDock.NET5.resources.dll" -ErrorAction SilentlyContinue
+        mkdir -p ./release
+        Copy-Item -Path "./publish/*" -Destination "./release/" -Recurse -Exclude "*.resources.dll"
       shell: pwsh
       
     - name: Upload build artifacts
@@ -51,7 +52,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: ./publish/**
+        files: ./release/**
         name: Release ${{ github.ref_name }}
         draft: false
         prerelease: false
