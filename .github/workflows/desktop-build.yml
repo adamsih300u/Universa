@@ -38,7 +38,7 @@ jobs:
     - name: Create release directory
       run: |
         mkdir -p ./release
-        Copy-Item -Path "./publish/*" -Destination "./release/" -Recurse -Exclude "*.resources.dll"
+        Copy-Item -Path "./publish/*" -Destination "./release/" -Recurse -Exclude @("*.resources.dll", "*.so")
       shell: pwsh
       
     - name: Upload build artifacts
