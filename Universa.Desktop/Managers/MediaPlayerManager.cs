@@ -383,6 +383,7 @@ namespace Universa.Desktop.Managers
                     Debug.WriteLine("Starting playback");
                     mediaElement.Play();
                     IsPlaying = true;
+                    IsPaused = false;
                     
                     // Ensure the button state is updated
                     _controlsManager?.UpdatePlayPauseButton(true);
@@ -403,7 +404,14 @@ namespace Universa.Desktop.Managers
                     // Ensure media controls are visible
                     _controlsManager?.ShowMediaControls();
                     
-                    Debug.WriteLine("Playback started successfully");
+                    // Ensure position is updated immediately
+                    if (PositionChanged != null)
+                    {
+                        Debug.WriteLine("Raising initial PositionChanged event");
+                        PositionChanged(this, TimeSpan.Zero);
+                    }
+                    
+                    Debug.WriteLine($"Playback started successfully. IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
                 else
                 {
@@ -453,6 +461,13 @@ namespace Universa.Desktop.Managers
                 var mediaElement = GetMediaElement();
                 if (mediaElement != null)
                 {
+                    // Check if we're already playing to avoid redundant calls
+                    if (IsPlaying && !IsPaused)
+                    {
+                        Debug.WriteLine("Already playing, no need to call Play again");
+                        return;
+                    }
+                    
                     if (mediaElement.Source == null && HasPlaylist)
                     {
                         Debug.WriteLine("Media element source is null, attempting to set from current track");
@@ -465,12 +480,15 @@ namespace Universa.Desktop.Managers
 
                     Debug.WriteLine("Playing media element");
                     mediaElement.Play();
+                    
+                    // Set the playing and paused states
                     IsPlaying = true;
+                    IsPaused = false;
                     
                     // Ensure the button state is updated
                     _controlsManager?.UpdatePlayPauseButton(true);
                     
-                    Debug.WriteLine("Media element playback started");
+                    Debug.WriteLine($"Media element playback started. IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
                 else
                 {
@@ -500,12 +518,15 @@ namespace Universa.Desktop.Managers
                 {
                     Debug.WriteLine("Pausing media element");
                     mediaElement.Pause();
+                    
+                    // Set the playing and paused states
                     IsPlaying = false;
+                    IsPaused = true;
                     
                     // Ensure the button state is updated
                     _controlsManager?.UpdatePlayPauseButton(false);
                     
-                    Debug.WriteLine("Media element paused");
+                    Debug.WriteLine($"Media element paused. IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
             }
             catch (Exception ex)
@@ -520,21 +541,61 @@ namespace Universa.Desktop.Managers
             
             try
             {
+                // Add a small delay to prevent rapid toggling
+                System.Threading.Thread.Sleep(100);
+                
                 if (IsPlaying)
                 {
                     Debug.WriteLine("Currently playing, will pause");
+                    
+                    // Set IsPaused before calling Pause to ensure proper state tracking
+                    IsPaused = true;
+                    
+                    // Call Pause which will set IsPlaying to false
                     Pause();
+                    
+                    // Ensure the PlaybackStopped event is raised
+                    PlaybackStopped?.Invoke(this, EventArgs.Empty);
+                    
+                    Debug.WriteLine($"After pause, IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
                 else
                 {
-                    Debug.WriteLine("Currently paused, will play");
+                    Debug.WriteLine("Currently paused or stopped, will play");
+                    
+                    // Reset IsPaused state
+                    IsPaused = false;
+                    
+                    // If we have a current track but no media element source, set it
+                    var mediaElement = GetMediaElement();
+                    if (mediaElement != null && mediaElement.Source == null && HasPlaylist)
+                    {
+                        var currentTrack = _playlist[_currentTrackIndex];
+                        if (currentTrack != null && !string.IsNullOrEmpty(currentTrack.StreamUrl))
+                        {
+                            mediaElement.Source = new Uri(currentTrack.StreamUrl);
+                        }
+                    }
+                    
+                    // Call Play which will set IsPlaying to true
                     Play();
+                    
+                    // Ensure the PlaybackStarted event is raised
+                    PlaybackStarted?.Invoke(this, EventArgs.Empty);
+                    
+                    // Also raise the TrackChanged event to update the UI
+                    if (HasPlaylist && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                    {
+                        TrackChanged?.Invoke(this, _playlist[_currentTrackIndex]);
+                    }
+                    
+                    Debug.WriteLine($"After play, IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
                 
                 // Ensure the button state is updated
                 _controlsManager?.UpdatePlayPauseButton(IsPlaying);
                 
-                Debug.WriteLine($"After toggle, IsPlaying state: {IsPlaying}");
+                Debug.WriteLine($"After toggle, IsPlaying state: {IsPlaying}, IsPaused state: {IsPaused}");
             }
             catch (Exception ex)
             {
@@ -606,6 +667,15 @@ namespace Universa.Desktop.Managers
                 }
 
                 Debug.WriteLine($"Moving to next track at index: {_currentTrackIndex}");
+                
+                // Explicitly raise the TrackChanged event before playing the track
+                if (TrackChanged != null && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                {
+                    var track = _playlist[_currentTrackIndex];
+                    Debug.WriteLine($"Explicitly raising TrackChanged event for track: {track.Title}");
+                    TrackChanged(this, track);
+                }
+                
                 PlayCurrentTrack();
                 
                 // Ensure media controls are visible
@@ -642,14 +712,23 @@ namespace Universa.Desktop.Managers
                 // Move to previous track
                 _currentTrackIndex--;
                 
-                // Loop to end if we've gone before the beginning
+                // Loop back to end if we've reached the beginning
                 if (_currentTrackIndex < 0)
                 {
-                    Debug.WriteLine("Reached beginning of playlist, looping to end");
+                    Debug.WriteLine("Reached beginning of playlist, looping back to end");
                     _currentTrackIndex = _playlist.Count - 1;
                 }
 
                 Debug.WriteLine($"Moving to previous track at index: {_currentTrackIndex}");
+                
+                // Explicitly raise the TrackChanged event before playing the track
+                if (TrackChanged != null && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                {
+                    var track = _playlist[_currentTrackIndex];
+                    Debug.WriteLine($"Explicitly raising TrackChanged event for track: {track.Title}");
+                    TrackChanged(this, track);
+                }
+                
                 PlayCurrentTrack();
                 
                 // Ensure media controls are visible
@@ -1162,35 +1241,54 @@ namespace Universa.Desktop.Managers
         public void PlayMedia(Universa.Desktop.Models.Track item)
         {
             if (item == null) return;
+            
+            Debug.WriteLine($"PlayMedia called for track: {item.Title}");
 
-            // If we don't have a playlist yet, create one
-            if (_playlist == null)
+            try
             {
-                _playlist = new List<Universa.Desktop.Models.Track>();
-            }
+                // If we don't have a playlist yet, create one
+                if (_playlist == null)
+                {
+                    _playlist = new List<Universa.Desktop.Models.Track>();
+                }
 
-            // If the track is already in the playlist, just play from that position
-            var existingIndex = _playlist.FindIndex(t => t.Id == item.Id);
-            if (existingIndex >= 0)
+                // If the track is already in the playlist, just play from that position
+                var existingIndex = _playlist.FindIndex(t => t.Id == item.Id);
+                if (existingIndex >= 0)
+                {
+                    Debug.WriteLine($"Track already in playlist at index {existingIndex}, playing from there");
+                    _currentTrackIndex = existingIndex;
+                    PlayCurrentTrack();
+                    return;
+                }
+
+                // If we get here, it's a new track not in our current playlist
+                Debug.WriteLine("Adding new track to playlist");
+                _playlist.Clear();
+                _playlist.Add(item);
+                _currentTrackIndex = 0;
+
+                // Show media controls
+                ShowMediaControls();
+
+                // Start playback
+                PlayCurrentTrack();  // Use PlayCurrentTrack instead of Play for consistency
+
+                // Update UI
+                UpdateNowPlaying(item.Title, item.Artist, item.Series, item.Season);
+                
+                // Ensure the TrackChanged event is raised
+                TrackChanged?.Invoke(this, item);
+                
+                // Ensure the PlaybackStarted event is raised
+                PlaybackStarted?.Invoke(this, EventArgs.Empty);
+                
+                Debug.WriteLine("PlayMedia completed successfully");
+            }
+            catch (Exception ex)
             {
-                _currentTrackIndex = existingIndex;
-                PlayCurrentTrack();
-                return;
+                Debug.WriteLine($"Error in PlayMedia: {ex.Message}");
             }
-
-            // If we get here, it's a new track not in our current playlist
-            _playlist.Clear();
-            _playlist.Add(item);
-            _currentTrackIndex = 0;
-
-            // Show media controls
-            ShowMediaControls();
-
-            // Start playback
-            PlayCurrentTrack();  // Use PlayCurrentTrack instead of Play for consistency
-
-            // Update UI
-            UpdateNowPlaying(item.Title, item.Artist, item.Series, item.Season);
         }
 
         public void PlayTracks(IEnumerable<MusicItem> tracks)
@@ -1520,20 +1618,38 @@ namespace Universa.Desktop.Managers
         {
             if (_mediaElement == null) return;
             
+            Debug.WriteLine("PauseMedia called");
+            
             _mediaElement.Pause();
             _isPlaying = false;
             IsPaused = true;
+            
+            // Update the play/pause button
+            _controlsManager?.UpdatePlayPauseButton(false);
+            
+            // Raise the PlaybackStopped event
             PlaybackStopped?.Invoke(this, EventArgs.Empty);
+            
+            Debug.WriteLine("Media paused");
         }
 
         public void ResumeMedia()
         {
             if (_mediaElement == null) return;
             
+            Debug.WriteLine("ResumeMedia called");
+            
             _mediaElement.Play();
             _isPlaying = true;
             IsPaused = false;
+            
+            // Update the play/pause button
+            _controlsManager?.UpdatePlayPauseButton(true);
+            
+            // Raise the PlaybackStarted event
             PlaybackStarted?.Invoke(this, EventArgs.Empty);
+            
+            Debug.WriteLine("Media resumed");
         }
 
         public void StopMedia()

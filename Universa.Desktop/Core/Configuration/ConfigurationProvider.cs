@@ -143,23 +143,12 @@ namespace Universa.Desktop.Core.Configuration
         #region AI Settings
         public bool EnableOpenAI
         {
-            get
-            {
-                if (_isAccessingProperty) return false;
-                _isAccessingProperty = true;
-                try
-                {
-                    return _store.Get<bool>(ConfigurationKeys.AI.OpenAIEnabled);
-                }
-                finally
-                {
-                    _isAccessingProperty = false;
-                }
-            }
+            get => _configManager.Get<bool>(ConfigurationKeys.AI.OpenAIEnabled, false);
             set
             {
                 _configManager.Set(ConfigurationKeys.AI.OpenAIEnabled, value);
                 OnPropertyChanged();
+                OnConfigurationChanged(ConfigurationKeys.AI.OpenAIEnabled, !value, value);
             }
         }
 
@@ -175,11 +164,12 @@ namespace Universa.Desktop.Core.Configuration
 
         public bool EnableAnthropic
         {
-            get => _configManager.Get<bool>(ConfigurationKeys.AI.AnthropicEnabled);
+            get => _configManager.Get<bool>(ConfigurationKeys.AI.AnthropicEnabled, false);
             set
             {
                 _configManager.Set(ConfigurationKeys.AI.AnthropicEnabled, value);
                 OnPropertyChanged();
+                OnConfigurationChanged(ConfigurationKeys.AI.AnthropicEnabled, !value, value);
             }
         }
 
@@ -193,9 +183,41 @@ namespace Universa.Desktop.Core.Configuration
             }
         }
 
+        public bool EnableOpenRouter
+        {
+            get => _configManager.Get<bool>(ConfigurationKeys.AI.OpenRouterEnabled, false);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.AI.OpenRouterEnabled, value);
+                OnPropertyChanged();
+                OnConfigurationChanged(ConfigurationKeys.AI.OpenRouterEnabled, !value, value);
+            }
+        }
+
+        public string OpenRouterApiKey
+        {
+            get => _configManager.Get<string>(ConfigurationKeys.AI.OpenRouterApiKey);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.AI.OpenRouterApiKey, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public List<string> OpenRouterModels
+        {
+            get => _configManager.Get<List<string>>(ConfigurationKeys.AI.OpenRouterModels, new List<string>());
+            set
+            {
+                _configManager.Set(ConfigurationKeys.AI.OpenRouterModels, value);
+                OnPropertyChanged();
+                OnConfigurationChanged(ConfigurationKeys.AI.OpenRouterModels, null, value);
+            }
+        }
+
         public bool EnableAICharacterization
         {
-            get => _configManager.Get<bool>(ConfigurationKeys.AI.CharacterizationEnabled);
+            get => _configManager.Get<bool>(ConfigurationKeys.AI.CharacterizationEnabled, false);
             set
             {
                 _configManager.Set(ConfigurationKeys.AI.CharacterizationEnabled, value);

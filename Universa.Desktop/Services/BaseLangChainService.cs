@@ -100,34 +100,58 @@ User request:
 Please provide specific and helpful suggestions.";
         }
 
-        protected virtual async Task<string> ExecutePrompt(string prompt)
+        protected async Task<string> ExecutePrompt(string prompt)
         {
             try
             {
-                string response;
                 switch (_provider)
                 {
-                    case Models.AIProvider.OpenAI:
-                        response = await ExecuteOpenAIPrompt(prompt);
-                        break;
-                    case Models.AIProvider.Anthropic:
-                        response = await ExecuteAnthropicPrompt(prompt);
-                        break;
-                    case Models.AIProvider.Ollama:
-                        response = await ExecuteOllamaPrompt(prompt);
-                        break;
-                    case Models.AIProvider.XAI:
-                        response = await ExecuteXAIPrompt(prompt);
-                        break;
+                    case AIProvider.OpenAI:
+                        return await ExecuteOpenAIPrompt(prompt);
+                    case AIProvider.Anthropic:
+                        return await ExecuteAnthropicPrompt(prompt);
+                    case AIProvider.XAI:
+                        return await ExecuteXAIPrompt(prompt);
+                    case AIProvider.Ollama:
+                        return await ExecuteOllamaPrompt(prompt);
+                    case AIProvider.OpenRouter:
+                        Debug.WriteLine($"\n=== OPENROUTER API CALL ===");
+                        Debug.WriteLine($"Using model: {_model}");
+                        Debug.WriteLine($"Memory items: {_memory.Count}");
+
+                        var openRouterService = new OpenRouterService(_apiKey);
+                        
+                        // Convert memory to OpenRouter messages
+                        var messages = new List<OpenRouterService.ChatMessage>();
+                        
+                        // Add memory messages
+                        foreach (var msg in _memory)
+                        {
+                            messages.Add(new OpenRouterService.ChatMessage 
+                            { 
+                                Role = msg.Role.ToLower(),
+                                Content = msg.Content 
+                            });
+                        }
+                        
+                        // Add current prompt if present
+                        if (!string.IsNullOrEmpty(prompt))
+                        {
+                            messages.Add(new OpenRouterService.ChatMessage 
+                            { 
+                                Role = "user",
+                                Content = prompt 
+                            });
+                        }
+
+                        return await openRouterService.SendChatMessage(messages, _model);
                     default:
                         throw new ArgumentException($"Unsupported provider: {_provider}");
                 }
-
-                return response;
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"\n=== EXECUTE PROMPT ERROR ===\n{ex}");
+                Debug.WriteLine($"Error executing prompt: {ex.Message}");
                 throw;
             }
         }
@@ -158,7 +182,7 @@ Please provide specific and helpful suggestions.";
                 model = _model,
                 messages = messages.ToArray(),
                 temperature = 0.7,
-                max_tokens = 4096
+                max_tokens = 16384
             };
 
             var jsonContent = JsonSerializer.Serialize(requestBody);
@@ -223,7 +247,7 @@ Please provide specific and helpful suggestions.";
                 {
                     model = _model,
                     messages = messages.Select(m => new { role = m.role, content = m.content }).ToArray(),
-                    max_tokens = 8192,
+                    max_tokens = 16384,
                     temperature = 0.7,
                     system = systemMessage?.Content ?? string.Empty,
                     tool_choice = new { type = "thinking" }
@@ -236,7 +260,7 @@ Please provide specific and helpful suggestions.";
                 {
                     model = _model,
                     messages = messages.Select(m => new { role = m.role, content = m.content }).ToArray(),
-                    max_tokens = 8192,
+                    max_tokens = 16384,
                     temperature = 0.7,
                     system = systemMessage?.Content ?? string.Empty
                 };

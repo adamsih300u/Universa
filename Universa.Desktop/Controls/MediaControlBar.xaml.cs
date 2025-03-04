@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Universa.Desktop.Models;
 using Universa.Desktop.Managers;
 using Universa.Desktop.Services;
+using System.Diagnostics;
 
 namespace Universa.Desktop.Controls
 {
@@ -15,6 +16,8 @@ namespace Universa.Desktop.Controls
         private bool _isDraggingTimelineSlider;
         private DispatcherTimer _updateTimer;
         private Universa.Desktop.Models.Track _currentTrack;
+        private DateTime _lastPlayPauseClickTime = DateTime.MinValue;
+        private const int DEBOUNCE_INTERVAL_MS = 500; // Debounce interval in milliseconds
 
         public MediaControlBar()
         {
@@ -42,6 +45,9 @@ namespace Universa.Desktop.Controls
                 
                 // Initialize shuffle state
                 UpdateShuffleButtonState();
+                
+                // Initialize play/pause button state
+                UpdatePlayPauseButtonState();
             }
 
             // Initialize volume
@@ -51,26 +57,49 @@ namespace Universa.Desktop.Controls
 
         private void MediaPlayerManager_PlaybackStarted(object sender, EventArgs e)
         {
-            PlayPauseButton.Content = "⏸";
+            Debug.WriteLine("MediaPlayerManager_PlaybackStarted event received");
+            UpdatePlayPauseButtonState();
             _updateTimer.Start();
             this.Visibility = Visibility.Visible;
         }
 
         private void MediaPlayerManager_PlaybackStopped(object sender, EventArgs e)
         {
-            PlayPauseButton.Content = "▶";
-            _updateTimer.Stop();
+            Debug.WriteLine("MediaPlayerManager_PlaybackStopped event received");
+            UpdatePlayPauseButtonState();
+            
+            // Don't stop the timer when pausing, only when stopping completely
+            if (_mediaPlayerManager != null && !_mediaPlayerManager.IsPaused)
+            {
+                _updateTimer.Stop();
+            }
         }
 
         private void MediaPlayerManager_TrackChanged(object sender, Universa.Desktop.Models.Track e)
         {
             if (e != null)
             {
+                // Update the now playing text
                 NowPlayingText.Text = $"{e.Artist} - {e.Title}";
+                
+                // Update the timeline slider
                 TimelineSlider.Maximum = e.Duration.TotalSeconds;
                 TimelineSlider.Value = 0;
+                
+                // Update the time display
                 UpdateTimeDisplay(TimeSpan.Zero, e.Duration);
+                
+                // Store the current track
                 _currentTrack = e;
+                
+                // Start the update timer if it's not already running
+                if (!_updateTimer.IsEnabled)
+                {
+                    _updateTimer.Start();
+                }
+                
+                // Ensure visibility
+                this.Visibility = Visibility.Visible;
             }
             else
             {
@@ -93,17 +122,42 @@ namespace Universa.Desktop.Controls
         {
             if (_mediaPlayerManager == null) return;
 
-            var position = _mediaPlayerManager.CurrentPosition;
-            var duration = _mediaPlayerManager.Duration;
-
-            // Update time display
-            TimeInfo.Text = $"{position:mm\\:ss} / {duration:mm\\:ss}";
-
-            // Update timeline slider
-            if (duration > TimeSpan.Zero && !_isDraggingTimelineSlider)
+            try
             {
-                TimelineSlider.Maximum = duration.TotalSeconds;
-                TimelineSlider.Value = position.TotalSeconds;
+                var position = _mediaPlayerManager.CurrentPosition;
+                var duration = _mediaPlayerManager.Duration;
+
+                // Update time display
+                TimeInfo.Text = $"{position:mm\\:ss} / {duration:mm\\:ss}";
+
+                // Update timeline slider
+                if (duration > TimeSpan.Zero && !_isDraggingTimelineSlider)
+                {
+                    TimelineSlider.Maximum = duration.TotalSeconds;
+                    TimelineSlider.Value = position.TotalSeconds;
+                }
+                
+                // Ensure play/pause button state is correct
+                UpdatePlayPauseButtonState();
+                
+                // If we have a current track but the MediaPlayerManager doesn't, update the display
+                if (_currentTrack != null && _mediaPlayerManager.CurrentTrack == null)
+                {
+                    _currentTrack = null;
+                    NowPlayingText.Text = "No track playing";
+                    TimelineSlider.Value = 0;
+                    TimeInfo.Text = "00:00 / 00:00";
+                }
+                // If the current track has changed, update the display
+                else if (_mediaPlayerManager.CurrentTrack != null && 
+                        (_currentTrack == null || _currentTrack.Id != _mediaPlayerManager.CurrentTrack.Id))
+                {
+                    MediaPlayerManager_TrackChanged(this, _mediaPlayerManager.CurrentTrack);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in UpdateTimer_Tick: {ex.Message}");
             }
         }
 
@@ -116,22 +170,36 @@ namespace Universa.Desktop.Controls
         {
             if (_mediaPlayerManager == null) return;
 
-            if (_mediaPlayerManager.IsPlaying)
+            // Implement debouncing to prevent rapid clicking
+            DateTime now = DateTime.Now;
+            if ((now - _lastPlayPauseClickTime).TotalMilliseconds < DEBOUNCE_INTERVAL_MS)
             {
-                _mediaPlayerManager.PauseMedia();
-                PlayPauseButton.Content = "▶";
+                Debug.WriteLine("PlayPauseButton_Click: Ignoring click due to debounce");
+                return;
             }
-            else
+            _lastPlayPauseClickTime = now;
+
+            Debug.WriteLine($"PlayPauseButton_Click: Current IsPlaying state: {_mediaPlayerManager.IsPlaying}");
+            
+            try
             {
-                if (_mediaPlayerManager.IsPaused)
+                // Use the MediaPlayerManager's TogglePlayPause method which handles all the state changes
+                _mediaPlayerManager.TogglePlayPause();
+                
+                // Update button state based on the current playing state
+                UpdatePlayPauseButtonState();
+                
+                // If we're playing, make sure the timer is running
+                if (_mediaPlayerManager.IsPlaying && !_updateTimer.IsEnabled)
                 {
-                    _mediaPlayerManager.ResumeMedia();
+                    _updateTimer.Start();
                 }
-                else
-                {
-                    _mediaPlayerManager.PlayMedia(_currentTrack);
-                }
-                PlayPauseButton.Content = "⏸";
+                
+                Debug.WriteLine($"PlayPauseButton_Click: After toggle, IsPlaying state: {_mediaPlayerManager.IsPlaying}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in PlayPauseButton_Click: {ex.Message}");
             }
         }
 
@@ -294,6 +362,29 @@ namespace Universa.Desktop.Controls
             {
                 ShuffleButton.IsChecked = _mediaPlayerManager.IsShuffleEnabled;
                 ShuffleButton.Opacity = _mediaPlayerManager.IsShuffleEnabled ? 1.0 : 0.5;
+            }
+        }
+
+        private void UpdatePlayPauseButtonState()
+        {
+            if (_mediaPlayerManager != null)
+            {
+                try
+                {
+                    bool isPlaying = _mediaPlayerManager.IsPlaying;
+                    
+                    // Set the button content based on the current playing state
+                    Application.Current.Dispatcher.Invoke(() => {
+                        PlayPauseButton.Content = isPlaying ? "⏸" : "▶";
+                        PlayPauseButton.ToolTip = isPlaying ? "Pause" : "Play";
+                    });
+                    
+                    Debug.WriteLine($"UpdatePlayPauseButtonState: Set button to {PlayPauseButton.Content} based on IsPlaying={isPlaying}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in UpdatePlayPauseButtonState: {ex.Message}");
+                }
             }
         }
     }

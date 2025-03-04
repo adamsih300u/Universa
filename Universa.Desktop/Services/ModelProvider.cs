@@ -34,7 +34,10 @@ namespace Universa.Desktop.Services
                 e.Key.StartsWith(ConfigurationKeys.AI.XAIEnabled) ||
                 e.Key.StartsWith(ConfigurationKeys.AI.XAIApiKey) ||
                 e.Key.StartsWith(ConfigurationKeys.AI.OllamaEnabled) ||
-                e.Key.StartsWith(ConfigurationKeys.AI.OllamaUrl))
+                e.Key.StartsWith(ConfigurationKeys.AI.OllamaUrl) ||
+                e.Key.StartsWith(ConfigurationKeys.AI.OpenRouterEnabled) ||
+                e.Key.StartsWith(ConfigurationKeys.AI.OpenRouterApiKey) ||
+                e.Key.StartsWith(ConfigurationKeys.AI.OpenRouterModels))
             {
                 Debug.WriteLine($"AI configuration changed: {e.Key}");
                 var models = await GetModels();
@@ -52,6 +55,7 @@ namespace Universa.Desktop.Services
             Debug.WriteLine($"- Anthropic: Enabled={_config.EnableAnthropic}, Has API Key={!string.IsNullOrEmpty(_config.AnthropicApiKey)}");
             Debug.WriteLine($"- XAI: Enabled={_config.EnableXAI}, Has API Key={!string.IsNullOrEmpty(_config.XAIApiKey)}");
             Debug.WriteLine($"- Ollama: Enabled={_config.EnableOllama}, Has URL={!string.IsNullOrEmpty(_config.OllamaUrl)}");
+            Debug.WriteLine($"- OpenRouter: Enabled={_config.EnableOpenRouter}, Has API Key={!string.IsNullOrEmpty(_config.OpenRouterApiKey)}");
 
             // Only try to load OpenAI models if it's enabled and has an API key
             if (_config.EnableOpenAI && !string.IsNullOrEmpty(_config.OpenAIApiKey))
@@ -141,6 +145,37 @@ namespace Universa.Desktop.Services
                 Debug.WriteLine($"Skipping Ollama models: Enabled={_config.EnableOllama}, Has URL={!string.IsNullOrEmpty(_config.OllamaUrl)}");
             }
 
+            // Only try to load OpenRouter models if it's enabled and has an API key
+            if (_config.EnableOpenRouter && !string.IsNullOrEmpty(_config.OpenRouterApiKey))
+            {
+                try
+                {
+                    Debug.WriteLine("Loading OpenRouter models...");
+                    var openRouterService = new OpenRouterService(_config.OpenRouterApiKey);
+                    var openRouterModels = await openRouterService.GetAvailableModels();
+                    
+                    // Filter models based on user selection if any are saved
+                    if (_config.OpenRouterModels != null && _config.OpenRouterModels.Count > 0)
+                    {
+                        openRouterModels = openRouterModels
+                            .Where(m => _config.OpenRouterModels.Contains(m.Name))
+                            .ToList();
+                    }
+                    
+                    Debug.WriteLine($"Found {openRouterModels.Count} OpenRouter models");
+                    models.AddRange(openRouterModels);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error loading OpenRouter models: {ex.Message}");
+                    Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                }
+            }
+            else
+            {
+                Debug.WriteLine($"Skipping OpenRouter models: Enabled={_config.EnableOpenRouter}, Has API Key={!string.IsNullOrEmpty(_config.OpenRouterApiKey)}");
+            }
+
             Debug.WriteLine($"Total models found across all providers: {models.Count}");
             foreach (var model in models)
             {
@@ -186,6 +221,7 @@ namespace Universa.Desktop.Services
                 AIProvider.Anthropic => _config.AnthropicApiKey,
                 AIProvider.XAI => _config.XAIApiKey,
                 AIProvider.Ollama => string.Empty,  // Ollama doesn't need an API key
+                AIProvider.OpenRouter => _config.OpenRouterApiKey,
                 _ => throw new ArgumentException($"Unsupported provider: {provider}")
             };
         }

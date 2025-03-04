@@ -866,14 +866,21 @@ namespace Universa.Desktop.ViewModels
 
         private string GetApiKey(AIProvider provider)
         {
-            return provider switch
+            switch (provider)
             {
-                AIProvider.OpenAI => _config.OpenAIApiKey,
-                AIProvider.Anthropic => _config.AnthropicApiKey,
-                AIProvider.XAI => _config.XAIApiKey,
-                AIProvider.Ollama => string.Empty,  // Ollama doesn't need an API key
-                _ => throw new ArgumentException($"Unsupported provider: {provider}")
-            };
+                case AIProvider.OpenAI:
+                    return _config.OpenAIApiKey;
+                case AIProvider.Anthropic:
+                    return _config.AnthropicApiKey;
+                case AIProvider.XAI:
+                    return _config.XAIApiKey;
+                case AIProvider.Ollama:
+                    return null; // Ollama doesn't require an API key
+                case AIProvider.OpenRouter:
+                    return _config.OpenRouterApiKey;
+                default:
+                    throw new ArgumentException($"Unsupported provider: {provider}");
+            }
         }
 
         private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -1099,6 +1106,24 @@ namespace Universa.Desktop.ViewModels
         protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        private AIProvider GetProviderFromModelId(string modelId)
+        {
+            if (string.IsNullOrEmpty(modelId))
+                return AIProvider.None;
+
+            if (modelId.StartsWith("gpt-") || modelId.StartsWith("text-davinci-"))
+                return AIProvider.OpenAI;
+            if (modelId.StartsWith("claude-"))
+                return AIProvider.Anthropic;
+            if (modelId.StartsWith("grok-"))
+                return AIProvider.XAI;
+            if (modelId.StartsWith("openrouter/"))
+                return AIProvider.OpenRouter;
+        
+            // Assume Ollama for any other model ID
+            return AIProvider.Ollama;
         }
     }
 } 

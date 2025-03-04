@@ -33,6 +33,9 @@ namespace Universa.Desktop.Core.Configuration
             public const string OllamaEnabled = "ai.ollama.enabled";
             public const string OllamaUrl = "ai.ollama.url";
             public const string OllamaModel = "ai.ollama.model";
+            public const string OpenRouterEnabled = "ai.openrouter.enabled";
+            public const string OpenRouterApiKey = "ai.openrouter.apiKey";
+            public const string OpenRouterModels = "ai.openrouter.models";
             public const string CharacterizationEnabled = "ai.characterization.enabled";
             public const string MusicCharacterizationMethod = "ai.characterization.musicMethod";
             public const string LocalEmbeddingsEnabled = "ai.embeddings.enabled";

@@ -555,7 +555,29 @@ namespace Universa.Desktop.Views
         
         private void ShuffleMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            // Implement shuffle functionality
+            if (ContentListView_Control.SelectedItems.Count > 0)
+            {
+                var selectedItems = ContentListView_Control.SelectedItems.Cast<MusicContentItem>().ToList();
+                if (selectedItems.Any())
+                {
+                    // Convert to Track objects
+                    var tracks = selectedItems.Select(item => new Track
+                    {
+                        Id = item.Id,
+                        Title = item.Name,
+                        Artist = item.ArtistName,
+                        Album = item.Album,
+                        Duration = item.Duration,
+                        StreamUrl = item.StreamUrl
+                    }).ToList();
+
+                    // Shuffle the tracks
+                    var shuffledTracks = tracks.OrderBy(x => Guid.NewGuid()).ToList();
+                    
+                    // Play the shuffled tracks
+                    _viewModel.PlayTracksAsync(shuffledTracks);
+                }
+            }
         }
 
         // Placeholder methods to satisfy references

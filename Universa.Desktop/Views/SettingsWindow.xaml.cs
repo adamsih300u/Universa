@@ -30,6 +30,7 @@ namespace Universa.Desktop.Views
             OpenAIKeyBox.PasswordChanged += (s, e) => _viewModel.UpdateOpenAIKey(OpenAIKeyBox.Password);
             AnthropicKeyBox.PasswordChanged += (s, e) => _viewModel.UpdateAnthropicKey(AnthropicKeyBox.Password);
             XAIKeyBox.PasswordChanged += (s, e) => _viewModel.UpdateXAIKey(XAIKeyBox.Password);
+            OpenRouterKeyBox.PasswordChanged += (s, e) => _viewModel.UpdateOpenRouterKey(OpenRouterKeyBox.Password);
             MatrixPasswordBox.PasswordChanged += (s, e) => _viewModel.UpdateMatrixPassword(MatrixPasswordBox.Password);
             SubsonicPasswordBox.PasswordChanged += (s, e) => _viewModel.UpdateSubsonicPassword(SubsonicPasswordBox.Password);
             JellyfinPasswordBox.PasswordChanged += (s, e) => _viewModel.UpdateJellyfinPassword(JellyfinPasswordBox.Password);
@@ -130,6 +131,9 @@ namespace Universa.Desktop.Views
             if (!string.IsNullOrEmpty(_viewModel.XAIApiKey))
                 XAIKeyBox.Password = _viewModel.XAIApiKey;
 
+            if (!string.IsNullOrEmpty(_viewModel.OpenRouterApiKey))
+                OpenRouterKeyBox.Password = _viewModel.OpenRouterApiKey;
+
             if (!string.IsNullOrEmpty(_viewModel.SyncPassword))
                 SyncPasswordBox.Password = _viewModel.SyncPassword;
 
@@ -160,6 +164,7 @@ namespace Universa.Desktop.Views
             _viewModel.SavePassword("OpenAIApiKey", OpenAIKeyBox.Password);
             _viewModel.SavePassword("AnthropicApiKey", AnthropicKeyBox.Password);
             _viewModel.SavePassword("XAIApiKey", XAIKeyBox.Password);
+            _viewModel.SavePassword("OpenRouterApiKey", OpenRouterKeyBox.Password);
             _viewModel.SavePassword("SyncPassword", SyncPasswordBox.Password);
             _viewModel.SavePassword("MatrixPassword", MatrixPasswordBox.Password);
             _viewModel.SavePassword("SubsonicPassword", SubsonicPasswordBox.Password);

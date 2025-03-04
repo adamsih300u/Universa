@@ -75,6 +75,7 @@ namespace Universa.Desktop.ViewModels
             UpdateSyncPasswordCommand = new RelayCommand<string>(UpdateSyncPassword);
             UpdateOpenRouterKeyCommand = new RelayCommand<string>(UpdateOpenRouterKey);
             FetchOpenRouterModelsCommand = new RelayCommand(_ => FetchOpenRouterModels());
+            SaveOpenRouterModelsCommand = new RelayCommand(_ => SaveOpenRouterModels());
 
             // Load initial settings
             LoadSettings();
@@ -109,7 +110,9 @@ namespace Universa.Desktop.ViewModels
         public ICommand UpdateSyncPasswordCommand { get; }
         public ICommand UpdateOpenRouterKeyCommand { get; }
         public ICommand FetchOpenRouterModelsCommand { get; }
+        public ICommand SaveOpenRouterModelsCommand { get; }
         #endregion
+
 
         #region Properties
         public ThemeViewModel ThemeViewModel { get; }
@@ -646,9 +649,18 @@ namespace Universa.Desktop.ViewModels
                     OnPropertyChanged();
                 }
             }
+        #endregion
         }
 
-        #endregion
+
+
+        #region Commands
+        private ICommand _fetchOpenRouterModelsCommand;
+        public ICommand FetchOpenRouterModelsCommand => _fetchOpenRouterModelsCommand ??= new RelayCommand(_ => FetchOpenRouterModels());
+
+        private ICommand _saveOpenRouterModelsCommand;
+        public ICommand SaveOpenRouterModelsCommand => _saveOpenRouterModelsCommand ??= new RelayCommand(_ => SaveOpenRouterModels());
+
 
         private void Save()
         {
@@ -673,16 +685,6 @@ namespace Universa.Desktop.ViewModels
                 {
                     _dialogService.ShowError($"Could not create library directory: {ex.Message}", "Configuration Error");
                     return;
-                }
-
-                // Save OpenRouter models if available
-                if (AvailableOpenRouterModels != null && AvailableOpenRouterModels.Count > 0)
-                {
-                    var selectedModels = AvailableOpenRouterModels
-                        .Where(m => m.IsSelected)
-                        .Select(m => m.Name)
-                        .ToList();
-                    _config.OpenRouterModels = selectedModels;
                 }
 
                 _configService.Save();
@@ -1171,6 +1173,22 @@ namespace Universa.Desktop.ViewModels
             }
         }
 
+        private void SaveOpenRouterModels()
+        {
+            if (AvailableOpenRouterModels == null || AvailableOpenRouterModels.Count == 0)
+            {
+                return;
+            }
+
+            var selectedModels = AvailableOpenRouterModels
+                .Where(m => m.IsSelected)
+                .Select(m => m.Name)
+                .ToList();
+
+            _config.OpenRouterModels = selectedModels;
+            MessageBox.Show($"Saved {selectedModels.Count} selected models.", "Models Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
         public void UpdateOpenRouterKey(string password)
         {
             if (!string.IsNullOrWhiteSpace(password))
@@ -1185,6 +1203,7 @@ namespace Universa.Desktop.ViewModels
             }
             OnPropertyChanged(nameof(OpenRouterApiKey));
         }
+
     }
 
     public class RelayCommand : ICommand
@@ -1268,3 +1287,4 @@ namespace Universa.Desktop.ViewModels
         }
     }
 } 
+    #endregion

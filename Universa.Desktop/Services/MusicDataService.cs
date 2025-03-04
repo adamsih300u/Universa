@@ -213,6 +213,9 @@ namespace Universa.Desktop.Services
                 
                 await File.WriteAllTextAsync(cacheFilePath, json);
                 Debug.WriteLine($"Saved music data to cache: {cacheFilePath}");
+                
+                // We don't need to trigger DataChanged here since we're just saving to cache
+                // The data itself hasn't changed
             }
             catch (Exception ex)
             {
@@ -241,21 +244,42 @@ namespace Universa.Desktop.Services
                     return false;
                 }
                 
+                // Check if the cache is too old (more than 24 hours)
+                var cacheAge = DateTime.UtcNow - cacheData.LastUpdated;
+                if (cacheAge.TotalHours > 24)
+                {
+                    Debug.WriteLine($"Cache is too old ({cacheAge.TotalHours:F1} hours), not using it");
+                    return false;
+                }
+                
+                // Store previous counts to determine if data actually changed
+                int previousArtistCount = _artists.Count;
+                int previousAlbumCount = _albums.Count;
+                int previousPlaylistCount = _playlists.Count;
+                
+                // Update our data from the cache
                 _artists = cacheData.Artists ?? new List<Artist>();
                 _albums = cacheData.Albums ?? new List<Album>();
                 _playlists = cacheData.Playlists ?? new List<Playlist>();
                 
-                Debug.WriteLine($"Loaded music data from cache: {cacheFilePath}");
-                Debug.WriteLine($"Loaded {_artists.Count} artists, {_albums.Count} albums, {_playlists.Count} playlists");
+                Debug.WriteLine($"Loaded from cache: {_artists.Count} artists, {_albums.Count} albums, {_playlists.Count} playlists");
                 
-                // Notify that data has changed
-                OnDataChanged();
+                // Only notify that data has changed if the counts actually changed
+                bool dataChanged = _artists.Count != previousArtistCount || 
+                                  _albums.Count != previousAlbumCount || 
+                                  _playlists.Count != previousPlaylistCount;
+                
+                if (dataChanged)
+                {
+                    Debug.WriteLine("Data has changed from cache load, notifying listeners");
+                    OnDataChanged();
+                }
                 
                 return true;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error loading music data from cache: {ex.Message}");
+                Debug.WriteLine($"Error loading from cache: {ex.Message}");
                 return false;
             }
         }
@@ -292,6 +316,11 @@ namespace Universa.Desktop.Services
             {
                 Debug.WriteLine("Refreshing music data...");
                 
+                // Store previous counts to determine if data actually changed
+                int previousArtistCount = _artists.Count;
+                int previousAlbumCount = _albums.Count;
+                int previousPlaylistCount = _playlists.Count;
+                
                 // Get artists from Subsonic
                 var artistItems = await _subsonicService.GetArtists();
                 _artists = ConvertMusicItemsToArtists(artistItems);
@@ -320,8 +349,29 @@ namespace Universa.Desktop.Services
                 // Save to cache
                 await SaveToCacheAsync();
                 
-                // Notify that data has changed
-                OnDataChanged();
+                // Only notify that data has changed if the counts actually changed
+                // or if this is the first time loading data (all previous counts were 0)
+                bool dataChanged = _artists.Count != previousArtistCount || 
+                                  _albums.Count != previousAlbumCount || 
+                                  _playlists.Count != previousPlaylistCount;
+                
+                bool isInitialLoad = previousArtistCount == 0 && previousAlbumCount == 0 && previousPlaylistCount == 0;
+                
+                if (dataChanged && !isInitialLoad)
+                {
+                    Debug.WriteLine("Data has changed, notifying listeners");
+                    OnDataChanged();
+                }
+                else if (isInitialLoad)
+                {
+                    Debug.WriteLine("Initial data load complete");
+                    // We still want to notify on initial load, but with a flag indicating it's initial
+                    OnDataChanged();
+                }
+                else
+                {
+                    Debug.WriteLine("Data refresh completed but no changes detected");
+                }
                 
                 Debug.WriteLine($"Refreshed music data: {_artists.Count} artists, {_albums.Count} albums, {_playlists.Count} playlists");
             }

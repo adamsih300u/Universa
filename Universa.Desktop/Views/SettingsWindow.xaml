@@ -368,6 +368,29 @@
                             </StackPanel>
                         </GroupBox>
 
+                        <GroupBox Header="OpenRouter" Margin="0,10">
+                            <StackPanel Margin="5">
+                                <CheckBox Content="Enable OpenRouter" IsChecked="{Binding EnableOpenRouter}"/>
+                                <TextBlock Text="API Key:" Margin="0,5"/>
+                                <PasswordBox x:Name="OpenRouterKeyBox"/>
+                                <TextBlock Text="Available Models:" Margin="0,10,0,5"/>
+                                <Button Content="Fetch Available Models" Command="{Binding FetchOpenRouterModelsCommand}" Margin="0,5"/>
+                                <ListBox x:Name="OpenRouterModelsListBox" 
+                                         ItemsSource="{Binding AvailableOpenRouterModels}" 
+                                         SelectionMode="Multiple"
+                                         Height="150"
+                                         Margin="0,5">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox Content="{Binding DisplayName}" 
+                                                      IsChecked="{Binding IsSelected}" 
+                                                      Tag="{Binding Name}"/>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </GroupBox>
+
                         <GroupBox Header="AI Features" Margin="0,10">
                             <StackPanel Margin="5">
                                 <CheckBox Content="Enable AI Characterization" IsChecked="{Binding EnableAICharacterization}"/>

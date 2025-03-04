@@ -81,8 +81,19 @@ namespace Universa.Desktop.Views
             {
                 if (!_isLoading)
                 {
-                    Debug.WriteLine("DataChanged event received, refreshing tree");
-                    RefreshTreeAsync().ConfigureAwait(false);
+                    // Check if this is an initial load or a refresh triggered by SaveToCacheAsync
+                    // We can determine this by checking if we already have data loaded
+                    bool hasExistingData = _artists.Count > 0 || _albums.Count > 0 || _playlists.Count > 0;
+                    
+                    if (hasExistingData)
+                    {
+                        Debug.WriteLine("DataChanged event received, refreshing tree");
+                        RefreshTreeAsync().ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        Debug.WriteLine("DataChanged event received during initial load, skipping refresh");
+                    }
                 }
                 else
                 {
@@ -98,6 +109,13 @@ namespace Universa.Desktop.Views
         {
             try
             {
+                // If we're already loading, don't start another initialization
+                if (IsLoading)
+                {
+                    Debug.WriteLine("InitializeTreeAsync: Already loading, skipping initialization");
+                    return;
+                }
+                
                 Debug.WriteLine("InitializeTreeAsync: Starting initialization");
                 IsLoading = true;
                 ErrorMessage = null;
@@ -171,6 +189,13 @@ namespace Universa.Desktop.Views
         {
             try
             {
+                // If we're already loading, don't start another refresh
+                if (IsLoading)
+                {
+                    Debug.WriteLine("RefreshTreeAsync: Already loading, skipping refresh");
+                    return;
+                }
+                
                 Debug.WriteLine("RefreshTreeAsync: Starting refresh");
                 IsLoading = true;
                 ErrorMessage = null;
