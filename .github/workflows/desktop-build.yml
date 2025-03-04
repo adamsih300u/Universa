@@ -35,6 +35,11 @@ jobs:
     - name: Publish
       run: dotnet publish Universa.Desktop/Universa.csproj --configuration Release --no-build --output ./publish
       
+    - name: Remove problematic files
+      run: |
+        Remove-Item -Path "./publish/Xceed.Wpf.AvalonDock.NET5.resources.dll" -ErrorAction SilentlyContinue
+      shell: pwsh
+      
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
