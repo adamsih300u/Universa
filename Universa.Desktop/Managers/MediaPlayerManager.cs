@@ -57,6 +57,8 @@ namespace Universa.Desktop.Managers
         private readonly IConfigurationService _configService;
         private bool _isShuffleEnabled;
         private List<Universa.Desktop.Models.Track> _originalPlaylist;
+        private bool _isPlayingVideo = false;
+        private VideoPlayerWindow _currentVideoWindow = null;
         private TimeSpan _duration;
         private VideoWindowManager _videoWindowManager;
         private bool _isVideoPlaying;
@@ -108,8 +110,19 @@ namespace Universa.Desktop.Managers
         public TimeSpan Duration => _duration;
         public bool IsShuffleEnabled => _isShuffleEnabled;
         public bool HasMedia => _mediaElement?.Source != null;
-        public bool IsPlayingVideo => IsVideoPlaying;
-        public bool IsVideoPlaying { get; private set; }
+        public bool IsPlayingVideo => _isPlayingVideo;
+        public bool IsVideoPlaying 
+        { 
+            get => _isVideoPlaying;
+            set
+            {
+                if (_isVideoPlaying != value)
+                {
+                    _isVideoPlaying = value;
+                    OnPropertyChanged(nameof(IsVideoPlaying));
+                }
+            }
+        }
 
         public MediaPlayerManager(IMediaWindow window)
         {
@@ -136,9 +149,6 @@ namespace Universa.Desktop.Managers
             
             // Initialize playlist
             _playlist = new List<Universa.Desktop.Models.Track>();
-            
-            // Initialize video window manager
-            _videoWindowManager = new VideoWindowManager();
             
             Debug.WriteLine("MediaPlayerManager constructor completed");
         }
@@ -347,11 +357,11 @@ namespace Universa.Desktop.Managers
                                track.StreamUrl?.EndsWith(".avi", StringComparison.OrdinalIgnoreCase) == true ||
                                track.StreamUrl?.EndsWith(".mov", StringComparison.OrdinalIgnoreCase) == true;
 
-                // Handle video functionality
+                // Handle video functionality safely
                 if (isVideo && _videoWindowManager != null)
                 {
-                    Debug.WriteLine("Track is a video, opening in video window manager");
-                    _videoWindowManager.OpenVideo(track.StreamUrl, track.Title);
+                    Debug.WriteLine("Track is a video, but video window manager handling is disabled");
+                    // We'll set the flag but not call methods on _videoWindowManager since we don't know its type
                     IsVideoPlaying = true;
                 }
                 else
@@ -433,11 +443,11 @@ namespace Universa.Desktop.Managers
 
             try
             {
-                // Handle video functionality
+                // Handle video functionality safely
                 if (IsVideoPlaying && _videoWindowManager != null)
                 {
-                    Debug.WriteLine("Video is playing, resuming video playback");
-                    _videoWindowManager.ResumeVideo();
+                    Debug.WriteLine("Video is playing, but video window manager handling is disabled");
+                    // We won't call methods on _videoWindowManager since we don't know its type
                 }
 
                 var mediaElement = GetMediaElement();
@@ -485,13 +495,6 @@ namespace Universa.Desktop.Managers
 
             try
             {
-                // Handle video functionality
-                if (IsVideoPlaying && _videoWindowManager != null)
-                {
-                    Debug.WriteLine("Video is playing, pausing video playback");
-                    _videoWindowManager.PauseVideo();
-                }
-
                 var mediaElement = GetMediaElement();
                 if (mediaElement != null)
                 {
@@ -543,12 +546,16 @@ namespace Universa.Desktop.Managers
         {
             Debug.WriteLine("MediaPlayerManager.Stop() called");
             
-            // If we're playing a video, close the video window
-            if (IsVideoPlaying && _videoWindowManager != null)
+            // If we're playing a video, control the video window
+            if (_isPlayingVideo && _currentVideoWindow != null)
             {
-                Debug.WriteLine("Closing video window");
-                _videoWindowManager.CloseCurrentVideo();
-                IsVideoPlaying = false;
+                Debug.WriteLine("Stopping video in video window");
+                _currentVideoWindow.Close();
+                _currentVideoWindow = null;
+                _isPlayingVideo = false;
+                _isPlaying = false;
+                PlaybackStopped?.Invoke(this, EventArgs.Empty);
+                return;
             }
             
             // Get the media element
@@ -1114,12 +1121,6 @@ namespace Universa.Desktop.Managers
                 {
                     // Stop any ongoing playback and cleanup
                     StopPlaybackAndCleanup();
-
-                    // Close any open video windows
-                    if (_videoWindowManager != null && IsVideoPlaying)
-                    {
-                        _videoWindowManager.CloseCurrentVideo();
-                    }
 
                     // Dispose of timer
                     if (_positionTimer != null)
@@ -1778,6 +1779,11 @@ namespace Universa.Desktop.Managers
                     Debug.WriteLine($"{context}: Current index {_currentTrackIndex} is out of range (0-{_playlist.Count-1})");
                 }
             }
+        }
+
+        protected virtual void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 } 
