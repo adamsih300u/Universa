@@ -512,6 +512,11 @@ namespace Universa.Desktop.Views
             // TODO: Implement RSS tab opening
         }
 
+        private void OpenGameTab_Click(object sender, RoutedEventArgs e)
+        {
+            OpenGameTab();
+        }
+
         private void OpenOverviewTab_Click(object sender, RoutedEventArgs e)
         {
             OpenOverviewTab();
@@ -645,6 +650,31 @@ namespace Universa.Desktop.Views
                 Header = name ?? "Music",
                 Content = musicTab,
                 Tag = "music"
+            };
+
+            MainTabControl.Items.Add(newTab);
+            MainTabControl.SelectedItem = newTab;
+        }
+
+        public void OpenGameTab()
+        {
+            // Check if game tab is already open
+            foreach (TabItem existingTab in MainTabControl.Items)
+            {
+                if (existingTab.Content is GameTab)
+                {
+                    MainTabControl.SelectedItem = existingTab;
+                    return;
+                }
+            }
+
+            // Create new game tab
+            var gameTab = new GameTab();
+            var newTab = new TabItem
+            {
+                Header = "Stock Trader",
+                Content = gameTab,
+                Tag = "game"
             };
 
             MainTabControl.Items.Add(newTab);

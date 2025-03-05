@@ -1,0 +1,232 @@
+<UserControl x:Class="Universa.Desktop.Views.GameTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:Universa.Desktop.Views"
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="800">
+    
+    <Grid Background="{DynamicResource WindowBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto" MaxHeight="150"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <Border Grid.Row="0" Background="{DynamicResource HeaderBackgroundBrush}" Padding="10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="Stock Trader" FontSize="24" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
+                    <Button x:Name="NewGameButton" Content="New Game" Margin="20,0,0,0" Padding="10,5" Click="NewGameButton_Click"/>
+                    <Button x:Name="SaveGameButton" Content="Save Game" Margin="10,0,0,0" Padding="10,5" Click="SaveGameButton_Click"/>
+                    <Button x:Name="LoadGameButton" Content="Load Game" Margin="10,0,0,0" Padding="10,5" Click="LoadGameButton_Click"/>
+                    <Button x:Name="PauseResumeButton" Content="Pause" Margin="10,0,0,0" Padding="10,5" Click="PauseResumeButton_Click"/>
+                </StackPanel>
+                
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <TextBlock Text="Day: " FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
+                    <TextBlock x:Name="DayCounter" Text="1 - 9:00" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}" Margin="5,0,15,0"/>
+                    <TextBlock Text="Market: " FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
+                    <TextBlock x:Name="MarketStatusText" Text="OPEN" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource PositiveChangeBrush}" Margin="5,0,15,0"/>
+                    <TextBlock Text="Cash: $" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
+                    <TextBlock x:Name="CashDisplay" Text="10,000.00" FontSize="16" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+        
+        <!-- Main Content -->
+        <Grid Grid.Row="1" Margin="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" MinWidth="400"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="1*" MinWidth="300"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Stock Market -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <TextBlock Grid.Row="0" Text="Market" FontSize="18" FontWeight="Bold" Margin="0,0,0,10" Foreground="{DynamicResource TextBrush}"/>
+                
+                <Grid Grid.Row="1">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    
+                    <TextBlock Grid.Row="0" Text="Stock Ticker - Scrolling every 2 seconds (selection is preserved)" FontStyle="Italic" Margin="0,0,0,5" Foreground="{DynamicResource TextBrush}" HorizontalAlignment="Center"/>
+                    
+                    <ListView x:Name="StockListView" Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Background="Transparent" Foreground="{DynamicResource TextBrush}" HorizontalContentAlignment="Stretch" SelectionMode="Single">
+                        <ListView.Resources>
+                            <Style TargetType="GridViewColumnHeader">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                            </Style>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource SelectedBackgroundBrush}"/>
+                                    </Trigger>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource ListItemHoverBackgroundBrush}"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListView.Resources>
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Header="Symbol" DisplayMemberBinding="{Binding Symbol}" Width="80"/>
+                                <GridViewColumn Header="Company" DisplayMemberBinding="{Binding Name}" Width="Auto"/>
+                                <GridViewColumn Header="Price" DisplayMemberBinding="{Binding CurrentPrice, StringFormat=C2}" Width="100"/>
+                                <GridViewColumn Header="Change" Width="100">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding PriceChange, StringFormat='{}{0:+0.00;-0.00;0.00}'}" 
+                                                       Foreground="{Binding PriceChange, Converter={StaticResource PriceChangeColorConverter}}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="% Change" Width="100">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding PercentChange, StringFormat='{}{0:+0.00;-0.00;0.00}%'}" 
+                                                       Foreground="{Binding PercentChange, Converter={StaticResource PriceChangeColorConverter}}"/>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                                <GridViewColumn Header="Sector" DisplayMemberBinding="{Binding Sector}" Width="120"/>
+                                <GridViewColumn Header="Type" Width="100">
+                                    <GridViewColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Cyclical" Visibility="{Binding IsCyclical, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="#FF9800" Margin="0,0,5,0"/>
+                                                <TextBlock Text="Defensive" Visibility="{Binding IsDefensive, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="#4CAF50" Margin="0,0,5,0"/>
+                                                <TextBlock Text="Yield" Visibility="{Binding YieldsFocus, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="#2196F3"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </GridViewColumn.CellTemplate>
+                                </GridViewColumn>
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </Grid>
+            </Grid>
+            
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch" Background="{DynamicResource BorderBrush}"/>
+            
+            <!-- Portfolio -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                
+                <TextBlock Grid.Row="0" Text="Portfolio" FontSize="18" FontWeight="Bold" Margin="0,0,0,10" Foreground="{DynamicResource TextBrush}"/>
+                
+                <ListView x:Name="PortfolioListView" Grid.Row="1" BorderThickness="1" BorderBrush="{DynamicResource BorderBrush}" Background="Transparent" Foreground="{DynamicResource TextBrush}">
+                    <ListView.Resources>
+                        <Style TargetType="GridViewColumnHeader">
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                        </Style>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource SelectedBackgroundBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="{DynamicResource ListItemHoverBackgroundBrush}"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListView.Resources>
+                    <ListView.View>
+                        <GridView>
+                            <GridViewColumn Header="Symbol" DisplayMemberBinding="{Binding Symbol}" Width="80"/>
+                            <GridViewColumn Header="Shares" DisplayMemberBinding="{Binding Shares}" Width="80"/>
+                            <GridViewColumn Header="Avg Cost" DisplayMemberBinding="{Binding AverageCost, StringFormat=C2}" Width="80"/>
+                            <GridViewColumn Header="Value" DisplayMemberBinding="{Binding CurrentValue, StringFormat=C2}" Width="80"/>
+                            <GridViewColumn Header="Gain/Loss" Width="80">
+                                <GridViewColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding TotalGainLoss, StringFormat='{}{0:+0.00;-0.00;0.00}'}" 
+                                                   Foreground="{Binding TotalGainLoss, Converter={StaticResource PriceChangeColorConverter}}"/>
+                                    </DataTemplate>
+                                </GridViewColumn.CellTemplate>
+                            </GridViewColumn>
+                        </GridView>
+                    </ListView.View>
+                </ListView>
+                
+                <Grid Grid.Row="2" Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Symbol Input -->
+                    <Grid Grid.Row="0" Margin="0,0,0,5">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Symbol:" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
+                        <TextBox x:Name="SymbolTextBox" Grid.Column="1" Margin="10,0,0,0" TextAlignment="Left"/>
+                    </Grid>
+                    
+                    <!-- Shares Input -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <TextBlock Grid.Column="0" Text="Shares:" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
+                        <TextBox x:Name="SharesTextBox" Grid.Column="1" Margin="10,0" Text="100" TextAlignment="Right"/>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal">
+                            <Button x:Name="BuyButton" Content="Buy" Width="60" Margin="0,0,5,0" Click="BuyButton_Click"/>
+                            <Button x:Name="SellButton" Content="Sell" Width="60" Click="SellButton_Click"/>
+                        </StackPanel>
+                    </Grid>
+                    
+                    <Button x:Name="NextDayButton" Grid.Row="2" Content="Next Day" Margin="0,10,0,0" Height="30" Click="NextDayButton_Click"/>
+                </Grid>
+            </Grid>
+        </Grid>
+        
+        <!-- News Feed -->
+        <Border Grid.Row="2" Background="{DynamicResource HeaderBackgroundBrush}" Padding="10">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                
+                <TextBlock Grid.Row="0" Text="Market News" FontSize="16" FontWeight="Bold" Foreground="{DynamicResource TextBrush}"/>
+                
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,5,0,0" MaxHeight="120">
+                    <TextBlock x:Name="NewsTextBlock" TextWrapping="Wrap" Foreground="{DynamicResource TextBrush}" FontSize="13"/>
+                </ScrollViewer>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl> 

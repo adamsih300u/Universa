@@ -25,6 +25,17 @@
             <converters:MessageAlignmentConverter x:Key="MessageAlignmentConverter"/>
             <converters:VerificationStatusConverter x:Key="VerificationStatusConverter"/>
             <converters:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
+            <converters:PriceChangeColorConverter x:Key="PriceChangeColorConverter"/>
+
+            <!-- Stock Market Colors -->
+            <Color x:Key="PositiveChangeColor">#4CAF50</Color>
+            <Color x:Key="NegativeChangeColor">#F44336</Color>
+            <Color x:Key="NeutralChangeColor">#9E9E9E</Color>
+            
+            <!-- Stock Market Brushes -->
+            <SolidColorBrush x:Key="PositiveChangeBrush" Color="#4CAF50"/>
+            <SolidColorBrush x:Key="NegativeChangeBrush" Color="#F44336"/>
+            <SolidColorBrush x:Key="NeutralChangeBrush" Color="{StaticResource NeutralChangeColor}"/>
 
             <!-- Default Styles -->
             <Style x:Key="BaseTextStyle">

@@ -158,6 +158,9 @@
                 <MenuItem Header="Music" Click="OpenMusicTab"/>
                 <MenuItem Header="RSS" Click="OpenRssTab"/>
             </MenuItem>
+            <MenuItem Header="_Games">
+                <MenuItem Header="Stock Trader" Click="OpenGameTab_Click"/>
+            </MenuItem>
         </Menu>
 
         <!-- Main Content -->
