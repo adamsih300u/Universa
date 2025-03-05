@@ -8,6 +8,7 @@ using System.Text.Json;
 using Universa.Desktop.Models;
 using System.Net.Http.Headers;
 using System.Diagnostics;
+using System.Threading;
 
 namespace Universa.Desktop.Services
 {
@@ -83,6 +84,11 @@ namespace Universa.Desktop.Services
 
         public abstract Task<string> ProcessRequest(string content, string request);
 
+        public virtual async Task<string> ProcessRequest(string content, string request, CancellationToken cancellationToken)
+        {
+            return await ProcessRequest(content, request);
+        }
+
         protected virtual string BuildBasePrompt(string content, string request)
         {
             var historyText = string.Join("\n", _memory.Select(m => $"{m.Role}: {m.Content}"));
@@ -156,7 +162,34 @@ Please provide specific and helpful suggestions.";
             }
         }
 
-        private async Task<string> ExecuteOpenAIPrompt(string prompt)
+        protected async Task<string> ExecutePrompt(string prompt, CancellationToken cancellationToken)
+        {
+            ThrowIfDisposed();
+
+            try
+            {
+                switch (_provider)
+                {
+                    case Models.AIProvider.OpenAI:
+                        return await ExecuteOpenAIPrompt(prompt, cancellationToken);
+                    case Models.AIProvider.Anthropic:
+                        return await ExecuteAnthropicPrompt(prompt, cancellationToken);
+                    case Models.AIProvider.Ollama:
+                        return await ExecuteOllamaPrompt(prompt, cancellationToken);
+                    case Models.AIProvider.XAI:
+                        return await ExecuteXAIPrompt(prompt, cancellationToken);
+                    default:
+                        throw new NotSupportedException($"Provider {_provider} is not supported.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error executing prompt: {ex.Message}");
+                throw;
+            }
+        }
+
+        private async Task<string> ExecuteOpenAIPrompt(string prompt, CancellationToken cancellationToken)
         {
             // Debug logging for model
             System.Diagnostics.Debug.WriteLine($"\n=== OPENAI API CALL ===");
@@ -190,7 +223,8 @@ Please provide specific and helpful suggestions.";
 
             var response = await _httpClient.PostAsync(
                 "chat/completions",
-                new StringContent(jsonContent, Encoding.UTF8, "application/json")
+                new StringContent(jsonContent, Encoding.UTF8, "application/json"),
+                cancellationToken
             );
 
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -203,7 +237,7 @@ Please provide specific and helpful suggestions.";
             return responseData.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
         }
 
-        private async Task<string> ExecuteAnthropicPrompt(string prompt)
+        private async Task<string> ExecuteAnthropicPrompt(string prompt, CancellationToken cancellationToken)
         {
             // Debug logging for model and memory
             Debug.WriteLine($"\n=== ANTHROPIC API CALL DEBUG ===");
@@ -273,7 +307,8 @@ Please provide specific and helpful suggestions.";
 
             var response = await _httpClient.PostAsync(
                 "messages",
-                new StringContent(jsonContent, Encoding.UTF8, "application/json")
+                new StringContent(jsonContent, Encoding.UTF8, "application/json"),
+                cancellationToken
             );
 
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -304,7 +339,7 @@ Please provide specific and helpful suggestions.";
             return fullResponse.ToString();
         }
 
-        private async Task<string> ExecuteOllamaPrompt(string prompt)
+        private async Task<string> ExecuteOllamaPrompt(string prompt, CancellationToken cancellationToken)
         {
             var requestBody = new
             {
@@ -316,7 +351,8 @@ Please provide specific and helpful suggestions.";
 
             var response = await _httpClient.PostAsync(
                 "generate",
-                new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json")
+                new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json"),
+                cancellationToken
             );
 
             var responseContent = await response.Content.ReadAsStringAsync();
@@ -329,7 +365,7 @@ Please provide specific and helpful suggestions.";
             return responseData.GetProperty("response").GetString();
         }
 
-        private async Task<string> ExecuteXAIPrompt(string prompt)
+        private async Task<string> ExecuteXAIPrompt(string prompt, CancellationToken cancellationToken)
         {
             // Debug logging
             System.Diagnostics.Debug.WriteLine($"\n=== XAI API CALL ===");
@@ -369,7 +405,8 @@ Please provide specific and helpful suggestions.";
 
             var response = await _httpClient.PostAsync(
                 "chat/completions",
-                new StringContent(jsonContent, Encoding.UTF8, "application/json")
+                new StringContent(jsonContent, Encoding.UTF8, "application/json"),
+                cancellationToken
             );
 
             var responseContent = await response.Content.ReadAsStringAsync();

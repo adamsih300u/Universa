@@ -20,6 +20,7 @@ using Universa.Desktop.Core.Logging;
 using System.Windows.Threading;
 using Universa.Desktop.Library;
 using System.Text;
+using System.Threading;
 
 namespace Universa.Desktop.ViewModels
 {
@@ -41,6 +42,7 @@ namespace Universa.Desktop.ViewModels
         private MusicTab _currentMusicTab;
         private bool _isInitializing = true;
         private string _lastUserMessage;
+        private CancellationTokenSource _cancellationTokenSource;
 
         public ObservableCollection<Models.ChatMessage> Messages
         {
@@ -159,6 +161,7 @@ namespace Universa.Desktop.ViewModels
         public ICommand ToggleModeCommand { get; private set; }
         public ICommand VerifyDeviceCommand { get; private set; }
         public ICommand RetryCommand { get; private set; }
+        public ICommand StopThinkingCommand { get; private set; }
 
         public string MatrixUserId
         {
@@ -198,6 +201,7 @@ namespace Universa.Desktop.ViewModels
             ToggleModeCommand = new RelayCommand(_ => UpdateMode());
             VerifyDeviceCommand = new RelayCommand(async _ => await VerifyDeviceAsync());
             RetryCommand = new RelayCommand(async param => await RetryMessageAsync(param as Models.ChatMessage));
+            StopThinkingCommand = new RelayCommand(param => StopThinking(param as Models.ChatMessage));
 
             // Subscribe to messages collection changes
             _messages.CollectionChanged += Messages_CollectionChanged;
@@ -782,9 +786,13 @@ namespace Universa.Desktop.ViewModels
                 var thinkingMessage = new Models.ChatMessage("assistant", "Thinking...")
                 {
                     ModelName = SelectedModel.Name,
-                    Provider = SelectedModel.Provider
+                    Provider = SelectedModel.Provider,
+                    IsThinking = true
                 };
                 Messages.Add(thinkingMessage);
+
+                // Create a new cancellation token source for this request
+                _cancellationTokenSource = new CancellationTokenSource();
 
                 string content = null;
                 string response = null;
@@ -812,10 +820,31 @@ namespace Universa.Desktop.ViewModels
                         return;
                     }
                     Debug.WriteLine("Service created, processing request...");
-                    response = await service.ProcessRequest(content, userInput);
+                    
+                    // Pass the cancellation token to the service
+                    response = await Task.Run(async () => {
+                        try {
+                            return await service.ProcessRequest(content, userInput, _cancellationTokenSource.Token);
+                        }
+                        catch (OperationCanceledException) {
+                            return "Request cancelled by user.";
+                        }
+                    });
                 }
                 catch (Exception ex)
                 {
+                    if (ex is OperationCanceledException)
+                    {
+                        Debug.WriteLine("Request was cancelled by user");
+                        Messages.Remove(thinkingMessage);
+                        Messages.Add(new Models.ChatMessage("assistant", "Request cancelled by user.")
+                        {
+                            ModelName = SelectedModel.Name,
+                            Provider = SelectedModel.Provider
+                        });
+                        return;
+                    }
+                    
                     Debug.WriteLine($"Error processing request: {ex}");
                     Messages.Remove(thinkingMessage);
                     Messages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true)
@@ -839,6 +868,12 @@ namespace Universa.Desktop.ViewModels
                 {
                     LastUserMessage = userInput
                 });
+            }
+            finally
+            {
+                // Dispose the cancellation token source
+                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource = null;
             }
         }
 
@@ -1124,6 +1159,22 @@ namespace Universa.Desktop.ViewModels
         
             // Assume Ollama for any other model ID
             return AIProvider.Ollama;
+        }
+
+        private void StopThinking(Models.ChatMessage thinkingMessage)
+        {
+            if (thinkingMessage == null || !thinkingMessage.IsThinking)
+                return;
+
+            Debug.WriteLine("Stopping AI request...");
+            
+            // Cancel the ongoing request
+            _cancellationTokenSource?.Cancel();
+            
+            // Update the message to indicate cancellation is in progress
+            thinkingMessage.Content = "Cancelling request...";
+            
+            // The rest will be handled in the SendMessageAsync task
         }
     }
 } 

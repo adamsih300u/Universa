@@ -210,6 +210,31 @@
                                             </Paragraph>
                                         </FlowDocument>
                                     </RichTextBox>
+                                    
+                                    <!-- Stop Button for Thinking Messages -->
+                                    <Button Content="Stop" 
+                                            Visibility="{Binding IsThinking, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                            Command="{Binding DataContext.StopThinkingCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}"
+                                            Margin="0,8,0,0"
+                                            Padding="8,4"
+                                            HorizontalAlignment="Right"
+                                            Background="#E74C3C"
+                                            Foreground="White"
+                                            BorderBrush="#C0392B">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                                <Setter Property="Opacity" Value="0.9"/>
+                                                <Style.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter Property="Opacity" Value="1"/>
+                                                        <Setter Property="Background" Value="#C0392B"/>
+                                                    </Trigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
+                                    
                                     <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}" 
                                              Style="{StaticResource TimestampStyle}"
                                              Foreground="{DynamicResource TextBrush}"/>

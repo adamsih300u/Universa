@@ -3,6 +3,9 @@ using System.Threading.Tasks;
 using Universa.Desktop.Models;
 using System.Text;
 using System.Linq;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Threading;
 
 namespace Universa.Desktop.Services
 {
@@ -79,6 +82,47 @@ namespace Universa.Desktop.Services
                 
                 // Get response from AI using the memory context
                 var response = await ExecutePrompt("");
+                
+                // Add the response to memory
+                _memory.Add(new MemoryMessage("assistant", response, _model));
+
+                // Trim memory if needed
+                while (_memory.Count > MAX_HISTORY_ITEMS)
+                {
+                    // Remove the oldest non-system message
+                    var oldestNonSystem = _memory.Skip(1).FirstOrDefault();
+                    if (oldestNonSystem != null)
+                    {
+                        _memory.Remove(oldestNonSystem);
+                    }
+                }
+
+                return response;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"\n=== GENERAL CHAT ERROR ===\n{ex}");
+                throw;
+            }
+        }
+
+        // Override the cancellable version
+        public override async Task<string> ProcessRequest(string content, string request, CancellationToken cancellationToken)
+        {
+            try
+            {
+                // Update content if changed
+                if (_currentContent != content)
+                {
+                    _currentContent = content;
+                    InitializeSystemMessage();
+                }
+
+                // Add the user request to memory
+                _memory.Add(new MemoryMessage("user", request, _model));
+                
+                // Get response from AI using the memory context with cancellation support
+                var response = await ExecutePrompt("", cancellationToken);
                 
                 // Add the response to memory
                 _memory.Add(new MemoryMessage("assistant", response, _model));

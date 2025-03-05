@@ -19,6 +19,7 @@ namespace Universa.Desktop.Models
         private bool _isUserMessage;
         private bool _canRetry;
         private string _lastUserMessage;
+        private bool _isThinking;
 
         public string Role
         {
@@ -155,6 +156,19 @@ namespace Universa.Desktop.Models
             }
         }
 
+        public bool IsThinking
+        {
+            get => _isThinking;
+            set
+            {
+                if (_isThinking != value)
+                {
+                    _isThinking = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public ChatMessage()
         {
             Timestamp = DateTime.UtcNow;
@@ -169,6 +183,7 @@ namespace Universa.Desktop.Models
             IsUserMessage = role == "user";
             Sender = role == "user" ? "You" : "Assistant";
             CanRetry = isError;
+            IsThinking = role == "assistant" && content != null && content.StartsWith("Thinking");
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
