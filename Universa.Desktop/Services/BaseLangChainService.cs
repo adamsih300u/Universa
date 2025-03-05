@@ -18,7 +18,7 @@ namespace Universa.Desktop.Services
         protected readonly Models.AIProvider _provider;
         protected readonly List<MemoryMessage> _memory;
         protected readonly HttpClient _httpClient;
-        protected const int MAX_HISTORY_ITEMS = 10;
+        protected const int MAX_HISTORY_ITEMS = 25;
         protected string _currentContext;
         protected bool _disposed;
         protected bool _isThinkingMode;
