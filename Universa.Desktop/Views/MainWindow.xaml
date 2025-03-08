@@ -146,6 +146,8 @@
                 <MenuItem Header="_Export..." Click="ExportFile_Click"/>
                 <MenuItem Header="_Close" Click="CloseFile_Click"/>
                 <Separator/>
+                <MenuItem Header="_Backup Library..." Click="BackupLibrary_Click"/>
+                <Separator/>
                 <MenuItem Header="E_xit" Click="Exit_Click"/>
             </MenuItem>
             <MenuItem Header="_Settings" Click="OpenSettings_Click"/>
