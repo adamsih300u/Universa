@@ -7,6 +7,8 @@ using Universa.Desktop.Views;
 using Universa.Desktop.Library;
 using System.IO;
 using System.Diagnostics;
+using Universa.Desktop.Services.VectorStore;
+using SQLite;
 
 namespace Universa.Desktop
 {
@@ -23,6 +25,9 @@ namespace Universa.Desktop
 
             try
             {
+                // Ensure SQLite is properly initialized
+                EnsureSQLiteInitialized();
+                
                 // Set up dependency injection
                 var services = new ServiceCollection();
                 
@@ -36,6 +41,16 @@ namespace Universa.Desktop
                 services.AddSingleton<Views.MainWindow>();
                 services.AddTransient<Views.SettingsWindow>();
                 services.AddTransient<ViewModels.SettingsViewModel>();
+
+                // Get application data path
+                var appDataPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Universa"
+                );
+                Debug.WriteLine($"Application data path: {appDataPath}");
+
+                // Register vector store services
+                services.AddVectorStore(appDataPath);
 
                 // Register additional services through ServiceLocator
                 ServiceLocator.RegisterServices(services);
@@ -121,6 +136,61 @@ namespace Universa.Desktop
             // Save the configuration after successful validation
             configService.Save();
             return true;
+        }
+
+        /// <summary>
+        /// Ensures SQLite is properly initialized
+        /// </summary>
+        private void EnsureSQLiteInitialized()
+        {
+            try
+            {
+                // Get the directory where the application is running
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                Debug.WriteLine($"Application base directory: {baseDir}");
+                
+                // Check SQLite-net-pcl version
+                Debug.WriteLine($"Checking SQLite-net-pcl initialization");
+                
+                // Create a test in-memory database to verify SQLite is working
+                using (var connection = new SQLiteConnection(":memory:"))
+                {
+                    Debug.WriteLine("Successfully opened in-memory SQLite database with sqlite-net-pcl");
+                    
+                    // Create a test table
+                    connection.CreateTable<TestTable>();
+                    Debug.WriteLine("Successfully created test table");
+                    
+                    // Insert a test record
+                    connection.Insert(new TestTable { Name = "Test" });
+                    
+                    // Query the test record
+                    var count = connection.Table<TestTable>().Count();
+                    Debug.WriteLine($"Test table record count: {count}");
+                }
+                
+                Debug.WriteLine("SQLite initialization successful");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error initializing SQLite: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                
+                if (ex is DllNotFoundException || ex is BadImageFormatException)
+                {
+                    Debug.WriteLine("Native SQLite library could not be loaded. This is likely a deployment issue.");
+                }
+                
+                // Don't rethrow - we want the application to continue even if SQLite fails
+            }
+        }
+
+        // Simple class for testing SQLite initialization
+        private class TestTable
+        {
+            [PrimaryKey, AutoIncrement]
+            public int Id { get; set; }
+            public string Name { get; set; }
         }
 
         protected override void OnExit(ExitEventArgs e)

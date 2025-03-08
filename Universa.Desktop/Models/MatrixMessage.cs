@@ -1,6 +1,7 @@
 using System;
 using Newtonsoft.Json.Linq;
 using System.Diagnostics;
+using Universa.Desktop.Helpers;
 
 namespace Universa.Desktop.Models
 {
@@ -16,7 +17,7 @@ namespace Universa.Desktop.Models
 
         public MatrixMessage()
         {
-            Timestamp = DateTime.Now;
+            Timestamp = TimeZoneHelper.Now;
             MessageType = "m.room.message";
             RawContent = new JObject();
         }
@@ -29,7 +30,7 @@ namespace Universa.Desktop.Models
                 Sender = FormatSender(sender),
                 Content = content,
                 DisplayContent = content,
-                Timestamp = DateTime.Now,
+                Timestamp = TimeZoneHelper.Now,
                 MessageType = "m.room.message",
                 RawContent = new JObject
                 {
@@ -41,19 +42,19 @@ namespace Universa.Desktop.Models
 
         public static MatrixMessage FromMatrixEvent(string eventId, string sender, string type, JObject content)
         {
-            var timestamp = DateTime.Now;
+            var timestamp = TimeZoneHelper.Now;
 
             // Try to get timestamp from the event content
             if (content.TryGetValue("origin_server_ts", out var tsToken))
             {
                 var unixTimestamp = tsToken.Value<long>();
-                timestamp = DateTimeOffset.FromUnixTimeMilliseconds(unixTimestamp).LocalDateTime;
+                timestamp = TimeZoneHelper.FromUnixTimeMilliseconds(unixTimestamp);
             }
             else if (content.Parent is JObject eventObj && eventObj.TryGetValue("origin_server_ts", out tsToken))
             {
                 // Try to get timestamp from parent event object if not in content
                 var unixTimestamp = tsToken.Value<long>();
-                timestamp = DateTimeOffset.FromUnixTimeMilliseconds(unixTimestamp).LocalDateTime;
+                timestamp = TimeZoneHelper.FromUnixTimeMilliseconds(unixTimestamp);
             }
 
             var message = new MatrixMessage

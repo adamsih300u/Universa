@@ -21,6 +21,7 @@ using System.Windows.Threading;
 using Universa.Desktop.Library;
 using System.Text;
 using System.Threading;
+using Universa.Desktop.Services.VectorStore;
 
 namespace Universa.Desktop.ViewModels
 {
@@ -38,11 +39,13 @@ namespace Universa.Desktop.ViewModels
         private string _inputText;
         private bool _isContextMode = true;
         private EditorTab _currentEditor;
-        private bool _useBetaChains;
         private MusicTab _currentMusicTab;
         private bool _isInitializing = true;
         private string _lastUserMessage;
         private CancellationTokenSource _cancellationTokenSource;
+        private readonly ChatHistoryVectorService _chatHistoryVectorService;
+        private bool _showSimilarMessages;
+        private ObservableCollection<Services.VectorStore.ChatMessage> _similarMessages;
 
         public ObservableCollection<Models.ChatMessage> Messages
         {
@@ -142,21 +145,6 @@ namespace Universa.Desktop.ViewModels
             }
         }
 
-        public bool UseBetaChains
-        {
-            get => _config.UseBetaChains;
-            set
-            {
-                if (_config.UseBetaChains != value)
-                {
-                    _config.UseBetaChains = value;
-                    OnPropertyChanged();
-                    // Reset current service to force recreation with new setting
-                    DisposeCurrentService();
-                }
-            }
-        }
-
         public ICommand SendCommand { get; private set; }
         public ICommand ToggleModeCommand { get; private set; }
         public ICommand VerifyDeviceCommand { get; private set; }
@@ -178,7 +166,41 @@ namespace Universa.Desktop.ViewModels
             get => MatrixClient.Instance.IsDeviceVerified;
         }
 
-        public ChatSidebarViewModel()
+        /// <summary>
+        /// Gets or sets whether to show similar messages
+        /// </summary>
+        public bool ShowSimilarMessages
+        {
+            get => _showSimilarMessages;
+            set
+            {
+                if (_showSimilarMessages != value)
+                {
+                    _showSimilarMessages = value;
+                    OnPropertyChanged();
+                    
+                    if (_showSimilarMessages && !string.IsNullOrWhiteSpace(InputText))
+                    {
+                        FindSimilarMessagesAsync(InputText).ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Gets the collection of similar messages
+        /// </summary>
+        public ObservableCollection<Services.VectorStore.ChatMessage> SimilarMessages
+        {
+            get => _similarMessages;
+            private set
+            {
+                _similarMessages = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public ChatSidebarViewModel(ModelProvider modelProvider = null, ChatHistoryVectorService chatHistoryVectorService = null)
         {
             _isInitializing = true;
             
@@ -190,11 +212,8 @@ namespace Universa.Desktop.ViewModels
             // Initialize services
             _configService = ServiceLocator.Instance.GetRequiredService<IConfigurationService>();
             _config = _configService.Provider;
-            _modelProvider = new ModelProvider(_configService);
+            _modelProvider = modelProvider ?? new ModelProvider(_configService);
             _modelProvider.ModelsChanged += OnModelsChanged;
-            
-            // Load beta chains setting from configuration
-            _useBetaChains = _config.UseBetaChains;
             
             // Initialize commands
             SendCommand = new RelayCommand(async _ => await SendMessageAsync());
@@ -208,6 +227,9 @@ namespace Universa.Desktop.ViewModels
 
             // Load initial models and complete initialization
             _ = InitializeAsync();
+
+            _chatHistoryVectorService = chatHistoryVectorService;
+            _similarMessages = new ObservableCollection<Services.VectorStore.ChatMessage>();
         }
 
         private async Task InitializeAsync()
@@ -679,27 +701,19 @@ namespace Universa.Desktop.ViewModels
                 }
                 else if (isFiction)
                 {
-                    if (UseBetaChains)
+                    Debug.WriteLine("Creating FictionWritingBeta service");
+                    Debug.WriteLine($"File path: {filePath}");
+                    Debug.WriteLine($"File content length: {fileContent?.Length ?? 0}");
+                    
+                    _currentService = await FictionWritingBeta.GetInstance(apiKey, SelectedModel.Name, SelectedModel.Provider, filePath, libraryPath);
+                    if (_currentService is FictionWritingBeta fictionBeta && !string.IsNullOrEmpty(fileContent))
                     {
-                        Debug.WriteLine("Creating FictionWritingBeta service");
-                        Debug.WriteLine($"File path: {filePath}");
-                        Debug.WriteLine($"File content length: {fileContent?.Length ?? 0}");
-                        
-                        _currentService = await FictionWritingBeta.GetInstance(apiKey, SelectedModel.Name, SelectedModel.Provider, filePath, libraryPath);
-                        if (_currentService is FictionWritingBeta fictionBeta && !string.IsNullOrEmpty(fileContent))
-                        {
-                            Debug.WriteLine($"Initializing FictionWritingBeta with content length: {fileContent.Length}");
-                            await fictionBeta.UpdateContentAndInitialize(fileContent);
-                        }
-                        else
-                        {
-                            Debug.WriteLine($"Could not initialize FictionWritingBeta. _currentService is FictionWritingBeta: {_currentService is FictionWritingBeta}, fileContent is null or empty: {string.IsNullOrEmpty(fileContent)}");
-                        }
+                        Debug.WriteLine($"Initializing FictionWritingBeta with content length: {fileContent.Length}");
+                        await fictionBeta.UpdateContentAndInitialize(fileContent);
                     }
                     else
                     {
-                        Debug.WriteLine("Creating FictionWritingChain service");
-                        _currentService = await FictionWritingChain.GetInstance(apiKey, SelectedModel.Name, SelectedModel.Provider, fileContent ?? string.Empty);
+                        Debug.WriteLine($"Could not initialize FictionWritingBeta. _currentService is FictionWritingBeta: {_currentService is FictionWritingBeta}, fileContent is null or empty: {string.IsNullOrEmpty(fileContent)}");
                     }
                 }
 
@@ -815,7 +829,8 @@ namespace Universa.Desktop.ViewModels
                         Messages.Remove(thinkingMessage);
                         Messages.Add(new Models.ChatMessage("system", "Failed to create language service. Please check your settings and try again.", true)
                         {
-                            LastUserMessage = userInput
+                            LastUserMessage = userInput,
+                            IsError = true
                         });
                         return;
                     }
@@ -849,7 +864,8 @@ namespace Universa.Desktop.ViewModels
                     Messages.Remove(thinkingMessage);
                     Messages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true)
                     {
-                        LastUserMessage = userInput
+                        LastUserMessage = userInput,
+                        IsError = true
                     });
                     return;
                 }
@@ -860,13 +876,60 @@ namespace Universa.Desktop.ViewModels
                     ModelName = SelectedModel.Name,
                     Provider = SelectedModel.Provider
                 });
+
+                // Store user message in vector database if enabled
+                if (_chatHistoryVectorService != null)
+                {
+                    try
+                    {
+                        var config = Configuration.Instance;
+                        if (config.EnableLocalEmbeddings)
+                        {
+                            await _chatHistoryVectorService.StoreMessageAsync(new Services.VectorStore.ChatMessage
+                            {
+                                Role = "user",
+                                Content = userInput,
+                                ModelName = SelectedModel?.Name,
+                                Timestamp = DateTime.Now
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error storing user message in vector database: {ex.Message}");
+                    }
+                }
+
+                // Store assistant message in vector database if enabled
+                if (_chatHistoryVectorService != null && !string.IsNullOrEmpty(response))
+                {
+                    try
+                    {
+                        var config = Configuration.Instance;
+                        if (config.EnableLocalEmbeddings)
+                        {
+                            await _chatHistoryVectorService.StoreMessageAsync(new Services.VectorStore.ChatMessage
+                            {
+                                Role = "assistant",
+                                Content = response,
+                                ModelName = SelectedModel?.Name,
+                                Timestamp = DateTime.Now
+                            });
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error storing assistant message in vector database: {ex.Message}");
+                    }
+                }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in SendMessageAsync: {ex}");
                 Messages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true)
                 {
-                    LastUserMessage = userInput
+                    LastUserMessage = userInput,
+                    IsError = true
                 });
             }
             finally
@@ -1175,6 +1238,54 @@ namespace Universa.Desktop.ViewModels
             thinkingMessage.Content = "Cancelling request...";
             
             // The rest will be handled in the SendMessageAsync task
+        }
+
+        /// <summary>
+        /// Finds similar messages to the current input text
+        /// </summary>
+        private async Task FindSimilarMessagesAsync(string inputText)
+        {
+            try
+            {
+                if (_chatHistoryVectorService == null || string.IsNullOrWhiteSpace(inputText))
+                {
+                    return;
+                }
+                
+                var config = Configuration.Instance;
+                if (!config.EnableLocalEmbeddings)
+                {
+                    Debug.WriteLine("Local embeddings are disabled, skipping similar message search");
+                    return;
+                }
+                
+                var similarMessages = await _chatHistoryVectorService.FindSimilarMessagesAsync(inputText, 5);
+                
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    SimilarMessages.Clear();
+                    foreach (var message in similarMessages)
+                    {
+                        SimilarMessages.Add(message);
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error finding similar messages: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Called when the input text changes
+        /// </summary>
+        private void OnInputTextChanged()
+        {
+            // Find similar messages if enabled
+            if (ShowSimilarMessages && !string.IsNullOrWhiteSpace(InputText))
+            {
+                FindSimilarMessagesAsync(InputText).ConfigureAwait(false);
+            }
         }
     }
 } 

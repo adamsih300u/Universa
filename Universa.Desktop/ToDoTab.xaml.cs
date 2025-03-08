@@ -14,6 +14,7 @@ using Universa.Desktop.Models;
 using System.ComponentModel.DataAnnotations;
 using System.Windows.Data;
 using System.Windows.Input;
+using Universa.Desktop.Helpers;
 
 namespace Universa.Desktop
 {
@@ -283,7 +284,7 @@ namespace Universa.Desktop
 
         private DateTime CalculateNextStartDate(ToDo todo)
         {
-            var baseDate = todo.CompletedDate ?? DateTime.Now;
+            var baseDate = todo.CompletedDate ?? TimeZoneHelper.Now;
             
             return todo.RecurrenceUnit?.ToLower() switch
             {

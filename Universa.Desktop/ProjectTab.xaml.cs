@@ -198,13 +198,43 @@ namespace Universa.Desktop
             if (e.PropertyName == nameof(ProjectTask.IsCompleted))
             {
                 var task = sender as ProjectTask;
-                if (task?.Subtasks != null)
+                if (task != null)
                 {
-                    foreach (var subtask in task.Subtasks)
+                    // Update subtasks if this is a parent task
+                    if (task.Subtasks != null)
                     {
-                        subtask.IsCompleted = task.IsCompleted;
+                        foreach (var subtask in task.Subtasks)
+                        {
+                            subtask.IsCompleted = task.IsCompleted;
+                        }
                     }
+                    
+                    // Mark the project as modified
                     IsModified = true;
+                    
+                    // Force save to ensure changes are persisted
+                    SaveFile();
+                }
+            }
+            else
+            {
+                // For other property changes, just mark as modified
+                IsModified = true;
+            }
+        }
+
+        private void Task_CheckedChanged(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox checkBox)
+            {
+                var task = checkBox.DataContext as ProjectTask;
+                if (task != null)
+                {
+                    // Update the IsCompleted property (this will trigger Task_PropertyChanged)
+                    task.IsCompleted = checkBox.IsChecked ?? false;
+                    
+                    // Save the changes
+                    SaveFile();
                 }
             }
         }

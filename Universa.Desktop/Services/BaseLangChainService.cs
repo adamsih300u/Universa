@@ -110,50 +110,7 @@ Please provide specific and helpful suggestions.";
         {
             try
             {
-                switch (_provider)
-                {
-                    case AIProvider.OpenAI:
-                        return await ExecuteOpenAIPrompt(prompt);
-                    case AIProvider.Anthropic:
-                        return await ExecuteAnthropicPrompt(prompt);
-                    case AIProvider.XAI:
-                        return await ExecuteXAIPrompt(prompt);
-                    case AIProvider.Ollama:
-                        return await ExecuteOllamaPrompt(prompt);
-                    case AIProvider.OpenRouter:
-                        Debug.WriteLine($"\n=== OPENROUTER API CALL ===");
-                        Debug.WriteLine($"Using model: {_model}");
-                        Debug.WriteLine($"Memory items: {_memory.Count}");
-
-                        var openRouterService = new OpenRouterService(_apiKey);
-                        
-                        // Convert memory to OpenRouter messages
-                        var messages = new List<OpenRouterService.ChatMessage>();
-                        
-                        // Add memory messages
-                        foreach (var msg in _memory)
-                        {
-                            messages.Add(new OpenRouterService.ChatMessage 
-                            { 
-                                Role = msg.Role.ToLower(),
-                                Content = msg.Content 
-                            });
-                        }
-                        
-                        // Add current prompt if present
-                        if (!string.IsNullOrEmpty(prompt))
-                        {
-                            messages.Add(new OpenRouterService.ChatMessage 
-                            { 
-                                Role = "user",
-                                Content = prompt 
-                            });
-                        }
-
-                        return await openRouterService.SendChatMessage(messages, _model);
-                    default:
-                        throw new ArgumentException($"Unsupported provider: {_provider}");
-                }
+                return await ExecutePrompt(prompt, CancellationToken.None);
             }
             catch (Exception ex)
             {
@@ -178,6 +135,8 @@ Please provide specific and helpful suggestions.";
                         return await ExecuteOllamaPrompt(prompt, cancellationToken);
                     case Models.AIProvider.XAI:
                         return await ExecuteXAIPrompt(prompt, cancellationToken);
+                    case Models.AIProvider.OpenRouter:
+                        return await ExecuteOpenRouterPrompt(prompt, cancellationToken);
                     default:
                         throw new NotSupportedException($"Provider {_provider} is not supported.");
                 }
@@ -417,6 +376,60 @@ Please provide specific and helpful suggestions.";
 
             var responseData = JsonSerializer.Deserialize<JsonElement>(responseContent);
             return responseData.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
+        }
+
+        protected async Task<string> ExecuteOpenRouterPrompt(string prompt, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                Debug.WriteLine($"Executing OpenRouter prompt with model: {_model}");
+                
+                // Create a new OpenRouterService
+                var openRouterService = new OpenRouterService(_apiKey);
+                
+                // Prepare the messages for the OpenRouter API
+                var messages = new List<OpenRouterService.ChatMessage>();
+                
+                // Add system message if available
+                var systemMessage = _memory.FirstOrDefault(m => m.Role == "system");
+                if (systemMessage != null)
+                {
+                    messages.Add(new OpenRouterService.ChatMessage
+                    {
+                        Role = "system",
+                        Content = systemMessage.Content
+                    });
+                }
+                
+                // Add user and assistant messages
+                foreach (var message in _memory.Where(m => m.Role != "system"))
+                {
+                    messages.Add(new OpenRouterService.ChatMessage
+                    {
+                        Role = message.Role,
+                        Content = message.Content
+                    });
+                }
+                
+                // Add the current prompt if not empty
+                if (!string.IsNullOrEmpty(prompt))
+                {
+                    messages.Add(new OpenRouterService.ChatMessage
+                    {
+                        Role = "user",
+                        Content = prompt
+                    });
+                }
+                
+                // Send the request to OpenRouter
+                return await openRouterService.SendChatMessage(messages, _model);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error executing OpenRouter prompt: {ex.Message}");
+                Debug.WriteLine(ex.StackTrace);
+                throw;
+            }
         }
 
         public virtual void ClearMemory()

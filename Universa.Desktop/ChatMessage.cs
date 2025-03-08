@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Linq;
 using Universa.Desktop.Models;
+using Universa.Desktop.Helpers;
 
 namespace Universa.Desktop
 {
@@ -27,7 +28,7 @@ namespace Universa.Desktop
             Role = role;
             Content = content;
             IsUser = isUser;
-            Timestamp = DateTime.Now;
+            Timestamp = TimeZoneHelper.Now;
             UpdateContentBlocks();
         }
 

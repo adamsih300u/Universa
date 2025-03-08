@@ -1,6 +1,11 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.Text.RegularExpressions;
+using System.Windows.Documents;
+using Universa.Desktop.Helpers;
 
 namespace Universa.Desktop.Models
 {
@@ -20,6 +25,7 @@ namespace Universa.Desktop.Models
         private bool _canRetry;
         private string _lastUserMessage;
         private bool _isThinking;
+        private FlowDocument _formattedContent;
 
         public string Role
         {
@@ -169,21 +175,32 @@ namespace Universa.Desktop.Models
             }
         }
 
+        public FlowDocument FormattedContent
+        {
+            get => _formattedContent;
+            set
+            {
+                if (_formattedContent != value)
+                {
+                    _formattedContent = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         public ChatMessage()
         {
-            Timestamp = DateTime.UtcNow;
+            Timestamp = TimeZoneHelper.Now;
             Provider = AIProvider.OpenAI; // Default provider
         }
 
-        public ChatMessage(string role, string content, bool isError = false) : this()
+        public ChatMessage(string role, string content, bool isUserMessage = false)
         {
             Role = role;
             Content = content;
-            IsError = isError;
-            IsUserMessage = role == "user";
-            Sender = role == "user" ? "You" : "Assistant";
-            CanRetry = isError;
-            IsThinking = role == "assistant" && content != null && content.StartsWith("Thinking");
+            IsUserMessage = isUserMessage;
+            Timestamp = TimeZoneHelper.Now;
+            Provider = AIProvider.OpenAI; // Default provider
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

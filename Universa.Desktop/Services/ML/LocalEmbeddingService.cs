@@ -33,7 +33,11 @@ namespace Universa.Desktop.Services.ML
                 {
                     lock (_lock)
                     {
-                        _instance ??= new LocalEmbeddingService();
+                        if (_instance == null)
+                        {
+                            Debug.WriteLine("Creating LocalEmbeddingService singleton instance");
+                            _instance = new LocalEmbeddingService();
+                        }
                     }
                 }
                 return _instance;
@@ -42,23 +46,31 @@ namespace Universa.Desktop.Services.ML
 
         private LocalEmbeddingService()
         {
+            Debug.WriteLine("Initializing LocalEmbeddingService");
             _httpClient = new HttpClient();
             var config = Configuration.Instance;
             _enableLocalEmbeddings = config.EnableLocalEmbeddings;
+            Debug.WriteLine($"LocalEmbeddingService EnableLocalEmbeddings={_enableLocalEmbeddings}");
             _initializationTask = new TaskCompletionSource<bool>();
 
             var modelsDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Models");
             Directory.CreateDirectory(modelsDir);
             _modelPath = Path.Combine(modelsDir, "all-MiniLM-L6-v2.onnx");
+            Debug.WriteLine($"LocalEmbeddingService model path: {_modelPath}");
+
             _tokenizer = new BertTokenizer();
+            Debug.WriteLine("LocalEmbeddingService tokenizer initialized");
 
-            if (!_enableLocalEmbeddings)
+            if (_enableLocalEmbeddings)
             {
-                _initializationTask.SetResult(false);
-                return;
+                // Start initialization in the background
+                Task.Run(async () => await InitializeAsync());
             }
-
-            _ = InitializeAsync();
+            else
+            {
+                Debug.WriteLine("LocalEmbeddingService initialization skipped (disabled in config)");
+                _initializationTask.SetResult(false);
+            }
         }
 
         private async Task InitializeAsync()
@@ -125,13 +137,16 @@ namespace Universa.Desktop.Services.ML
         {
             if (!_enableLocalEmbeddings)
             {
+                Debug.WriteLine("GetEmbeddingsAsync called but local embeddings are disabled");
                 throw new InvalidOperationException("Local embeddings are disabled");
             }
 
+            Debug.WriteLine($"Getting embeddings for text: '{text.Substring(0, Math.Min(50, text.Length))}...'");
             await EnsureInitializedAsync();
 
             if (_session == null)
             {
+                Debug.WriteLine("ONNX session is not initialized");
                 throw new InvalidOperationException("ONNX session is not initialized");
             }
 
@@ -163,6 +178,8 @@ namespace Universa.Desktop.Services.ML
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error generating local embeddings: {ex.Message}");
+                Debug.WriteLine($"Inner Exception: {ex.InnerException?.Message ?? "None"}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 throw;
             }
         }

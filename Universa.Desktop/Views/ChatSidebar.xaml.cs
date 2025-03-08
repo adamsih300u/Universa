@@ -5,6 +5,8 @@ using System.Windows.Input;
 using System.Diagnostics;
 using System.ComponentModel;
 using Universa.Desktop.ViewModels;
+using Universa.Desktop.Converters;
+using System.Windows.Documents;
 
 namespace Universa.Desktop.Views
 {
@@ -12,8 +14,18 @@ namespace Universa.Desktop.Views
     {
         public ChatSidebar()
         {
-            InitializeComponent();
-            DataContext = new ChatSidebarViewModel();
+            try
+            {
+                InitializeComponent();
+                
+                // Initialize DataContext after component initialization
+                this.DataContext = new ChatSidebarViewModel();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error initializing ChatSidebar: {ex.Message}");
+                MessageBox.Show($"Error initializing chat: {ex.Message}", "Initialization Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
@@ -63,6 +75,72 @@ namespace Universa.Desktop.Views
                         viewModel.SendCommand.Execute(null);
                     }
                 }
+            }
+        }
+
+        private void MessageContent_Loaded(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (sender is RichTextBox richTextBox)
+                {
+                    string content = richTextBox.Tag as string;
+                    if (content != null)
+                    {
+                        FlowDocument document = new FlowDocument();
+                        
+                        try
+                        {
+                            CodeBlockFormatter.FormatContent(content, document);
+                        }
+                        catch (Exception ex)
+                        {
+                            // Fallback to simple text if formatting fails
+                            document.Blocks.Clear();
+                            document.Blocks.Add(new Paragraph(new Run(content)));
+                            Debug.WriteLine($"Error formatting content: {ex.Message}");
+                        }
+                        
+                        richTextBox.Document = document;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in MessageContent_Loaded: {ex.Message}");
+                // Don't rethrow to prevent application crash
+            }
+        }
+
+        // Add a method to handle text changed event
+        private void InputTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            try
+            {
+                var viewModel = DataContext as ViewModels.ChatSidebarViewModel;
+                if (viewModel == null) return;
+
+                // Try to call the OnInputTextChanged method via reflection since it's private
+                try
+                {
+                    var method = viewModel.GetType().GetMethod("OnInputTextChanged", 
+                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                    
+                    if (method != null)
+                    {
+                        method.Invoke(viewModel, null);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error invoking OnInputTextChanged: {ex.Message}");
+                    // Don't rethrow to prevent application crash
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in InputTextBox_TextChanged: {ex.Message}");
+                // Don't rethrow to prevent application crash
             }
         }
     }

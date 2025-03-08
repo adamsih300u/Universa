@@ -474,6 +474,34 @@
             <Style TargetType="DockPanel">
                 <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>
             </Style>
+
+            <!-- Code Block Resources -->
+            <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#1E1E1E" />
+            <SolidColorBrush x:Key="CodeBlockBorderBrush" Color="#333333" />
+            <SolidColorBrush x:Key="CodeBlockForegroundBrush" Color="#DCDCDC" />
+            <SolidColorBrush x:Key="CodeBlockLanguageBrush" Color="#569CD6" />
+
+            <!-- Light Theme Resources -->
+            <ResourceDictionary x:Key="LightTheme">
+                <!-- ... existing light theme resources ... -->
+                
+                <!-- Code Block Resources for Light Theme -->
+                <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#F5F5F5" />
+                <SolidColorBrush x:Key="CodeBlockBorderBrush" Color="#E0E0E0" />
+                <SolidColorBrush x:Key="CodeBlockForegroundBrush" Color="#333333" />
+                <SolidColorBrush x:Key="CodeBlockLanguageBrush" Color="#0E639C" />
+            </ResourceDictionary>
+
+            <!-- Dark Theme Resources -->
+            <ResourceDictionary x:Key="DarkTheme">
+                <!-- ... existing dark theme resources ... -->
+                
+                <!-- Code Block Resources for Dark Theme -->
+                <SolidColorBrush x:Key="CodeBlockBackgroundBrush" Color="#1E1E1E" />
+                <SolidColorBrush x:Key="CodeBlockBorderBrush" Color="#333333" />
+                <SolidColorBrush x:Key="CodeBlockForegroundBrush" Color="#DCDCDC" />
+                <SolidColorBrush x:Key="CodeBlockLanguageBrush" Color="#569CD6" />
+            </ResourceDictionary>
         </ResourceDictionary>
     </Application.Resources>
 </Application> 

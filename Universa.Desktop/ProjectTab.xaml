@@ -27,6 +27,53 @@
             <Setter Property="Padding" Value="5,3"/>
         </Style>
 
+        <!-- Header Templates for ComboBoxes -->
+        <DataTemplate x:Key="DefaultTagTemplate">
+            <TextBlock Text="{Binding}" Foreground="{DynamicResource TextBrush}"/>
+        </DataTemplate>
+        
+        <DataTemplate x:Key="HardDependenciesHeaderTemplate">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Hard Dependencies" VerticalAlignment="Center"/>
+                <Button Content="+" 
+                        Click="AddHardDependency_Click"
+                        Style="{StaticResource SmallButtonStyle}"
+                        FontSize="10"
+                        Width="16" Height="16"
+                        Padding="0"
+                        Margin="5,0,0,0"
+                        ToolTip="Add Hard Dependency"/>
+            </StackPanel>
+        </DataTemplate>
+        
+        <DataTemplate x:Key="SoftDependenciesHeaderTemplate">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Soft Dependencies" VerticalAlignment="Center"/>
+                <Button Content="+" 
+                        Click="AddSoftDependency_Click"
+                        Style="{StaticResource SmallButtonStyle}"
+                        FontSize="10"
+                        Width="16" Height="16"
+                        Padding="0"
+                        Margin="5,0,0,0"
+                        ToolTip="Add Soft Dependency"/>
+            </StackPanel>
+        </DataTemplate>
+        
+        <DataTemplate x:Key="ReferencesHeaderTemplate">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="References" VerticalAlignment="Center"/>
+                <Button Content="+" 
+                        Click="AddReference_Click"
+                        Style="{StaticResource SmallButtonStyle}"
+                        FontSize="10"
+                        Width="16" Height="16"
+                        Padding="0"
+                        Margin="5,0,0,0"
+                        ToolTip="Add Reference"/>
+            </StackPanel>
+        </DataTemplate>
+
         <Style x:Key="ProjectComboBoxStyle" TargetType="ComboBox">
             <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>
             <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
@@ -37,9 +84,35 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
                         <StackPanel>
-                            <TextBlock Text="{TemplateBinding Tag}"
-                                     Margin="0,0,0,2"
-                                     Foreground="{DynamicResource TextBrush}"/>
+                            <ContentPresenter x:Name="TagPresenter"
+                                            ContentTemplate="{Binding RelativeSource={RelativeSource TemplatedParent}, Path=(converters:ComboBoxExtensions.TagTemplate), FallbackValue={StaticResource DefaultTagTemplate}}"
+                                            Content="{TemplateBinding Tag}"
+                                            Margin="0,0,0,2">
+                                <ContentPresenter.Resources>
+                                    <DataTemplate x:Key="DefaultTagTemplate">
+                                        <TextBlock Text="{Binding}" Foreground="{DynamicResource TextBrush}"/>
+                                    </DataTemplate>
+                                </ContentPresenter.Resources>
+                                <ContentPresenter.Style>
+                                    <Style TargetType="ContentPresenter">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Content, RelativeSource={RelativeSource Self}}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Content, RelativeSource={RelativeSource Self}}" Value="">
+                                                <Setter Property="Visibility" Value="Collapsed"/>
+                                            </DataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding Content, RelativeSource={RelativeSource Self}, Converter={StaticResource BooleanToVisibilityConverter}}" Value="Visible" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ContentPresenter.Style>
+                            </ContentPresenter>
                             <Border Background="{TemplateBinding Background}"
                                     BorderBrush="{TemplateBinding BorderBrush}"
                                     BorderThickness="{TemplateBinding BorderThickness}">
@@ -104,6 +177,47 @@
                 <scm:SortDescription PropertyName="Timestamp" Direction="Descending"/>
             </CollectionViewSource.SortDescriptions>
         </CollectionViewSource>
+
+        <!-- Custom Checkbox Style -->
+        <Style x:Key="TaskCheckBoxStyle" TargetType="CheckBox">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Border x:Name="Border"
+                                    Width="16"
+                                    Height="16"
+                                    CornerRadius="3"
+                                    BorderThickness="1"
+                                    BorderBrush="{DynamicResource BorderBrush}"
+                                    Background="{DynamicResource WindowBackgroundBrush}">
+                                <TextBlock x:Name="CheckMark"
+                                         Text="✓"
+                                         FontSize="12"
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center"
+                                         Foreground="{DynamicResource TextBrush}"
+                                         Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter x:Name="Content"
+                                            Margin="20,0,0,0"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Left"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="Border" Property="Background" Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Border" Property="BorderBrush" Value="{DynamicResource TextBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+        </Style>
     </UserControl.Resources>
     
     <Grid Margin="20">
@@ -132,7 +246,8 @@
                           Margin="0,0,5,0"
                           ItemsSource="{Binding Project.Dependencies}"
                           Style="{StaticResource ProjectComboBoxStyle}"
-                          Tag="Hard Dependencies">
+                          Tag="Hard Dependencies"
+                          converters:ComboBoxExtensions.TagTemplate="{StaticResource HardDependenciesHeaderTemplate}">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
@@ -149,18 +264,15 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Button Content="+" 
-                        Click="AddHardDependency_Click"
-                        Padding="5,0"
-                        ToolTip="Add Hard Dependency"/>
-
+                
                 <!-- Soft Dependencies -->
                 <ComboBox x:Name="SoftDependenciesComboBox"
                           Width="150"
                           Margin="10,0,5,0"
                           ItemsSource="{Binding Project.Dependencies}"
                           Style="{StaticResource ProjectComboBoxStyle}"
-                          Tag="Soft Dependencies">
+                          Tag="Soft Dependencies"
+                          converters:ComboBoxExtensions.TagTemplate="{StaticResource SoftDependenciesHeaderTemplate}">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
@@ -177,10 +289,6 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Button Content="+" 
-                        Click="AddSoftDependency_Click"
-                        Padding="5,0"
-                        ToolTip="Add Soft Dependency"/>
 
                 <!-- References -->
                 <ComboBox x:Name="ReferencesComboBox"
@@ -188,7 +296,8 @@
                           Margin="10,0,5,0"
                           ItemsSource="{Binding Project.RelativeReferences}"
                           Style="{StaticResource ProjectComboBoxStyle}"
-                          Tag="References">
+                          Tag="References"
+                          converters:ComboBoxExtensions.TagTemplate="{StaticResource ReferencesHeaderTemplate}">
                     <ComboBox.ItemTemplate>
                         <DataTemplate>
                             <Grid>
@@ -205,10 +314,6 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Button Content="+" 
-                        Click="AddReference_Click"
-                        Padding="5,0"
-                        ToolTip="Add Reference"/>
             </StackPanel>
         </DockPanel>
 
@@ -472,7 +577,10 @@
                                                 <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="Auto"/>
                                             </Grid.ColumnDefinitions>
-                                            <CheckBox IsChecked="{Binding IsCompleted}"
+                                            <CheckBox IsChecked="{Binding IsCompleted, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      Style="{StaticResource TaskCheckBoxStyle}"
+                                                      Checked="Task_CheckedChanged"
+                                                      Unchecked="Task_CheckedChanged"
                                                       VerticalAlignment="Center"
                                                       Margin="0,0,10,0"/>
                                             <TextBox Grid.Column="1"
@@ -589,7 +697,10 @@
                                                                             <ColumnDefinition Width="*"/>
                                                                             <ColumnDefinition Width="Auto"/>
                                                                         </Grid.ColumnDefinitions>
-                                                                        <CheckBox IsChecked="{Binding IsCompleted}"
+                                                                        <CheckBox IsChecked="{Binding IsCompleted, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  Style="{StaticResource TaskCheckBoxStyle}"
+                                                                                  Checked="Task_CheckedChanged"
+                                                                                  Unchecked="Task_CheckedChanged"
                                                                                   VerticalAlignment="Center"
                                                                                   Margin="0,0,10,0"/>
                                                                         <TextBox Grid.Column="1"

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using Universa.Desktop.Helpers;
 
 namespace Universa.Desktop.Managers
 {
@@ -15,14 +16,14 @@ namespace Universa.Desktop.Managers
 
         public static VersionManager GetInstance()
         {
-            if (_instance == null)
+            lock (_lock)
             {
-                lock (_lock)
+                if (_instance == null)
                 {
-                    _instance ??= new VersionManager();
+                    _instance = new VersionManager();
                 }
+                return _instance;
             }
-            return _instance;
         }
 
         private VersionManager() { }
@@ -86,9 +87,10 @@ namespace Universa.Desktop.Managers
                     Debug.WriteLine($"[VersionManager] Versions directory already exists");
                 }
 
-                // Generate version file name with timestamp
-                var timestamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss");
-                var versionPath = Path.Combine(versionsDir, $"{fileName}.{timestamp}{extension}");
+                // Generate timestamp for version file
+                var timestamp = TimeZoneHelper.Now.ToString("yyyyMMddHHmmss");
+                var versionFileName = $"{fileName}.{timestamp}{extension}";
+                var versionPath = Path.Combine(versionsDir, versionFileName);
                 Debug.WriteLine($"[VersionManager] Version path: {versionPath}");
 
                 // Copy current file to versions directory
@@ -143,7 +145,7 @@ namespace Universa.Desktop.Managers
                             .Substring(fileName.Length + 1); // +1 for the dot
                         
                         if (DateTime.TryParseExact(timestampStr, "yyyyMMddHHmmss", 
-                            null, System.Globalization.DateTimeStyles.AssumeUniversal, 
+                            null, System.Globalization.DateTimeStyles.AssumeLocal, 
                             out DateTime timestamp))
                         {
                             return new FileVersionInfo
@@ -200,7 +202,6 @@ namespace Universa.Desktop.Managers
         {
             try
             {
-                Debug.WriteLine($"[VersionManager] Starting cleanup of old versions for: {filePath}");
                 var directory = Path.GetDirectoryName(filePath);
                 var fileName = Path.GetFileNameWithoutExtension(filePath);
                 var extension = Path.GetExtension(filePath);
@@ -220,7 +221,7 @@ namespace Universa.Desktop.Managers
                             .Substring(fileName.Length + 1);
                         
                         if (DateTime.TryParseExact(timestampStr, "yyyyMMddHHmmss", 
-                            null, System.Globalization.DateTimeStyles.AssumeUniversal, 
+                            null, System.Globalization.DateTimeStyles.AssumeLocal, 
                             out DateTime timestamp))
                         {
                             return new { Path = path, Timestamp = timestamp };
@@ -237,26 +238,26 @@ namespace Universa.Desktop.Managers
                     return;
                 }
 
-                var versionsToDelete = allVersions.Skip(MaxVersions);
+                // Delete older versions beyond the maximum limit
+                var versionsToDelete = allVersions.Skip(MaxVersions).ToList();
+                Debug.WriteLine($"[VersionManager] Deleting {versionsToDelete.Count} old versions");
+
                 foreach (var version in versionsToDelete)
                 {
                     try
                     {
-                        Debug.WriteLine($"[VersionManager] Deleting old version: {version.Path}");
                         File.Delete(version.Path);
+                        Debug.WriteLine($"[VersionManager] Deleted old version: {version.Path}");
                     }
                     catch (Exception ex)
                     {
                         Debug.WriteLine($"[VersionManager] Error deleting version {version.Path}: {ex.Message}");
                     }
                 }
-
-                Debug.WriteLine("[VersionManager] Cleanup completed");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"[VersionManager] Error cleaning up versions: {ex.Message}");
-                Debug.WriteLine($"[VersionManager] Stack trace: {ex.StackTrace}");
+                Debug.WriteLine($"[VersionManager] Error cleaning up old versions: {ex.Message}");
             }
         }
     }

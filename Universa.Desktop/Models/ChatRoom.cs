@@ -1,4 +1,5 @@
 using System;
+using Universa.Desktop.Helpers;
 
 namespace Universa.Desktop.Models
 {
@@ -13,7 +14,7 @@ namespace Universa.Desktop.Models
 
         public ChatRoom()
         {
-            LastActivity = DateTime.Now;
+            LastActivity = TimeZoneHelper.Now;
         }
 
         public override string ToString()

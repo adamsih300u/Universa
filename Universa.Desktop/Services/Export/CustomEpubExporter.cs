@@ -19,6 +19,7 @@ namespace Universa.Desktop.Services.Export
         // Regular expressions for parsing markdown
         private static readonly Regex _headingRegex = new Regex(@"^(#{1,6})\s+(.+)$", RegexOptions.Multiline);
         private static readonly Regex _imageRegex = new Regex(@"!\[(.*?)\]\((.+?)\)", RegexOptions.Compiled);
+        private static readonly Regex _linkRegex = new Regex(@"\[(.*?)\]\((.+?)\)", RegexOptions.Compiled);
         
         /// <summary>
         /// Exports the document content to ePub format
@@ -245,6 +246,9 @@ namespace Universa.Desktop.Services.Export
                     
                     // Copy all images in the content to the images directory
                     CopyContentImagesToImagesDirectory(content, tempDir, Path.GetDirectoryName(options.OutputPath), warnings);
+                    
+                    // Copy all linked resources to the ePub directory
+                    CopyLinkedResourcesToEpubDirectory(content, tempDir, Path.GetDirectoryName(options.OutputPath), warnings);
                     
                     // Split content into chapters if requested
                     if (options.SplitOnHeadings)
@@ -539,6 +543,29 @@ namespace Universa.Desktop.Services.Export
                         contentOpfBuilder.AppendLine($"        <item id=\"{id}\" href=\"{imagePath}\" media-type=\"{mediaType}\"/>");
                     }
                     
+                    // Add all linked resources to manifest
+                    var linkedResources = GetLinkedResources(content);
+                    foreach (string resourcePath in linkedResources)
+                    {
+                        // Skip if this is already added
+                        if (contentImages.Contains(resourcePath))
+                            continue;
+                            
+                        string extension = Path.GetExtension(resourcePath).ToLower();
+                        string mediaType = extension == ".jpg" || extension == ".jpeg" ? "image/jpeg" : 
+                                          extension == ".png" ? "image/png" : 
+                                          extension == ".gif" ? "image/gif" : 
+                                          extension == ".svg" ? "image/svg+xml" : 
+                                          extension == ".html" || extension == ".htm" ? "application/xhtml+xml" :
+                                          extension == ".css" ? "text/css" :
+                                          extension == ".js" ? "application/javascript" :
+                                          extension == ".pdf" ? "application/pdf" :
+                                          "application/octet-stream";
+                        
+                        string id = "resource-" + Path.GetFileNameWithoutExtension(resourcePath).Replace(" ", "-").Replace(".", "-");
+                        contentOpfBuilder.AppendLine($"        <item id=\"{id}\" href=\"{resourcePath}\" media-type=\"{mediaType}\"/>");
+                    }
+                    
                     // Add TOC to manifest if present
                     if (options.IncludeToc)
                     {
@@ -657,6 +684,44 @@ namespace Universa.Desktop.Services.Export
                 }
                 
                 return $"<img src=\"{src}\" alt=\"{alt}\" />";
+            });
+            
+            // Replace hyperlinks
+            markdown = _linkRegex.Replace(markdown, m => 
+            {
+                string text = m.Groups[1].Value;
+                string href = m.Groups[2].Value;
+                
+                // Handle internal links (links to other chapters)
+                if (href.StartsWith("#"))
+                {
+                    // For internal anchors, keep as is
+                    return $"<a href=\"{href}\">{text}</a>";
+                }
+                // Handle external links (URLs)
+                else if (href.StartsWith("http://") || href.StartsWith("https://"))
+                {
+                    return $"<a href=\"{href}\">{text}</a>";
+                }
+                // Handle relative links to other files
+                else
+                {
+                    // For relative links to other files, we need to ensure they point to the correct HTML file
+                    // This is a simple implementation - you might need to enhance this based on your specific needs
+                    string extension = Path.GetExtension(href);
+                    if (!string.IsNullOrEmpty(extension))
+                    {
+                        // If it's a link to another markdown file, convert to HTML
+                        if (extension.ToLower() == ".md")
+                        {
+                            string baseName = Path.GetFileNameWithoutExtension(href);
+                            return $"<a href=\"{baseName}.html\">{text}</a>";
+                        }
+                    }
+                    
+                    // For other types of links, keep as is
+                    return $"<a href=\"{href}\">{text}</a>";
+                }
             });
             
             // Replace paragraphs (simple implementation)
@@ -877,6 +942,92 @@ namespace Universa.Desktop.Services.Export
             }
             
             return images;
+        }
+        
+        /// <summary>
+        /// Extracts linked resources from the content
+        /// </summary>
+        private List<string> GetLinkedResources(string content)
+        {
+            var resources = new List<string>();
+            var matches = _linkRegex.Matches(content);
+            
+            foreach (Match match in matches)
+            {
+                string href = match.Groups[2].Value;
+                
+                // Skip internal anchors and external URLs
+                if (href.StartsWith("#") || href.StartsWith("http://") || href.StartsWith("https://"))
+                    continue;
+                
+                // Handle relative links to other files
+                string extension = Path.GetExtension(href);
+                if (!string.IsNullOrEmpty(extension))
+                {
+                    // If it's a link to another markdown file, convert to HTML
+                    if (extension.ToLower() == ".md")
+                    {
+                        string baseName = Path.GetFileNameWithoutExtension(href);
+                        string htmlPath = baseName + ".html";
+                        if (!resources.Contains(htmlPath))
+                        {
+                            resources.Add(htmlPath);
+                        }
+                    }
+                    else
+                    {
+                        // For other types of resources, add as is
+                        if (!resources.Contains(href))
+                        {
+                            resources.Add(href);
+                        }
+                    }
+                }
+            }
+            
+            return resources;
+        }
+        
+        /// <summary>
+        /// Copies linked resources to the ePub package
+        /// </summary>
+        private void CopyLinkedResourcesToEpubDirectory(string content, string tempDir, string baseDir, List<string> warnings)
+        {
+            var resources = GetLinkedResources(content);
+            
+            foreach (string resourcePath in resources)
+            {
+                try
+                {
+                    // Skip URLs
+                    if (resourcePath.StartsWith("http://") || resourcePath.StartsWith("https://"))
+                        continue;
+                    
+                    // Try to find the resource in the base directory
+                    string sourcePath = Path.Combine(baseDir, resourcePath);
+                    if (File.Exists(sourcePath))
+                    {
+                        // Create the target directory if it doesn't exist
+                        string targetDir = Path.GetDirectoryName(Path.Combine(tempDir, "OPS", resourcePath));
+                        if (!Directory.Exists(targetDir))
+                        {
+                            Directory.CreateDirectory(targetDir);
+                        }
+                        
+                        // Copy the resource
+                        string targetPath = Path.Combine(tempDir, "OPS", resourcePath);
+                        File.Copy(sourcePath, targetPath, true);
+                    }
+                    else
+                    {
+                        warnings.Add($"Could not find linked resource: {resourcePath}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    warnings.Add($"Error copying linked resource {resourcePath}: {ex.Message}");
+                }
+            }
         }
         
         /// <summary>

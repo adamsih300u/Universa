@@ -1,5 +1,6 @@
 using System;
 using Newtonsoft.Json;
+using Universa.Desktop.Helpers;
 
 namespace Universa.Desktop.Models
 {
@@ -26,7 +27,7 @@ namespace Universa.Desktop.Models
                 
                 try
                 {
-                    return DateTimeOffset.FromUnixTimeMilliseconds(LastSeenTimestamp.Value).LocalDateTime;
+                    return TimeZoneHelper.FromUnixTimeMilliseconds(LastSeenTimestamp.Value);
                 }
                 catch
                 {

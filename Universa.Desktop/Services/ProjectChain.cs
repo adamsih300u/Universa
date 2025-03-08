@@ -8,6 +8,7 @@ using Universa.Desktop.Library;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
+using Universa.Desktop.Helpers;
 
 namespace Universa.Desktop.Services
 {
@@ -49,7 +50,8 @@ namespace Universa.Desktop.Services
             var systemMessage = new MemoryMessage("system", 
                 "You are a project management assistant. Help users manage their projects, tasks, and dependencies. " +
                 "Provide insights about project status, dependencies, and suggest improvements. " +
-                "Consider both direct project content and related dependencies when providing assistance.");
+                "Consider both direct project content and related dependencies when providing assistance. " +
+                "Be aware of the current date and time when providing time-sensitive recommendations.");
             _memory.Clear();
             _memory.Add(systemMessage);
         }
@@ -74,6 +76,12 @@ namespace Universa.Desktop.Services
                 return "No active project.";
             }
 
+            // Add current date and time information
+            sb.AppendLine("=== CURRENT DATE AND TIME ===");
+            sb.AppendLine(TimeZoneHelper.GetFormattedDateTimeWithTimeZone());
+            sb.AppendLine($"Local Time Zone: {TimeZoneHelper.LocalTimeZoneDisplayName}");
+            sb.AppendLine();
+
             // Main project information
             sb.AppendLine("=== CURRENT PROJECT ===");
             sb.AppendLine($"Title: {_currentProject.Title}");
@@ -83,6 +91,21 @@ namespace Universa.Desktop.Services
             if (_currentProject.DueDate.HasValue)
             {
                 sb.AppendLine($"Due: {_currentProject.DueDate:d}");
+                
+                // Calculate and add days remaining until due date
+                var daysRemaining = (_currentProject.DueDate.Value.Date - TimeZoneHelper.Now.Date).TotalDays;
+                if (daysRemaining > 0)
+                {
+                    sb.AppendLine($"Days Remaining: {daysRemaining:F0}");
+                }
+                else if (daysRemaining < 0)
+                {
+                    sb.AppendLine($"Overdue by: {Math.Abs(daysRemaining):F0} days");
+                }
+                else
+                {
+                    sb.AppendLine("Due: Today");
+                }
             }
 
             // Tasks and subtasks
