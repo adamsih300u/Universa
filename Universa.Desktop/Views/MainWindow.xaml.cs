@@ -482,6 +482,19 @@ namespace Universa.Desktop.Views
             }
         }
 
+        private async void BackupLibrary_Click(object sender, RoutedEventArgs e)
+        {
+            if (string.IsNullOrEmpty(_configService.Provider.LibraryPath))
+            {
+                MessageBox.Show("Library path is not configured. Please set it in Settings first.", 
+                    "Backup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            var backupManager = new LibraryBackupManager(this, _configService.Provider.LibraryPath);
+            await backupManager.CreateBackupAsync();
+        }
+
         private void Exit_Click(object sender, RoutedEventArgs e)
         {
             Close();
