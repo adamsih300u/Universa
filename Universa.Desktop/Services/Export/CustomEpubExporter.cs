@@ -20,6 +20,8 @@ namespace Universa.Desktop.Services.Export
         private static readonly Regex _headingRegex = new Regex(@"^(#{1,6})\s+(.+)$", RegexOptions.Multiline);
         private static readonly Regex _imageRegex = new Regex(@"!\[(.*?)\]\((.+?)\)", RegexOptions.Compiled);
         private static readonly Regex _linkRegex = new Regex(@"\[(.*?)\]\((.+?)\)", RegexOptions.Compiled);
+        private static readonly Regex _italicRegex = new Regex(@"(?<!\*)\*([^\*]+)\*(?!\*)", RegexOptions.Compiled);
+        private static readonly Regex _boldRegex = new Regex(@"\*\*([^\*]+)\*\*", RegexOptions.Compiled);
         
         /// <summary>
         /// Exports the document content to ePub format
@@ -722,6 +724,20 @@ namespace Universa.Desktop.Services.Export
                     // For other types of links, keep as is
                     return $"<a href=\"{href}\">{text}</a>";
                 }
+            });
+            
+            // Replace bold text (must be done before italic to avoid conflicts)
+            markdown = _boldRegex.Replace(markdown, m => 
+            {
+                string text = m.Groups[1].Value;
+                return $"<strong>{text}</strong>";
+            });
+            
+            // Replace italic text
+            markdown = _italicRegex.Replace(markdown, m => 
+            {
+                string text = m.Groups[1].Value;
+                return $"<em>{text}</em>";
             });
             
             // Replace paragraphs (simple implementation)

@@ -7,6 +7,7 @@ using System.Windows.Threading;
 using System.Diagnostics;
 using Universa.Desktop.Windows;
 using Universa.Desktop.Models;
+using System.Windows.Media;
 
 namespace Universa.Desktop.Managers
 {
@@ -25,6 +26,10 @@ namespace Universa.Desktop.Managers
         private readonly Slider _timelineSlider;
         private readonly TextBlock _nowPlayingText;
         private readonly Grid _mediaControlsGrid;
+        private DateTime _lastPlayPauseClickTime = DateTime.MinValue;
+        private DateTime _lastNextClickTime = DateTime.MinValue;
+        private const int DEBOUNCE_MILLISECONDS = 500;
+        private bool _isPlayPauseOperationInProgress = false;
 
         public MediaControlsManager(
             IMediaWindow mainWindow,
@@ -67,11 +72,43 @@ namespace Universa.Desktop.Managers
             {
                 Debug.WriteLine("Setting up play/pause button click handler");
                 
-                // Remove any existing handlers to avoid duplicates
-                _playPauseButton.Click -= PlayPauseButton_Click;
-                _playPauseButton.Click += PlayPauseButton_Click;
+                // Check if the PlayPauseButton already has a Click handler from the MediaControlBar
+                bool hasExistingHandler = false;
                 
-                Debug.WriteLine("Play/pause button click handler set up");
+                try
+                {
+                    // Get the event invocation list count to check if handlers already exist
+                    var clickEventInfo = _playPauseButton.GetType().GetEvent("Click");
+                    if (clickEventInfo != null)
+                    {
+                        // If we find that the button already has Click handlers from MediaControlBar
+                        // we'll skip adding our own to prevent duplicate calls
+                        Debug.WriteLine("PlayPauseButton already has a Click handler from MediaControlBar, skipping our handler");
+                        hasExistingHandler = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error checking for existing handlers: {ex.Message}");
+                }
+                
+                // Only proceed with adding our handler if no existing handler was found
+                if (!hasExistingHandler)
+                {
+                    // First completely clear any handlers by using PresentationCore technique
+                    var noHandlers = typeof(Button).GetField("EventClick", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    if (noHandlers != null)
+                    {
+                        Debug.WriteLine("Clearing all PlayPauseButton event handlers");
+                        var newHandler = (System.Windows.RoutedEvent)noHandlers.GetValue(null);
+                        _playPauseButton.RemoveHandler(Button.ClickEvent, new RoutedEventHandler(PlayPauseButton_Click));
+                    }
+                    
+                    // Then add our handler
+                    _playPauseButton.Click += PlayPauseButton_Click;
+                    
+                    Debug.WriteLine("Play/pause button click handler set up");
+                }
                 
                 // Set initial button state
                 UpdatePlayPauseButton(_mediaPlayerManager.IsPlaying);
@@ -86,11 +123,43 @@ namespace Universa.Desktop.Managers
             {
                 Debug.WriteLine("Setting up previous button click handler");
                 
-                // Remove any existing handlers to avoid duplicates
-                _previousButton.Click -= PreviousButton_Click;
-                _previousButton.Click += PreviousButton_Click;
+                // Check if the PreviousButton already has a Click handler from the MediaControlBar
+                bool hasExistingHandler = false;
                 
-                Debug.WriteLine("Previous button click handler set up");
+                try
+                {
+                    // Get the event invocation list count to check if handlers already exist
+                    var clickEventInfo = _previousButton.GetType().GetEvent("Click");
+                    if (clickEventInfo != null)
+                    {
+                        // If we find that the button already has Click handlers from MediaControlBar
+                        // we'll skip adding our own to prevent duplicate calls
+                        Debug.WriteLine("PreviousButton already has a Click handler from MediaControlBar, skipping our handler");
+                        hasExistingHandler = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error checking for existing handlers: {ex.Message}");
+                }
+                
+                // Only proceed with adding our handler if no existing handler was found
+                if (!hasExistingHandler)
+                {
+                    // First completely clear any handlers
+                    var noHandlers = typeof(Button).GetField("EventClick", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    if (noHandlers != null)
+                    {
+                        Debug.WriteLine("Clearing all PreviousButton event handlers");
+                        var newHandler = (System.Windows.RoutedEvent)noHandlers.GetValue(null);
+                        _previousButton.RemoveHandler(Button.ClickEvent, new RoutedEventHandler(PreviousButton_Click));
+                    }
+                    
+                    // Then add our handler
+                    _previousButton.Click += PreviousButton_Click;
+                    
+                    Debug.WriteLine("Previous button click handler set up");
+                }
             }
             else
             {
@@ -102,11 +171,43 @@ namespace Universa.Desktop.Managers
             {
                 Debug.WriteLine("Setting up next button click handler");
                 
-                // Remove any existing handlers to avoid duplicates
-                _nextButton.Click -= NextButton_Click;
-                _nextButton.Click += NextButton_Click;
+                // Check if the NextButton already has a Click handler from the MediaControlBar
+                bool hasExistingHandler = false;
                 
-                Debug.WriteLine("Next button click handler set up");
+                try
+                {
+                    // Get the event invocation list count to check if handlers already exist
+                    var clickEventInfo = _nextButton.GetType().GetEvent("Click");
+                    if (clickEventInfo != null)
+                    {
+                        // If we find that the button already has Click handlers from MediaControlBar
+                        // we'll skip adding our own to prevent duplicate calls
+                        Debug.WriteLine("NextButton already has a Click handler from MediaControlBar, skipping our handler");
+                        hasExistingHandler = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error checking for existing handlers: {ex.Message}");
+                }
+                
+                // Only proceed with adding our handler if no existing handler was found
+                if (!hasExistingHandler) 
+                {
+                    // First completely clear any handlers
+                    var noHandlers = typeof(Button).GetField("EventClick", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    if (noHandlers != null)
+                    {
+                        Debug.WriteLine("Clearing all NextButton event handlers");
+                        var newHandler = (System.Windows.RoutedEvent)noHandlers.GetValue(null);
+                        _nextButton.RemoveHandler(Button.ClickEvent, new RoutedEventHandler(NextButton_Click));
+                    }
+                    
+                    // Then add our handler
+                    _nextButton.Click += NextButton_Click;
+                    
+                    Debug.WriteLine("Next button click handler set up");
+                }
             }
             else
             {
@@ -118,11 +219,43 @@ namespace Universa.Desktop.Managers
             {
                 Debug.WriteLine("Setting up shuffle button click handler");
                 
-                // Remove any existing handlers to avoid duplicates
-                _shuffleButton.Click -= ShuffleButton_Click;
-                _shuffleButton.Click += ShuffleButton_Click;
+                // Check if the ShuffleButton already has a Click handler from the MediaControlBar
+                bool hasExistingHandler = false;
                 
-                Debug.WriteLine("Shuffle button click handler set up");
+                try
+                {
+                    // Get the event invocation list count to check if handlers already exist
+                    var clickEventInfo = _shuffleButton.GetType().GetEvent("Click");
+                    if (clickEventInfo != null)
+                    {
+                        // If we find that the button already has Click handlers from MediaControlBar
+                        // we'll skip adding our own to prevent duplicate calls
+                        Debug.WriteLine("ShuffleButton already has a Click handler from MediaControlBar, skipping our handler");
+                        hasExistingHandler = true;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error checking for existing handlers: {ex.Message}");
+                }
+                
+                // Only proceed with adding our handler if no existing handler was found
+                if (!hasExistingHandler)
+                {
+                    // First completely clear any handlers
+                    var noHandlers = typeof(Button).GetField("EventClick", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+                    if (noHandlers != null)
+                    {
+                        Debug.WriteLine("Clearing all ShuffleButton event handlers");
+                        var newHandler = (System.Windows.RoutedEvent)noHandlers.GetValue(null);
+                        _shuffleButton.RemoveHandler(Button.ClickEvent, new RoutedEventHandler(ShuffleButton_Click));
+                    }
+                    
+                    // Then add our handler
+                    _shuffleButton.Click += ShuffleButton_Click;
+                    
+                    Debug.WriteLine("Shuffle button click handler set up");
+                }
                 
                 // Set initial button state
                 UpdateShuffleButton(_mediaPlayerManager.IsShuffleEnabled);
@@ -154,55 +287,270 @@ namespace Universa.Desktop.Managers
         
         private void PlayPauseButton_Click(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine($"Play/Pause button clicked. Current state: {(_mediaPlayerManager.IsPlaying ? "Playing" : "Paused")}");
-            if (_mediaPlayerManager.IsPlaying)
+            try
             {
-                Debug.WriteLine("Calling Pause()");
-                _mediaPlayerManager.Pause();
+                // Get caller information for better debugging
+                Debug.WriteLine($"Play/Pause button clicked from: {sender?.GetType().Name ?? "unknown source"}");
+                Debug.WriteLine($"Current state: {(_mediaPlayerManager.IsPlaying ? "Playing" : "Paused")}");
+                
+                // Mark the event as handled to prevent bubbling
+                e.Handled = true;
+                
+                // Implement a simple debounce
+                var now = DateTime.Now;
+                if ((now - _lastPlayPauseClickTime).TotalMilliseconds < DEBOUNCE_MILLISECONDS)
+                {
+                    Debug.WriteLine($"Ignoring play/pause click - too soon after previous click ({(now - _lastPlayPauseClickTime).TotalMilliseconds}ms)");
+                    return;
+                }
+                
+                _lastPlayPauseClickTime = now;
+                
+                // Prevent multiple operations from running concurrently
+                if (_isPlayPauseOperationInProgress)
+                {
+                    Debug.WriteLine("Ignoring play/pause click - operation already in progress");
+                    return;
+                }
+                
+                _isPlayPauseOperationInProgress = true;
+                
+                // Temporarily disable button
+                _playPauseButton.IsEnabled = false;
+                
+                // Capture current state before action
+                bool wasPlaying = _mediaPlayerManager.IsPlaying;
+                
+                try
+                {
+                    // Perform the play/pause action
+                    if (wasPlaying)
+                    {
+                        Debug.WriteLine("Calling Pause()");
+                        _mediaPlayerManager.Pause();
+                        
+                        // Immediately update the button UI to show play state
+                        UpdatePlayPauseButton(false);
+                    }
+                    else
+                    {
+                        Debug.WriteLine("Calling Play()");
+                        _mediaPlayerManager.Play();
+                        
+                        // Immediately update the button UI to show pause state
+                        UpdatePlayPauseButton(true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in play/pause operation: {ex.Message}");
+                    
+                    // Revert UI to match the actual state
+                    UpdatePlayPauseButton(_mediaPlayerManager.IsPlaying);
+                }
+                finally
+                {
+                    // Re-enable button
+                    _playPauseButton.IsEnabled = true;
+                    _isPlayPauseOperationInProgress = false;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                Debug.WriteLine("Calling Play()");
-                _mediaPlayerManager.Play();
+                Debug.WriteLine($"Error in PlayPauseButton_Click: {ex.Message}");
+                
+                // Make sure to clean up state even on error
+                _isPlayPauseOperationInProgress = false;
+                
+                // Make sure to re-enable the button even on error
+                if (_playPauseButton != null)
+                {
+                    _playPauseButton.IsEnabled = true;
+                }
             }
         }
         
         private void PreviousButton_Click(object sender, RoutedEventArgs e)
         {
             Debug.WriteLine("Previous button clicked");
+            e.Handled = true; // Add this to prevent event bubbling
             _mediaPlayerManager.Previous();
         }
         
         private void NextButton_Click(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine("Next button clicked");
-            _mediaPlayerManager.Next();
+            try
+            {
+                Debug.WriteLine($"NextButton_Click called at {DateTime.Now.ToString("HH:mm:ss.fff")}");
+                
+                // Mark as handled immediately to prevent event bubbling
+                e.Handled = true;
+                
+                // Add a lock to prevent multiple rapid clicks
+                lock (this)
+                {
+                    // Check if a click was already processed recently (debounce)
+                    var now = DateTime.Now;
+                    if ((now - _lastNextClickTime).TotalMilliseconds < DEBOUNCE_MILLISECONDS)
+                    {
+                        Debug.WriteLine($"NextButton_Click: Ignoring click - too soon after previous ({(now - _lastNextClickTime).TotalMilliseconds}ms)");
+                        return;
+                    }
+                    
+                    // Immediately disable the button to prevent multiple clicks
+                    if (_nextButton != null)
+                    {
+                        _nextButton.IsEnabled = false;
+                    }
+                    
+                    // Update timestamp *after* we're sure we'll process this click
+                    _lastNextClickTime = now;
+                    
+                    try
+                    {
+                        // Do a direct index manipulation instead of using the Next() method
+                        // to avoid any potential issues with multiple Next calls
+                        if (_mediaPlayerManager != null)
+                        {
+                            // Tell the MediaPlayerManager that we're handling a user-initiated next action
+                            Debug.WriteLine("NextButton_Click: Calling _mediaPlayerManager.Next() directly");
+                            _mediaPlayerManager.Next();
+                            Debug.WriteLine("NextButton_Click: Next() method completed");
+                        }
+                    }
+                    finally
+                    {
+                        // Re-enable the button after a delay to prevent multiple clicks
+                        Application.Current.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            if (_nextButton != null)
+                            {
+                                _nextButton.IsEnabled = true;
+                                Debug.WriteLine("NextButton_Click: Re-enabled next button");
+                            }
+                        }), DispatcherPriority.Background, null);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in NextButton_Click: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                
+                // Always re-enable the button in case of error
+                if (_nextButton != null)
+                {
+                    _nextButton.IsEnabled = true;
+                }
+            }
+            
+            Debug.WriteLine($"NextButton_Click completed at {DateTime.Now.ToString("HH:mm:ss.fff")}");
         }
         
         private void ShuffleButton_Click(object sender, RoutedEventArgs e)
         {
-            Debug.WriteLine("Shuffle button clicked");
-            _mediaPlayerManager.ToggleShuffle();
+            try
+            {
+                Debug.WriteLine("Shuffle button clicked from: " + sender?.GetType().Name);
+                
+                // Mark the event as handled to prevent bubbling
+                e.Handled = true;
+                
+                // Temporarily disable button
+                if (_shuffleButton != null)
+                {
+                    _shuffleButton.IsEnabled = false;
+                }
+                
+                // Get the current state from the Tag property
+                bool currentState = false;
+                if (_shuffleButton != null && _shuffleButton.Tag is bool)
+                {
+                    currentState = (bool)_shuffleButton.Tag;
+                    Debug.WriteLine($"Current shuffle state before toggle: {currentState}");
+                }
+                
+                // Toggle shuffle state in the media player
+                _mediaPlayerManager.ToggleShuffle();
+                
+                // Update the UI immediately
+                // Use the negated current state because we're toggling
+                UpdateShuffleButton(!currentState);
+                
+                // Re-enable button directly - no timers or complex logic
+                if (_shuffleButton != null)
+                {
+                    _shuffleButton.IsEnabled = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in ShuffleButton_Click: {ex.Message}");
+                
+                // Make sure to re-enable the button even on error
+                if (_shuffleButton != null)
+                {
+                    _shuffleButton.IsEnabled = true;
+                }
+            }
         }
         
         private void MediaPlayerManager_PlaybackStarted(object sender, EventArgs e)
         {
             Debug.WriteLine("PlaybackStarted event received");
-            UpdatePlayPauseButton(true);
-            UpdateControlsVisibility(_mediaPlayerManager.IsPlayingVideo);
+            
+            // Always force the button to show pause icon (⏸)
+            // This is important to ensure proper state after playback starts
+            Application.Current.Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    // Force update the play/pause button to show pause icon
+                    UpdatePlayPauseButton(true);
+                    
+                    // Ensure controls are visible
+                    if (_playPauseButton != null)
+                    {
+                        _playPauseButton.Visibility = Visibility.Visible;
+                        _playPauseButton.Content = "⏸"; // Pause symbol
+                        _playPauseButton.ToolTip = "Pause";
+                        Debug.WriteLine("Forced play/pause button to PAUSE icon in PlaybackStarted event");
+                    }
+                    
+                    // Update control visibility based on current media type
+                    UpdateControlsVisibility(_mediaPlayerManager.IsPlayingVideo);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in PlaybackStarted event handler: {ex.Message}");
+                }
+            });
         }
         
         private void MediaPlayerManager_PlaybackPaused(object sender, EventArgs e)
         {
             Debug.WriteLine("PlaybackPaused event received");
+            
+            // Update the play/pause button to show the play icon
             UpdatePlayPauseButton(false);
+            
+            // Ensure the controls remain visible when paused
+            ShowMediaControls();
         }
         
         private void MediaPlayerManager_PlaybackStopped(object sender, EventArgs e)
         {
             Debug.WriteLine("PlaybackStopped event received");
+            
+            // Update the play/pause button to show the play icon
             UpdatePlayPauseButton(false);
+            
+            // Update control visibility, but don't hide the media controls completely
             UpdateControlsVisibility(false);
+            
+            // Keep the controls visible - only hide them when explicitly requested
+            // (don't hide them just because playback stopped)
+            ShowMediaControls();
         }
         
         private void MediaPlayerManager_ShuffleChanged(object sender, bool isEnabled)
@@ -555,22 +903,79 @@ namespace Universa.Desktop.Managers
             }
         }
 
-        private void UpdateTimeDisplay()
+        public void UpdateTimeDisplay()
         {
-            if (_timeInfo != null && _timelineSlider != null)
+            try
             {
-                var position = _mediaPlayerManager.CurrentPosition;
-                var duration = _mediaPlayerManager.Duration;
-
-                // Update time display text
-                _timeInfo.Text = $"{position:mm\\:ss} / {duration:mm\\:ss}";
-
-                // Update slider position if not being dragged
-                if (!_mediaPlayerManager.IsDraggingSlider && duration.TotalSeconds > 0)
+                if (_timeInfo != null && _timelineSlider != null && _mediaPlayerManager != null)
                 {
-                    _timelineSlider.Maximum = duration.TotalSeconds;
-                    _timelineSlider.Value = position.TotalSeconds;
+                    var position = _mediaPlayerManager.CurrentPosition;
+                    var duration = _mediaPlayerManager.Duration;
+
+                    // Apply changes on UI thread for thread safety
+                    Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            // Update time display text
+                            _timeInfo.Text = $"{position:mm\\:ss} / {duration:mm\\:ss}";
+                            
+                            // Update slider position if not being dragged
+                            if (!_mediaPlayerManager.IsDraggingSlider && duration.TotalSeconds > 0)
+                            {
+                                _timelineSlider.Maximum = duration.TotalSeconds;
+                                _timelineSlider.Value = position.TotalSeconds;
+                            }
+                            
+                            // Debug.WriteLine($"Time updated: {position:mm\\:ss} / {duration:mm\\:ss}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error updating time display on UI thread: {ex.Message}");
+                        }
+                    });
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in UpdateTimeDisplay: {ex.Message}");
+            }
+        }
+
+        // Add an overload that takes position and duration directly
+        public void UpdateTimeDisplay(TimeSpan position, TimeSpan duration)
+        {
+            try
+            {
+                if (_timeInfo != null && _timelineSlider != null)
+                {
+                    // Apply changes on UI thread for thread safety
+                    Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            // Update time display text
+                            _timeInfo.Text = $"{position:mm\\:ss} / {duration:mm\\:ss}";
+                            
+                            // Update slider position if not being dragged
+                            if (_mediaPlayerManager != null && !_mediaPlayerManager.IsDraggingSlider && duration.TotalSeconds > 0)
+                            {
+                                _timelineSlider.Maximum = duration.TotalSeconds;
+                                _timelineSlider.Value = position.TotalSeconds;
+                            }
+                            
+                            Debug.WriteLine($"Time updated with params: {position:mm\\:ss} / {duration:mm\\:ss}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error updating time display with params on UI thread: {ex.Message}");
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in UpdateTimeDisplay with params: {ex.Message}");
             }
         }
 
@@ -589,11 +994,87 @@ namespace Universa.Desktop.Managers
             }
         }
 
+        // Add a method to update just the timeline maximum value
+        public void UpdateTimelineMaximum(double maximumValueInMilliseconds)
+        {
+            try
+            {
+                if (_timelineSlider != null)
+                {
+                    Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            // Convert milliseconds to seconds for the slider
+                            double maximumValueInSeconds = maximumValueInMilliseconds / 1000.0;
+                            _timelineSlider.Maximum = maximumValueInSeconds;
+                            Debug.WriteLine($"Timeline slider maximum updated to {maximumValueInSeconds} seconds");
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error updating timeline maximum on UI thread: {ex.Message}");
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in UpdateTimelineMaximum: {ex.Message}");
+            }
+        }
+
         public void UpdateShuffleButton(bool isEnabled)
         {
             if (_shuffleButton != null)
             {
-                _shuffleButton.Opacity = isEnabled ? 1.0 : 0.5;
+                Debug.WriteLine($"UpdateShuffleButton called with isEnabled={isEnabled}");
+                
+                // Apply the changes on the UI thread
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    try
+                    {
+                        // Since we're using a regular Button instead of a ToggleButton,
+                        // we need to make the enabled state more visually apparent
+                        
+                        // Store the state in the Tag property for reference
+                        _shuffleButton.Tag = isEnabled;
+                        
+                        // Make the button more visually distinct based on state
+                        if (isEnabled)
+                        {
+                            // When shuffle is ON - make it fully opaque with a distinctive background
+                            _shuffleButton.Opacity = 1.0;
+                            _shuffleButton.FontWeight = FontWeights.Bold;
+                            _shuffleButton.Background = new SolidColorBrush(Colors.LightBlue);
+                            _shuffleButton.Foreground = new SolidColorBrush(Colors.Black);
+                            _shuffleButton.ToolTip = "Shuffle On (Click to Turn Off)";
+                        }
+                        else
+                        {
+                            // When shuffle is OFF - make it semi-transparent with normal background
+                            _shuffleButton.Opacity = 0.7;
+                            _shuffleButton.FontWeight = FontWeights.Normal;
+                            _shuffleButton.Background = null; // Use default background
+                            _shuffleButton.Foreground = new SolidColorBrush(Colors.White);
+                            _shuffleButton.ToolTip = "Shuffle Off (Click to Turn On)";
+                        }
+                        
+                        // Ensure the button is enabled and visible
+                        _shuffleButton.IsEnabled = true;
+                        _shuffleButton.Visibility = Visibility.Visible;
+                        
+                        Debug.WriteLine($"Shuffle button updated: IsEnabled={isEnabled}, Opacity={_shuffleButton.Opacity}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error updating shuffle button: {ex.Message}");
+                    }
+                });
+            }
+            else
+            {
+                Debug.WriteLine("UpdateShuffleButton: _shuffleButton is null");
             }
         }
     }

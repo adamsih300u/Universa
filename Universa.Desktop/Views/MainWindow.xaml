@@ -11,6 +11,7 @@
         xmlns:windows="clr-namespace:Universa.Desktop.Windows"
         mc:Ignorable="d"
         Title="Universa" Height="600" Width="1000"
+        WindowStartupLocation="CenterScreen"
         WindowStyle="SingleBorderWindow"
         Background="{DynamicResource WindowBackgroundBrush}">
     

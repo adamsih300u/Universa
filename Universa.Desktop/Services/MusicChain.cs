@@ -136,49 +136,9 @@ namespace Universa.Desktop.Services
 
         public async Task<string> GetMusicCharacteristicsAsync(string prompt)
         {
-            try
-            {
-                // Prepare the characterization prompt
-                var characteristicsPrompt = 
-                    "Convert this music description into a detailed set of characteristics that describe the desired music. " +
-                    "Consider aspects like genre, mood, tempo, era, instruments, vocals, cultural elements, etc. " +
-                    "Return ONLY a JSON array of descriptive strings. Example: " +
-                    @"[""Upbeat electronic dance music"", ""High energy"", ""Modern production"", ""Club-oriented""]" + "\n\n" +
-                    $"Description: {prompt}";
-
-                string characteristics;
-                var config = Models.Configuration.Instance;
-                var method = config.MusicCharacterizationMethod;
-
-                Debug.WriteLine($"Using {method} for music characterization");
-
-                switch (method)
-                {
-                    case "Local":
-                        // For local method, we'll use a simpler approach that just wraps the input in a JSON array
-                        var keywords = prompt.Split(new[] { ' ', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                            .Select(k => k.Trim())
-                            .Where(k => !string.IsNullOrEmpty(k))
-                            .ToArray();
-                        characteristics = JsonSerializer.Serialize(keywords);
-                        break;
-
-                    case "OpenAI":
-                    case "Anthropic":
-                    default:
-                        // Use the existing ProcessRequest method which handles the AI provider selection
-                        characteristics = await ProcessRequest(string.Empty, characteristicsPrompt);
-                        break;
-                }
-
-                Debug.WriteLine($"Generated characteristics: {characteristics}");
-                return characteristics;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error generating music characteristics: {ex.Message}");
-                throw;
-            }
+            // Music characterization feature has been removed
+            Debug.WriteLine("Music characterization feature has been removed");
+            return "[]";
         }
     }
 } 

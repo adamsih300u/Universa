@@ -168,6 +168,9 @@ namespace Universa.Desktop.Controls
 
         private void PlayPauseButton_Click(object sender, RoutedEventArgs e)
         {
+            // Mark the event as handled to prevent it from bubbling up to other handlers
+            e.Handled = true;
+            
             if (_mediaPlayerManager == null) return;
 
             // Implement debouncing to prevent rapid clicking
@@ -215,6 +218,9 @@ namespace Universa.Desktop.Controls
 
         private void PreviousButton_Click(object sender, RoutedEventArgs e)
         {
+            // Mark the event as handled to prevent it from bubbling up to other handlers
+            e.Handled = true;
+            
             if (_mediaPlayerManager != null)
             {
                 _mediaPlayerManager.Previous();
@@ -223,6 +229,9 @@ namespace Universa.Desktop.Controls
 
         private void NextButton_Click(object sender, RoutedEventArgs e)
         {
+            // Mark the event as handled to prevent it from bubbling up to other handlers
+            e.Handled = true;
+            
             if (_mediaPlayerManager?.HasPlaylist == true)
             {
                 _mediaPlayerManager.Next();
@@ -349,6 +358,9 @@ namespace Universa.Desktop.Controls
 
         private void ShuffleButton_Click(object sender, RoutedEventArgs e)
         {
+            // Mark the event as handled to prevent it from bubbling up to other handlers
+            e.Handled = true;
+            
             if (_mediaPlayerManager != null)
             {
                 _mediaPlayerManager.ToggleShuffle();

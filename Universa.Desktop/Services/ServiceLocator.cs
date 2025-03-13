@@ -21,7 +21,6 @@ namespace Universa.Desktop.Services
             services.AddSingleton<WeatherManager>();
             services.AddSingleton<Managers.SyncManager>();
             services.AddSingleton<TTSManager>();
-            services.AddSingleton<CharacterizationService>();
             services.AddSingleton<ModelProvider>();
             services.AddSingleton<ISubsonicService, SubsonicService>();
             services.AddSingleton<JellyfinService>();

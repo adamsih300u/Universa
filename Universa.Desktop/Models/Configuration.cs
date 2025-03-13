@@ -37,11 +37,6 @@ namespace Universa.Desktop.Models
             }
         }
 
-        // Music characterization settings
-        public bool EnableAICharacterization { get; set; } = false;  // Default to false
-        public string MusicCharacterizationMethod { get; set; } = "OpenAI"; // Options: OpenAI, Anthropic, Local
-        public AIProvider DefaultAIProvider { get; set; } = AIProvider.OpenAI;
-
         // AI Service settings
         public bool EnableOpenAI { get; set; }
         public string OpenAIApiKey { get; set; }
@@ -54,12 +49,7 @@ namespace Universa.Desktop.Models
         public string OllamaModel { get; set; }
         public bool EnableAIChat { get; set; }
         public bool UseBetaChains { get; set; }
-        public bool EnableLocalEmbeddings
-        {
-            get => EnableAICharacterization && _enableLocalEmbeddings;
-            set => _enableLocalEmbeddings = value;
-        }
-        private bool _enableLocalEmbeddings = false;  // Default to false
+        public AIProvider DefaultAIProvider { get; set; } = AIProvider.OpenAI;
         public string LastUsedModel { get; set; }  // Stores the name of the last used AI model
 
         // Theme settings
@@ -450,8 +440,18 @@ namespace Universa.Desktop.Models
             if (other == null) return;
 
             // Merge settings that should be synced
-            EnableAICharacterization = other.EnableAICharacterization;
-            MusicCharacterizationMethod = other.MusicCharacterizationMethod;
+            EnableOpenAI = other.EnableOpenAI;
+            OpenAIApiKey = other.OpenAIApiKey;
+            EnableAnthropic = other.EnableAnthropic;
+            AnthropicApiKey = other.AnthropicApiKey;
+            EnableXAI = other.EnableXAI;
+            XAIApiKey = other.XAIApiKey;
+            EnableOllama = other.EnableOllama;
+            OllamaUrl = other.OllamaUrl;
+            OllamaModel = other.OllamaModel;
+            EnableAIChat = other.EnableAIChat;
+            UseBetaChains = other.UseBetaChains;
+            DefaultAIProvider = other.DefaultAIProvider;
             CurrentTheme = other.CurrentTheme;
             _themes = new Dictionary<string, Dictionary<string, Color>>(other._themes);
             

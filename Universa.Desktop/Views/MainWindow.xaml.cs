@@ -105,6 +105,33 @@ namespace Universa.Desktop.Views
             // Add keyboard shortcut handling
             this.KeyDown += MainWindow_KeyDown;
 
+            // Ensure window style is set correctly immediately
+            this.WindowStyle = WindowStyle.SingleBorderWindow;
+
+            // Add Loaded event handler to ensure theme is applied after window is fully loaded
+            this.Loaded += (s, e) => {
+                // Apply theme after window is fully loaded
+                var theme = _configService.Provider.CurrentTheme ?? "Light";
+                ApplyTheme(theme);
+                
+                // Force a window state change to refresh the title bar
+                var currentState = this.WindowState;
+                if (currentState == WindowState.Maximized)
+                {
+                    this.WindowState = WindowState.Normal;
+                    this.Dispatcher.BeginInvoke(new Action(() => {
+                        this.WindowState = WindowState.Maximized;
+                    }), DispatcherPriority.Render);
+                }
+                else
+                {
+                    this.WindowState = WindowState.Maximized;
+                    this.Dispatcher.BeginInvoke(new Action(() => {
+                        this.WindowState = currentState;
+                    }), DispatcherPriority.Render);
+                }
+            };
+
             _configService = configService;
             _mediaElement = MediaPlayer;
 
@@ -775,21 +802,27 @@ namespace Universa.Desktop.Views
                     var titleBarForeground = isDarkTheme ? Colors.White : Colors.Black;
                     var buttonHoverColor = isDarkTheme ? Color.FromRgb(48, 48, 48) : Color.FromRgb(229, 229, 229);
 
-                    // Set title bar background
-                    Application.Current.MainWindow.Background = new SolidColorBrush(titleBarBackground);
-
-                    // Update system chrome colors
-                    var dwmApi = new DwmApi();
-                    dwmApi.SetTitleBarColor(new WindowInteropHelper(Application.Current.MainWindow).Handle, 
-                        titleBarBackground, titleBarForeground, buttonHoverColor);
-
-                    // Force window to refresh its non-client area
-                    var hwnd = new WindowInteropHelper(Application.Current.MainWindow).Handle;
-                    if (hwnd != IntPtr.Zero)
+                    try
                     {
-                        NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
-                            SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE |
-                            SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_FRAMECHANGED);
+                        // Ensure window style is set correctly
+                        Application.Current.MainWindow.WindowStyle = WindowStyle.SingleBorderWindow;
+                        
+                        // Update system chrome colors
+                        var dwmApi = new DwmApi();
+                        var hwnd = new WindowInteropHelper(Application.Current.MainWindow).Handle;
+                        if (hwnd != IntPtr.Zero)
+                        {
+                            dwmApi.SetTitleBarColor(hwnd, titleBarBackground, titleBarForeground, buttonHoverColor);
+                            
+                            // Force window to refresh its non-client area
+                            NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                                SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE |
+                                SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_FRAMECHANGED);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error setting title bar colors: {ex.Message}");
                     }
                 }
 
@@ -844,23 +877,34 @@ namespace Universa.Desktop.Views
             [DllImport("dwmapi.dll")]
             private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
 
+            // DWM attribute constants
+            private const int DWMWA_CAPTION_COLOR = 35;
+            private const int DWMWA_TEXT_COLOR = 36;
+            private const int DWMWA_BORDER_COLOR = 34;
+            private const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+
             public void SetTitleBarColor(IntPtr hwnd, Color background, Color foreground, Color buttonHover)
             {
                 if (hwnd == IntPtr.Zero) return;
 
                 try
                 {
+                    // Set dark mode first if needed
+                    bool isDarkMode = background.R < 128 && background.G < 128 && background.B < 128;
+                    int darkModeValue = isDarkMode ? 1 : 0;
+                    DwmSetWindowAttribute(hwnd, DWMWA_USE_IMMERSIVE_DARK_MODE, ref darkModeValue, sizeof(int));
+
                     // Set caption color
                     int bgColor = (background.R) | (background.G << 8) | (background.B << 16);
-                    DwmSetWindowAttribute(hwnd, 35, ref bgColor, sizeof(int));
+                    DwmSetWindowAttribute(hwnd, DWMWA_CAPTION_COLOR, ref bgColor, sizeof(int));
 
                     // Set text color
                     int fgColor = (foreground.R) | (foreground.G << 8) | (foreground.B << 16);
-                    DwmSetWindowAttribute(hwnd, 36, ref fgColor, sizeof(int));
+                    DwmSetWindowAttribute(hwnd, DWMWA_TEXT_COLOR, ref fgColor, sizeof(int));
 
-                    // Set button hover color
-                    int btnColor = (buttonHover.R) | (buttonHover.G << 8) | (buttonHover.B << 16);
-                    DwmSetWindowAttribute(hwnd, 37, ref btnColor, sizeof(int));
+                    // Set border color
+                    int borderColor = (buttonHover.R) | (buttonHover.G << 8) | (buttonHover.B << 16);
+                    DwmSetWindowAttribute(hwnd, DWMWA_BORDER_COLOR, ref borderColor, sizeof(int));
                 }
                 catch (Exception ex)
                 {
@@ -1228,6 +1272,9 @@ namespace Universa.Desktop.Views
         {
             try
             {
+                // Ensure window style is set correctly
+                WindowStyle = WindowStyle.SingleBorderWindow;
+                
                 // Get saved window state
                 var savedState = _configService.Provider.GetValue<string>(ConfigurationKeys.Window.State);
                 if (Enum.TryParse<WindowState>(savedState, out var windowState))
@@ -1262,6 +1309,17 @@ namespace Universa.Desktop.Views
                         }
                     }
                 }
+                
+                // Force a refresh of the window chrome
+                this.Dispatcher.BeginInvoke(new Action(() => {
+                    var hwnd = new WindowInteropHelper(this).Handle;
+                    if (hwnd != IntPtr.Zero)
+                    {
+                        NativeMethods.SetWindowPos(hwnd, IntPtr.Zero, 0, 0, 0, 0,
+                            SetWindowPosFlags.SWP_NOMOVE | SetWindowPosFlags.SWP_NOSIZE |
+                            SetWindowPosFlags.SWP_NOZORDER | SetWindowPosFlags.SWP_FRAMECHANGED);
+                    }
+                }), DispatcherPriority.Loaded);
             }
             catch (Exception ex)
             {

@@ -233,9 +233,6 @@
     <Setting Name="LastWebSyncTime" Type="System.DateTime" Scope="User">
       <Value Profile="(Default)">1/1/0001</Value>
     </Setting>
-    <Setting Name="EnableAICharacterization" Type="System.Boolean" Scope="User">
-      <Value Profile="(Default)">False</Value>
-    </Setting>
     <Setting Name="EnableAIChat" Type="System.Boolean" Scope="User">
       <Value Profile="(Default)">True</Value>
     </Setting>

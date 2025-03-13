@@ -1,0 +1,3 @@
+@echo off
+echo Starting Universa Desktop...
+start "" "Universa.Desktop.exe" 

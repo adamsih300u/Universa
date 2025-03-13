@@ -216,7 +216,6 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Model Selection -->
@@ -316,58 +315,8 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <!-- Similar Messages Section -->
-        <Expander Grid.Row="2" 
-                  Header="Similar Messages" 
-                  IsExpanded="{Binding ShowSimilarMessages, Mode=TwoWay}"
-                  Visibility="{Binding ShowSimilarMessages, Converter={StaticResource BooleanToVisibilityConverter}}"
-                  Margin="5,0,5,5"
-                  BorderThickness="1"
-                  BorderBrush="{DynamicResource BorderBrush}"
-                  Background="{DynamicResource WindowBackgroundBrush}">
-            <ListView ItemsSource="{Binding SimilarMessages}"
-                      MaxHeight="200"
-                      BorderThickness="0"
-                      Background="Transparent">
-                <ListView.ItemTemplate>
-                    <DataTemplate>
-                        <Border Margin="5,3"
-                                Padding="8,5"
-                                CornerRadius="8"
-                                BorderThickness="1"
-                                BorderBrush="{DynamicResource BorderBrush}"
-                                Background="{DynamicResource ControlBackgroundBrush}">
-                            <StackPanel>
-                                <DockPanel>
-                                    <TextBlock Text="{Binding Role}" 
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource TextBrush}"
-                                               Margin="0,0,5,0"/>
-                                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:g}'}" 
-                                               FontSize="10"
-                                               Opacity="0.6"
-                                               Foreground="{DynamicResource TextBrush}"
-                                               HorizontalAlignment="Right"/>
-                                </DockPanel>
-                                <TextBox Text="{Binding Content, Mode=OneWay}" 
-                                           Style="{StaticResource SelectableTextStyleWithTrimming}"
-                                           Foreground="{DynamicResource TextBrush}"
-                                           MaxHeight="100"/>
-                                <TextBlock Text="{Binding Score, StringFormat='Similarity: {0:P0}'}" 
-                                           FontSize="10"
-                                           Opacity="0.7"
-                                           Foreground="{DynamicResource TextBrush}"
-                                           HorizontalAlignment="Right"
-                                           Margin="0,3,0,0"/>
-                            </StackPanel>
-                        </Border>
-                    </DataTemplate>
-                </ListView.ItemTemplate>
-            </ListView>
-        </Expander>
-
         <!-- Input Area with Mode Toggle -->
-        <Grid Grid.Row="3" Margin="10">
+        <Grid Grid.Row="2" Margin="10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>

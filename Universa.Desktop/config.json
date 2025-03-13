@@ -1,6 +1,4 @@
 {
-  "EnableAICharacterization": false,
-  "MusicCharacterizationMethod": "OpenAI",
   "DefaultAIProvider": 0,
   "EnableOpenAI": false,
   "OpenAIApiKey": "",

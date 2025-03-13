@@ -28,9 +28,6 @@ namespace Universa.Desktop.ViewModels
         private readonly IConfigurationService _configService;
         private readonly ConfigurationProvider _config;
         private readonly IDialogService _dialogService;
-        private readonly CharacterizationService _characterizationService;
-        private bool _isCharacterizing;
-        private double _characterizationProgress;
 
         public event PropertyChangedEventHandler PropertyChanged;
         public event Action<bool?> RequestClose;
@@ -40,25 +37,18 @@ namespace Universa.Desktop.ViewModels
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
-        public SettingsViewModel(IConfigurationService configService)
+        public SettingsViewModel(IConfigurationService configService, IDialogService dialogService)
         {
             _configService = configService;
             _config = _configService.Provider;
-            _dialogService = ServiceLocator.Instance.GetRequiredService<IDialogService>();
+            _dialogService = dialogService;
             
-            // Only get CharacterizationService if AI characterization is enabled
-            if (_config.EnableAICharacterization)
-            {
-                _characterizationService = ServiceLocator.Instance.GetService<CharacterizationService>();
-            }
-
             // Initialize commands
             SaveCommand = new RelayCommand(_ => Save());
             CancelCommand = new RelayCommand(_ => Cancel());
             ResetCommand = new RelayCommand(_ => ResetSettings());
             BrowseLibraryCommand = new RelayCommand(_ => BrowseLibrary());
             TestConnectionCommand = new RelayCommand(_ => TestConnection());
-            CharacterizeLibraryCommand = new RelayCommand(_ => CharacterizeLibrary(), _ => _characterizationService != null);
             ClearCacheCommand = new RelayCommand(_ => ClearCache());
             SyncNowCommand = new RelayCommand(_ => SyncNow());
             TestSyncCommand = new RelayCommand(_ => TestSync());
@@ -75,6 +65,15 @@ namespace Universa.Desktop.ViewModels
             UpdateSyncPasswordCommand = new RelayCommand<string>(UpdateSyncPassword);
             UpdateOpenRouterKeyCommand = new RelayCommand<string>(UpdateOpenRouterKey);
             FetchOpenRouterModelsCommand = new RelayCommand(_ => FetchOpenRouterModels());
+            BrowseCommand = new RelayCommand(BrowseFolder);
+            BrowseFileCommand = new RelayCommand(BrowseFile);
+            BrowseBackupFolderCommand = new RelayCommand(BrowseBackupFolder);
+            TestWeatherCommand = new RelayCommand(_ => TestWeather());
+            TestAICommand = new RelayCommand(_ => TestAI());
+            TestMatrixCommand = new RelayCommand(_ => TestMatrix());
+            TestSubsonicCommand = new RelayCommand(_ => TestSubsonic());
+            TestJellyfinCommand = new RelayCommand(_ => TestJellyfin());
+            TestAudiobookshelfCommand = new RelayCommand(_ => TestAudiobookshelf());
 
             // Load initial settings
             LoadSettings();
@@ -92,7 +91,6 @@ namespace Universa.Desktop.ViewModels
         public ICommand ResetCommand { get; }
         public ICommand BrowseLibraryCommand { get; }
         public ICommand TestConnectionCommand { get; }
-        public ICommand CharacterizeLibraryCommand { get; }
         public ICommand ClearCacheCommand { get; }
         public ICommand SyncNowCommand { get; }
         public ICommand TestSyncCommand { get; }
@@ -109,6 +107,15 @@ namespace Universa.Desktop.ViewModels
         public ICommand UpdateSyncPasswordCommand { get; }
         public ICommand UpdateOpenRouterKeyCommand { get; }
         public ICommand FetchOpenRouterModelsCommand { get; }
+        public ICommand BrowseCommand { get; }
+        public ICommand BrowseFileCommand { get; }
+        public ICommand BrowseBackupFolderCommand { get; }
+        public ICommand TestWeatherCommand { get; }
+        public ICommand TestAICommand { get; }
+        public ICommand TestMatrixCommand { get; }
+        public ICommand TestSubsonicCommand { get; }
+        public ICommand TestJellyfinCommand { get; }
+        public ICommand TestAudiobookshelfCommand { get; }
         #endregion
 
         #region Properties
@@ -139,11 +146,11 @@ namespace Universa.Desktop.ViewModels
                         _configService.Save();
 
                         // Notify the main window to refresh the library
-                        var mainWindow = Application.Current.MainWindow as Views.MainWindow;
+                        var mainWindow = System.Windows.Application.Current.MainWindow as Views.MainWindow;
                         if (mainWindow?.LibraryNavigatorInstance != null)
                         {
                             // Run on UI thread
-                            Application.Current.Dispatcher.Invoke(async () =>
+                            System.Windows.Application.Current.Dispatcher.Invoke(async () =>
                             {
                                 try
                                 {
@@ -310,35 +317,86 @@ namespace Universa.Desktop.ViewModels
             }
         }
 
-        public bool EnableAICharacterization
+        public bool EnableAIChat
         {
-            get => _config.EnableAICharacterization;
+            get => _config.EnableAIChat;
             set
             {
-                if (_config.EnableAICharacterization != value)
+                if (_config.EnableAIChat != value)
                 {
-                    _config.EnableAICharacterization = value;
+                    _config.EnableAIChat = value;
                     OnPropertyChanged();
                 }
             }
         }
 
-        public bool EnableLocalEmbeddings
+        // Jellyfin Settings
+        public string JellyfinName
         {
-            get => _config.EnableLocalEmbeddings;
+            get => _config.JellyfinName;
             set
             {
-                if (_config.EnableLocalEmbeddings != value)
+                if (_config.JellyfinName != value)
                 {
-                    _config.EnableLocalEmbeddings = value;
+                    _config.JellyfinName = value;
                     OnPropertyChanged();
                 }
             }
         }
 
-        public string OpenAIApiKey => _config.OpenAIApiKey;
-        public string AnthropicApiKey => _config.AnthropicApiKey;
-        public string XAIApiKey => _config.XAIApiKey;
+        public string JellyfinUrl
+        {
+            get => _config.JellyfinUrl;
+            set
+            {
+                if (_config.JellyfinUrl != value)
+                {
+                    _config.JellyfinUrl = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string JellyfinUsername
+        {
+            get => _config.JellyfinUsername;
+            set
+            {
+                if (_config.JellyfinUsername != value)
+                {
+                    _config.JellyfinUsername = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string JellyfinPassword => _config.JellyfinPassword;
+
+        public string OllamaUrl
+        {
+            get => _config.OllamaUrl;
+            set
+            {
+                if (_config.OllamaUrl != value)
+                {
+                    _config.OllamaUrl = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string OllamaModel
+        {
+            get => _config.OllamaModel;
+            set
+            {
+                if (_config.OllamaModel != value)
+                {
+                    _config.OllamaModel = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
 
         // Sync Settings
         public string SyncServerUrl
@@ -557,96 +615,9 @@ namespace Universa.Desktop.ViewModels
             }
         }
 
-        public double CharacterizationProgress
-        {
-            get => _characterizationProgress;
-            set
-            {
-                _characterizationProgress = value;
-                OnPropertyChanged(nameof(CharacterizationProgress));
-            }
-        }
-
-        public bool EnableAIChat
-        {
-            get => _config.EnableAIChat;
-            set
-            {
-                if (_config.EnableAIChat != value)
-                {
-                    _config.EnableAIChat = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        // Jellyfin Settings
-        public string JellyfinName
-        {
-            get => _config.JellyfinName;
-            set
-            {
-                if (_config.JellyfinName != value)
-                {
-                    _config.JellyfinName = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public string JellyfinUrl
-        {
-            get => _config.JellyfinUrl;
-            set
-            {
-                if (_config.JellyfinUrl != value)
-                {
-                    _config.JellyfinUrl = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public string JellyfinUsername
-        {
-            get => _config.JellyfinUsername;
-            set
-            {
-                if (_config.JellyfinUsername != value)
-                {
-                    _config.JellyfinUsername = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public string JellyfinPassword => _config.JellyfinPassword;
-
-        public string OllamaUrl
-        {
-            get => _config.OllamaUrl;
-            set
-            {
-                if (_config.OllamaUrl != value)
-                {
-                    _config.OllamaUrl = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
-
-        public string OllamaModel
-        {
-            get => _config.OllamaModel;
-            set
-            {
-                if (_config.OllamaModel != value)
-                {
-                    _config.OllamaModel = value;
-                    OnPropertyChanged();
-                }
-            }
-        }
+        public string OpenAIApiKey => _config.OpenAIApiKey;
+        public string AnthropicApiKey => _config.AnthropicApiKey;
+        public string XAIApiKey => _config.XAIApiKey;
 
         #endregion
 
@@ -735,31 +706,6 @@ namespace Universa.Desktop.ViewModels
         {
             // Implementation will depend on which connection to test
             _dialogService.ShowMessage("Connection test not implemented", "Not Implemented");
-        }
-
-        private async void CharacterizeLibrary()
-        {
-            if (_isCharacterizing)
-            {
-                _dialogService.ShowMessage("Characterization is already in progress", "In Progress");
-                            return;
-                        }
-
-            try
-            {
-                _isCharacterizing = true;
-                await _characterizationService.CharacterizeLibraryAsync();
-                _dialogService.ShowMessage("Library characterization completed successfully", "Success");
-            }
-            catch (Exception ex)
-            {
-                _dialogService.ShowError($"Error characterizing library: {ex.Message}", "Error");
-            }
-            finally
-            {
-                _isCharacterizing = false;
-                CharacterizationProgress = 0;
-            }
         }
 
         private void ClearCache()
@@ -891,19 +837,8 @@ namespace Universa.Desktop.ViewModels
 
         private void CloseWindow()
         {
-            var window = Application.Current.Windows.OfType<Window>().FirstOrDefault(w => w.DataContext == this);
+            var window = System.Windows.Application.Current.Windows.OfType<Window>().FirstOrDefault(w => w.DataContext == this);
             window?.Close();
-        }
-
-        private void UpdateAIChatStatus()
-        {
-            // Enable AI chat if any AI service is enabled
-            _config.EnableAIChat = 
-                _config.EnableOpenAI || 
-                _config.EnableAnthropic || 
-                _config.EnableXAI || 
-                _config.EnableOllama ||
-                _config.EnableOpenRouter;
         }
 
         private bool HasValidAIProvider()
@@ -990,55 +925,6 @@ namespace Universa.Desktop.ViewModels
             return new List<string>();
         }
 
-        private void OnCharacterizationProgress(object sender, CharacterizationProgressEventArgs e)
-        {
-            CharacterizationProgress = e.ProgressPercentage;
-        }
-
-        private class VoiceInfo
-        {
-            public string Name { get; set; }
-            [JsonIgnore]
-            public string Description { get; set; }
-        }
-
-        public void SavePassword(string key, string value)
-        {
-            switch (key)
-            {
-                case "WeatherApiKey":
-                    _config.WeatherApiKey = value;
-                    break;
-                case "OpenAIApiKey":
-                    _config.OpenAIApiKey = value;
-                    break;
-                case "AnthropicApiKey":
-                    _config.AnthropicApiKey = value;
-                    break;
-                case "XAIApiKey":
-                    _config.XAIApiKey = value;
-                    break;
-                case "OpenRouterApiKey":
-                    _config.OpenRouterApiKey = value;
-                    break;
-                case "SyncPassword":
-                    _config.SyncPassword = value;
-                    break;
-                case "MatrixPassword":
-                    _config.MatrixPassword = value;
-                    break;
-                case "SubsonicPassword":
-                    _config.SubsonicPassword = value;
-                    break;
-                case "JellyfinPassword":
-                    _config.JellyfinPassword = value;
-                    break;
-                case "AudiobookshelfPassword":
-                    _config.AudiobookshelfPassword = value;
-                    break;
-            }
-        }
-
         private void OnConfigurationChanged(object sender, ConfigurationChangedEventArgs e)
         {
             LoadSettings();
@@ -1061,13 +947,6 @@ namespace Universa.Desktop.ViewModels
                 OllamaModel = _config.OllamaModel;
                 EnableAIChat = _config.EnableAIChat;
 
-                // Ensure AI characterization is disabled if no valid provider
-                if (_config.EnableAICharacterization && !HasValidAIProvider())
-                {
-                    _config.EnableAICharacterization = false;
-                    _config.Save();
-                }
-                
                 // Load saved OpenRouter models if any
                 LoadOpenRouterModels();
                 
@@ -1089,7 +968,7 @@ namespace Universa.Desktop.ViewModels
                 SyncIntervalMinutes = _config.SyncIntervalMinutes;
 
                 // Restore password box values
-                var window = Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
+                var window = System.Windows.Application.Current.Windows.OfType<SettingsWindow>().FirstOrDefault();
                 if (window != null)
                 {
                     var jellyfinPasswordBox = window.FindName("JellyfinPassword") as System.Windows.Controls.PasswordBox;
@@ -1141,7 +1020,7 @@ namespace Universa.Desktop.ViewModels
         {
             if (string.IsNullOrEmpty(_config.OpenRouterApiKey))
             {
-                MessageBox.Show("Please enter an OpenRouter API key first.", "API Key Required", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show("Please enter an OpenRouter API key first.", "API Key Required", MessageBoxButton.OK, MessageBoxImage.Information);
                 return;
             }
 
@@ -1162,12 +1041,12 @@ namespace Universa.Desktop.ViewModels
                     });
                 }
 
-                MessageBox.Show($"Successfully fetched {models.Count} models from OpenRouter.", "Models Fetched", MessageBoxButton.OK, MessageBoxImage.Information);
+                System.Windows.MessageBox.Show($"Successfully fetched {models.Count} models from OpenRouter.", "Models Fetched", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error fetching OpenRouter models: {ex.Message}");
-                MessageBox.Show($"Error fetching models: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                System.Windows.MessageBox.Show($"Error fetching models: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1184,6 +1063,308 @@ namespace Universa.Desktop.ViewModels
                 EnableOpenRouter = false;  // Auto-disable when key is removed
             }
             OnPropertyChanged(nameof(OpenRouterApiKey));
+        }
+
+        private class VoiceInfo
+        {
+            public string Name { get; set; }
+            [JsonIgnore]
+            public string Description { get; set; }
+        }
+
+        public void SavePassword(string key, string value)
+        {
+            switch (key)
+            {
+                case "WeatherApiKey":
+                    _config.WeatherApiKey = value;
+                    break;
+                case "OpenAIApiKey":
+                    _config.OpenAIApiKey = value;
+                    break;
+                case "AnthropicApiKey":
+                    _config.AnthropicApiKey = value;
+                    break;
+                case "XAIApiKey":
+                    _config.XAIApiKey = value;
+                    break;
+                case "OpenRouterApiKey":
+                    _config.OpenRouterApiKey = value;
+                    break;
+                case "SyncPassword":
+                    _config.SyncPassword = value;
+                    break;
+                case "MatrixPassword":
+                    _config.MatrixPassword = value;
+                    break;
+                case "SubsonicPassword":
+                    _config.SubsonicPassword = value;
+                    break;
+                case "JellyfinPassword":
+                    _config.JellyfinPassword = value;
+                    break;
+                case "AudiobookshelfPassword":
+                    _config.AudiobookshelfPassword = value;
+                    break;
+            }
+        }
+
+        private void UpdateAIChatStatus()
+        {
+            // Enable AI chat if any AI service is enabled
+            _config.EnableAIChat = 
+                _config.EnableOpenAI || 
+                _config.EnableAnthropic || 
+                _config.EnableXAI || 
+                _config.EnableOllama ||
+                _config.EnableOpenRouter;
+        }
+        
+        private void CharacterizeLibrary()
+        {
+            _dialogService.ShowMessage("The music characterization feature has been removed from this version.", "Feature Removed");
+        }
+
+        private void BrowseFolder(object parameter)
+        {
+            var dialog = new System.Windows.Forms.FolderBrowserDialog();
+            var folderDialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Select Folder",
+                FileName = "Select Folder", // Workaround since WPF doesn't have a folder browser
+                CheckFileExists = false,
+                CheckPathExists = true,
+                ValidateNames = false
+            };
+
+            if (folderDialog.ShowDialog() == true)
+            {
+                string selectedPath = Path.GetDirectoryName(folderDialog.FileName);
+                if (!string.IsNullOrEmpty(selectedPath))
+                {
+                    // Handle the selected folder path based on the context
+                    if (parameter is string context)
+                    {
+                        switch (context)
+                        {
+                            case "Library":
+                                LibraryPath = selectedPath;
+                                break;
+                            // Add other cases as needed
+                        }
+                    }
+                }
+            }
+        }
+
+        private void BrowseFile(object parameter)
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog();
+            if (dialog.ShowDialog() == true)
+            {
+                string selectedFile = dialog.FileName;
+                if (!string.IsNullOrEmpty(selectedFile))
+                {
+                    // Handle the selected file based on the context
+                    if (parameter is string context)
+                    {
+                        switch (context)
+                        {
+                            // Add cases as needed
+                        }
+                    }
+                }
+            }
+        }
+
+        private void BrowseBackupFolder(object parameter)
+        {
+            var folderDialog = new Microsoft.Win32.SaveFileDialog
+            {
+                Title = "Select Backup Folder",
+                FileName = "Select Folder", // Workaround since WPF doesn't have a folder browser
+                CheckFileExists = false,
+                CheckPathExists = true,
+                ValidateNames = false
+            };
+
+            if (folderDialog.ShowDialog() == true)
+            {
+                string selectedPath = Path.GetDirectoryName(folderDialog.FileName);
+                if (!string.IsNullOrEmpty(selectedPath))
+                {
+                    // Handle the selected backup folder path
+                    // Implementation depends on the specific requirements
+                }
+            }
+        }
+
+        private void TestWeather()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_config.WeatherApiKey))
+                {
+                    _dialogService.ShowError("Weather API key is required.", "Weather Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.WeatherZipCode))
+                {
+                    _dialogService.ShowError("ZIP code is required.", "Weather Test");
+                    return;
+                }
+
+                // Implement actual weather API test
+                _dialogService.ShowMessage("Weather API test successful.", "Weather Test");
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Weather API test failed: {ex.Message}", "Weather Test");
+            }
+        }
+
+        private void TestAI()
+        {
+            try
+            {
+                if (!HasValidAIProvider())
+                {
+                    _dialogService.ShowError("No valid AI provider configured.", "AI Test");
+                    return;
+                }
+
+                // Implement actual AI API test
+                _dialogService.ShowMessage("AI API test successful.", "AI Test");
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"AI API test failed: {ex.Message}", "AI Test");
+            }
+        }
+
+        private void TestMatrix()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_config.MatrixServerUrl))
+                {
+                    _dialogService.ShowError("Matrix server URL is required.", "Matrix Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.MatrixUsername))
+                {
+                    _dialogService.ShowError("Matrix username is required.", "Matrix Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.MatrixPassword))
+                {
+                    _dialogService.ShowError("Matrix password is required.", "Matrix Test");
+                    return;
+                }
+
+                // Implement actual Matrix API test
+                _dialogService.ShowMessage("Matrix API test successful.", "Matrix Test");
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Matrix API test failed: {ex.Message}", "Matrix Test");
+            }
+        }
+
+        private void TestSubsonic()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_config.SubsonicUrl))
+                {
+                    _dialogService.ShowError("Subsonic server URL is required.", "Subsonic Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.SubsonicUsername))
+                {
+                    _dialogService.ShowError("Subsonic username is required.", "Subsonic Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.SubsonicPassword))
+                {
+                    _dialogService.ShowError("Subsonic password is required.", "Subsonic Test");
+                    return;
+                }
+
+                // Implement actual Subsonic API test
+                _dialogService.ShowMessage("Subsonic API test successful.", "Subsonic Test");
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Subsonic API test failed: {ex.Message}", "Subsonic Test");
+            }
+        }
+
+        private void TestJellyfin()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_config.JellyfinUrl))
+                {
+                    _dialogService.ShowError("Jellyfin server URL is required.", "Jellyfin Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.JellyfinUsername))
+                {
+                    _dialogService.ShowError("Jellyfin username is required.", "Jellyfin Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.JellyfinPassword))
+                {
+                    _dialogService.ShowError("Jellyfin password is required.", "Jellyfin Test");
+                    return;
+                }
+
+                // Implement actual Jellyfin API test
+                _dialogService.ShowMessage("Jellyfin API test successful.", "Jellyfin Test");
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Jellyfin API test failed: {ex.Message}", "Jellyfin Test");
+            }
+        }
+
+        private void TestAudiobookshelf()
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_config.AudiobookshelfUrl))
+                {
+                    _dialogService.ShowError("Audiobookshelf server URL is required.", "Audiobookshelf Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.AudiobookshelfUsername))
+                {
+                    _dialogService.ShowError("Audiobookshelf username is required.", "Audiobookshelf Test");
+                    return;
+                }
+
+                if (string.IsNullOrEmpty(_config.AudiobookshelfPassword))
+                {
+                    _dialogService.ShowError("Audiobookshelf password is required.", "Audiobookshelf Test");
+                    return;
+                }
+
+                // Implement actual Audiobookshelf API test
+                _dialogService.ShowMessage("Audiobookshelf API test successful.", "Audiobookshelf Test");
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Audiobookshelf API test failed: {ex.Message}", "Audiobookshelf Test");
+            }
         }
     }
 

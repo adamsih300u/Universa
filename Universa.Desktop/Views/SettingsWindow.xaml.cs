@@ -22,7 +22,8 @@ namespace Universa.Desktop.Views
             _configService = configService;
             
             // Create and set the ViewModel
-            _viewModel = new SettingsViewModel(configService);
+            var dialogService = ServiceLocator.Instance.GetRequiredService<IDialogService>();
+            _viewModel = new SettingsViewModel(configService, dialogService);
             DataContext = _viewModel;
 
             // Set up password box handlers

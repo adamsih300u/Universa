@@ -215,16 +215,6 @@ namespace Universa.Desktop.Core.Configuration
             }
         }
 
-        public bool EnableAICharacterization
-        {
-            get => _configManager.Get<bool>(ConfigurationKeys.AI.CharacterizationEnabled, false);
-            set
-            {
-                _configManager.Set(ConfigurationKeys.AI.CharacterizationEnabled, value);
-                OnPropertyChanged();
-            }
-        }
-
         public bool UseBetaChains
         {
             get => _configManager.Get<bool>(ConfigurationKeys.AI.UseBetaChains);
@@ -301,16 +291,6 @@ namespace Universa.Desktop.Core.Configuration
             set
             {
                 _configManager.Set(ConfigurationKeys.AI.ChatEnabled, value);
-                OnPropertyChanged();
-            }
-        }
-
-        public string MusicCharacterizationMethod
-        {
-            get => _configManager.Get<string>(ConfigurationKeys.AI.MusicCharacterizationMethod);
-            set
-            {
-                _configManager.Set(ConfigurationKeys.AI.MusicCharacterizationMethod, value);
                 OnPropertyChanged();
             }
         }

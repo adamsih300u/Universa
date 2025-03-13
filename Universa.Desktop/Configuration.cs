@@ -68,7 +68,6 @@ namespace Universa.Desktop
         public string OllamaUrl { get; set; } = "http://localhost:11434/api/";
         public string OllamaModel { get; set; } = "llama2";
         public string LastUsedModel { get; set; }
-        public bool EnableAICharacterization { get; set; } = true;
         public bool EnableAIChat { get; set; } = true;
 
         // Theme settings
@@ -336,10 +335,6 @@ namespace Universa.Desktop
             }
         }
 
-        // AI and ML Settings
-        public bool EnableLocalEmbeddings { get; set; } = false;
-        public string MusicCharacterizationMethod { get; set; } = "Default";
-
         // Configuration Merging
         public void MergeFrom(Configuration other)
         {
@@ -363,9 +358,6 @@ namespace Universa.Desktop
             EnableMoonPhase = other.EnableMoonPhase;
 
             // Merge AI settings
-            EnableLocalEmbeddings = other.EnableLocalEmbeddings;
-            MusicCharacterizationMethod = other.MusicCharacterizationMethod;
-            EnableAICharacterization = other.EnableAICharacterization;
             EnableAIChat = other.EnableAIChat;
 
             Save();
@@ -498,7 +490,6 @@ namespace Universa.Desktop
                 settings.XAIApiKey = XAIApiKey;
                 settings.OllamaUrl = OllamaUrl;
                 settings.OllamaModel = OllamaModel;
-                settings.EnableAICharacterization = EnableAICharacterization;
                 settings.EnableAIChat = EnableAIChat;
 
                 // Save weather settings
@@ -566,7 +557,6 @@ namespace Universa.Desktop
             XAIApiKey = settings.XAIApiKey;
             OllamaUrl = settings.OllamaUrl;
             OllamaModel = settings.OllamaModel;
-            EnableAICharacterization = settings.EnableAICharacterization;
             EnableAIChat = settings.EnableAIChat;
             
             // Migrate weather settings

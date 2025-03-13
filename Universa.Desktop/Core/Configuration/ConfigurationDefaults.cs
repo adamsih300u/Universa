@@ -33,8 +33,6 @@ namespace Universa.Desktop.Core.Configuration
             { ConfigurationKeys.AI.OllamaUrl, "http://localhost:11434" },
             { ConfigurationKeys.AI.OllamaModel, "llama2" },
             { ConfigurationKeys.AI.ChatEnabled, true },
-            { ConfigurationKeys.AI.CharacterizationEnabled, false },
-            { ConfigurationKeys.AI.LocalEmbeddingsEnabled, false },
             { ConfigurationKeys.AI.UseBetaChains, false }
         };
 

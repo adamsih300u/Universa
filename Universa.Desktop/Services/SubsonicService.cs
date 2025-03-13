@@ -238,6 +238,61 @@ namespace Universa.Desktop.Services
             }
         }
 
+        public async Task<bool> AddTracksToPlaylistAsync(string playlistId, List<string> trackIds)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(playlistId))
+                {
+                    Debug.WriteLine("Playlist ID is null or empty, cannot add tracks");
+                    return false;
+                }
+                
+                if (trackIds == null || trackIds.Count == 0)
+                {
+                    Debug.WriteLine("No track IDs provided to add to playlist");
+                    return false;
+                }
+                
+                Debug.WriteLine($"Adding {trackIds.Count} tracks to playlist {playlistId}");
+                
+                foreach (var trackId in trackIds)
+                {
+                    await _subsonicClient.AddToPlaylistAsync(playlistId, trackId);
+                }
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error adding tracks to playlist: {ex.Message}");
+                return false;
+            }
+        }
+
+        public async Task<bool> RemoveTrackFromPlaylistAsync(string playlistId, string trackId, int trackIndex)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(playlistId))
+                {
+                    Debug.WriteLine("Playlist ID is null or empty, cannot remove track");
+                    return false;
+                }
+                
+                Debug.WriteLine($"Removing track {trackId} at index {trackIndex} from playlist {playlistId}");
+                
+                await _subsonicClient.RemoveTrackFromPlaylistAsync(playlistId, trackIndex);
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error removing track from playlist: {ex.Message}");
+                return false;
+            }
+        }
+
         public async Task CreatePlaylistAsync(string name)
         {
             try

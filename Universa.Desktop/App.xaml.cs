@@ -7,7 +7,6 @@ using Universa.Desktop.Views;
 using Universa.Desktop.Library;
 using System.IO;
 using System.Diagnostics;
-using Universa.Desktop.Services.VectorStore;
 using SQLite;
 
 namespace Universa.Desktop
@@ -48,9 +47,6 @@ namespace Universa.Desktop
                     "Universa"
                 );
                 Debug.WriteLine($"Application data path: {appDataPath}");
-
-                // Register vector store services
-                services.AddVectorStore(appDataPath);
 
                 // Register additional services through ServiceLocator
                 ServiceLocator.RegisterServices(services);

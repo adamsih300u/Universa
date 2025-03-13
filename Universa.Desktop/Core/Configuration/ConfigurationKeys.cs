@@ -36,8 +36,6 @@ namespace Universa.Desktop.Core.Configuration
             public const string OpenRouterEnabled = "ai.openrouter.enabled";
             public const string OpenRouterApiKey = "ai.openrouter.apiKey";
             public const string OpenRouterModels = "ai.openrouter.models";
-            public const string CharacterizationEnabled = "ai.characterization.enabled";
-            public const string MusicCharacterizationMethod = "ai.characterization.musicMethod";
             public const string LocalEmbeddingsEnabled = "ai.embeddings.enabled";
             public const string ChatEnabled = "ai.chat.enabled";
             public const string UseBetaChains = "ai.chat.useBetaChains";

@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:Universa.Desktop.Views"
         mc:Ignorable="d"
-        Title="Export Document" Height="450" Width="500"
+        Title="Export Document" Height="650" Width="700"
         WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <Style x:Key="ExportCheckBoxStyle" TargetType="CheckBox">
@@ -17,7 +17,7 @@
             <Setter Property="VerticalContentAlignment" Value="Center"/>
         </Style>
     </Window.Resources>
-    <Grid Margin="20">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -28,11 +28,11 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         
-        <TextBlock Grid.Row="0" Text="Export Document" FontSize="20" FontWeight="Bold" Margin="0,0,0,20"/>
+        <TextBlock Grid.Row="0" Text="Export Document" FontSize="22" FontWeight="Bold" Margin="0,0,0,20"/>
         
         <StackPanel Grid.Row="1" Margin="0,0,0,15">
-            <TextBlock Text="Export As:" Margin="0,0,0,5"/>
-            <ComboBox x:Name="FormatComboBox" SelectedIndex="0" SelectionChanged="FormatComboBox_SelectionChanged">
+            <TextBlock Text="Export As:" FontSize="14" Margin="0,0,0,8"/>
+            <ComboBox x:Name="FormatComboBox" SelectedIndex="0" SelectionChanged="FormatComboBox_SelectionChanged" Height="28" Width="200" HorizontalAlignment="Left">
                 <ComboBoxItem Content="ePub v3 (.epub)"/>
                 <ComboBoxItem Content="PDF Document (.pdf)"/>
                 <ComboBoxItem Content="Word Document (.docx)"/>
@@ -40,14 +40,14 @@
         </StackPanel>
         
         <StackPanel Grid.Row="2" Margin="0,0,0,15">
-            <TextBlock Text="Output File:" Margin="0,0,0,5"/>
+            <TextBlock Text="Output File:" FontSize="14" Margin="0,0,0,8"/>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBox x:Name="OutputPathTextBox" Grid.Column="0" IsReadOnly="True"/>
-                <Button x:Name="BrowseButton" Grid.Column="1" Content="Browse..." Margin="5,0,0,0" Click="BrowseButton_Click"/>
+                <TextBox x:Name="OutputPathTextBox" Grid.Column="0" IsReadOnly="True" Height="28" VerticalContentAlignment="Center"/>
+                <Button x:Name="BrowseButton" Grid.Column="1" Content="Browse..." Margin="8,0,0,0" Click="BrowseButton_Click" Height="28" Padding="10,0"/>
             </Grid>
         </StackPanel>
         
@@ -57,21 +57,21 @@
             <!-- Using buttons styled as checkboxes for better control -->
             <Button x:Name="IncludeTocButton" Click="IncludeTocButton_Click" Margin="0,2,0,2" HorizontalAlignment="Left" Padding="5,2">
                 <StackPanel Orientation="Horizontal">
-                    <Border x:Name="IncludeTocCheckmark" Width="16" Height="16" BorderThickness="1" BorderBrush="Black" Margin="0,0,5,0" Background="Green"/>
+                    <Border x:Name="IncludeTocCheckmark" Width="16" Height="16" BorderThickness="1" BorderBrush="#555555" Margin="0,0,5,0" Background="Green"/>
                     <TextBlock Text="Include Table of Contents"/>
                 </StackPanel>
             </Button>
             
             <Button x:Name="SplitOnHeadingsButton" Click="SplitOnHeadingsButton_Click" Margin="0,2,0,2" HorizontalAlignment="Left" Padding="5,2">
                 <StackPanel Orientation="Horizontal">
-                    <Border x:Name="SplitOnHeadingsCheckmark" Width="16" Height="16" BorderThickness="1" BorderBrush="Black" Margin="0,0,5,0" Background="Green"/>
+                    <Border x:Name="SplitOnHeadingsCheckmark" Width="16" Height="16" BorderThickness="1" BorderBrush="#555555" Margin="0,0,5,0" Background="Green"/>
                     <TextBlock Text="Split on Headings"/>
                 </StackPanel>
             </Button>
             
             <Button x:Name="IncludeCoverButton" Click="IncludeCoverButton_Click" Margin="0,2,0,2" HorizontalAlignment="Left" Padding="5,2">
                 <StackPanel Orientation="Horizontal">
-                    <Border x:Name="IncludeCoverCheckmark" Width="16" Height="16" BorderThickness="1" BorderBrush="Black" Margin="0,0,5,0" Background="Green"/>
+                    <Border x:Name="IncludeCoverCheckmark" Width="16" Height="16" BorderThickness="1" BorderBrush="#555555" Margin="0,0,5,0" Background="Green"/>
                     <TextBlock Text="Include Cover Page"/>
                 </StackPanel>
             </Button>
@@ -109,43 +109,43 @@
                             <!-- Using buttons styled as checkboxes for heading levels -->
                             <Button x:Name="SplitOnH1Button" Click="SplitOnH1Button_Click" Margin="0,0,5,0" Padding="3,0">
                                 <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SplitOnH1Checkmark" Width="12" Height="12" BorderThickness="1" BorderBrush="Black" Margin="0,0,3,0" Background="Green"/>
-                                    <TextBlock Text="H1" FontSize="11"/>
+                                    <Border x:Name="SplitOnH1Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Green"/>
+                                    <TextBlock Text="H1" FontSize="12"/>
                                 </StackPanel>
                             </Button>
                             
                             <Button x:Name="SplitOnH2Button" Click="SplitOnH2Button_Click" Margin="0,0,5,0" Padding="3,0">
                                 <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SplitOnH2Checkmark" Width="12" Height="12" BorderThickness="1" BorderBrush="Black" Margin="0,0,3,0" Background="Green"/>
-                                    <TextBlock Text="H2" FontSize="11"/>
+                                    <Border x:Name="SplitOnH2Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Green"/>
+                                    <TextBlock Text="H2" FontSize="12"/>
                                 </StackPanel>
                             </Button>
                             
                             <Button x:Name="SplitOnH3Button" Click="SplitOnH3Button_Click" Margin="0,0,5,0" Padding="3,0">
                                 <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SplitOnH3Checkmark" Width="12" Height="12" BorderThickness="1" BorderBrush="Black" Margin="0,0,3,0" Background="Transparent"/>
-                                    <TextBlock Text="H3" FontSize="11"/>
+                                    <Border x:Name="SplitOnH3Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Transparent"/>
+                                    <TextBlock Text="H3" FontSize="12"/>
                                 </StackPanel>
                             </Button>
                             
                             <Button x:Name="SplitOnH4Button" Click="SplitOnH4Button_Click" Margin="0,0,5,0" Padding="3,0">
                                 <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SplitOnH4Checkmark" Width="12" Height="12" BorderThickness="1" BorderBrush="Black" Margin="0,0,3,0" Background="Transparent"/>
-                                    <TextBlock Text="H4" FontSize="11"/>
+                                    <Border x:Name="SplitOnH4Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Transparent"/>
+                                    <TextBlock Text="H4" FontSize="12"/>
                                 </StackPanel>
                             </Button>
                             
                             <Button x:Name="SplitOnH5Button" Click="SplitOnH5Button_Click" Margin="0,0,5,0" Padding="3,0">
                                 <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SplitOnH5Checkmark" Width="12" Height="12" BorderThickness="1" BorderBrush="Black" Margin="0,0,3,0" Background="Transparent"/>
-                                    <TextBlock Text="H5" FontSize="11"/>
+                                    <Border x:Name="SplitOnH5Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Transparent"/>
+                                    <TextBlock Text="H5" FontSize="12"/>
                                 </StackPanel>
                             </Button>
                             
                             <Button x:Name="SplitOnH6Button" Click="SplitOnH6Button_Click" Margin="0,0,5,0" Padding="3,0">
                                 <StackPanel Orientation="Horizontal">
-                                    <Border x:Name="SplitOnH6Checkmark" Width="12" Height="12" BorderThickness="1" BorderBrush="Black" Margin="0,0,3,0" Background="Transparent"/>
-                                    <TextBlock Text="H6" FontSize="11"/>
+                                    <Border x:Name="SplitOnH6Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Transparent"/>
+                                    <TextBlock Text="H6" FontSize="12"/>
                                 </StackPanel>
                             </Button>
                         </StackPanel>
@@ -167,7 +167,7 @@
                             
                             <!-- H1 Alignment -->
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="H1:" Margin="0,0,10,5" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="H1AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="1">
+                            <ComboBox Grid.Row="0" Grid.Column="1" x:Name="H1AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="1" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Left" IsSelected="True"/>
                                 <ComboBoxItem Content="Center"/>
                                 <ComboBoxItem Content="Right"/>
@@ -176,7 +176,7 @@
                             
                             <!-- H2 Alignment -->
                             <TextBlock Grid.Row="1" Grid.Column="0" Text="H2:" Margin="0,0,10,5" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="H2AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="2">
+                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="H2AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="2" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Left" IsSelected="True"/>
                                 <ComboBoxItem Content="Center"/>
                                 <ComboBoxItem Content="Right"/>
@@ -185,7 +185,7 @@
                             
                             <!-- H3 Alignment -->
                             <TextBlock Grid.Row="2" Grid.Column="0" Text="H3:" Margin="0,0,10,5" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="H3AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="3">
+                            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="H3AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="3" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Left" IsSelected="True"/>
                                 <ComboBoxItem Content="Center"/>
                                 <ComboBoxItem Content="Right"/>
@@ -194,7 +194,7 @@
                             
                             <!-- H4 Alignment -->
                             <TextBlock Grid.Row="3" Grid.Column="0" Text="H4:" Margin="0,0,10,5" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="3" Grid.Column="1" x:Name="H4AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="4">
+                            <ComboBox Grid.Row="3" Grid.Column="1" x:Name="H4AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="4" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Left" IsSelected="True"/>
                                 <ComboBoxItem Content="Center"/>
                                 <ComboBoxItem Content="Right"/>
@@ -203,7 +203,7 @@
                             
                             <!-- H5 Alignment -->
                             <TextBlock Grid.Row="4" Grid.Column="0" Text="H5:" Margin="0,0,10,5" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="4" Grid.Column="1" x:Name="H5AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="5">
+                            <ComboBox Grid.Row="4" Grid.Column="1" x:Name="H5AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="5" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Left" IsSelected="True"/>
                                 <ComboBoxItem Content="Center"/>
                                 <ComboBoxItem Content="Right"/>
@@ -212,7 +212,7 @@
                             
                             <!-- H6 Alignment -->
                             <TextBlock Grid.Row="5" Grid.Column="0" Text="H6:" Margin="0,0,10,5" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="5" Grid.Column="1" x:Name="H6AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="6">
+                            <ComboBox Grid.Row="5" Grid.Column="1" x:Name="H6AlignmentComboBox" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="6" Width="120" HorizontalAlignment="Left">
                                 <ComboBoxItem Content="Left" IsSelected="True"/>
                                 <ComboBoxItem Content="Center"/>
                                 <ComboBoxItem Content="Right"/>
@@ -224,7 +224,426 @@
                 
                 <!-- PDF options -->
                 <StackPanel x:Name="PdfOptionsPanel" Visibility="Collapsed">
-                    <TextBlock Text="PDF options will be available in a future update." Margin="0,10,0,0"/>
+                    <TextBlock Text="PDF Options:" Margin="0,5,0,5"/>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="Title:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="0" Grid.Column="1" x:Name="PdfTitleTextBox" Margin="0,0,0,5"/>
+                        
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="Author:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                        <TextBox Grid.Row="1" Grid.Column="1" x:Name="PdfAuthorTextBox" Margin="0,0,0,5"/>
+                        
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Page Size:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                        <ComboBox Grid.Row="2" Grid.Column="1" x:Name="PageSizeComboBox" Margin="0,0,0,5" SelectionChanged="PageSizeComboBox_SelectionChanged" Width="120" HorizontalAlignment="Left">
+                            <ComboBoxItem Content="A4" IsSelected="True"/>
+                            <ComboBoxItem Content="A3"/>
+                            <ComboBoxItem Content="A5"/>
+                            <ComboBoxItem Content="Letter"/>
+                            <ComboBoxItem Content="Legal"/>
+                        </ComboBox>
+                        
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Body Font:" Margin="0,0,10,5" VerticalAlignment="Top"/>
+                        <Grid Grid.Row="3" Grid.Column="1" Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- Headers -->
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Font Family" Margin="0,0,10,5" FontWeight="Bold"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Size" Margin="0,0,10,5" FontWeight="Bold"/>
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="Alignment" Margin="0,0,10,5" FontWeight="Bold"/>
+                            
+                            <!-- Body Font Settings -->
+                            <Grid Grid.Row="1" Grid.Column="0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="BodyFontFamilyComboBox" Width="150" Margin="0,0,5,5" SelectionChanged="BodyFontFamilyComboBox_SelectionChanged">
+                                    <ComboBox.ItemsSource>
+                                        <x:Array Type="FontFamily">
+                                            <FontFamily>Arial</FontFamily>
+                                            <FontFamily>Times New Roman</FontFamily>
+                                            <FontFamily>Courier New</FontFamily>
+                                            <FontFamily>Verdana</FontFamily>
+                                            <FontFamily>Tahoma</FontFamily>
+                                            <FontFamily>Calibri</FontFamily>
+                                            <FontFamily>Cambria</FontFamily>
+                                            <FontFamily>Georgia</FontFamily>
+                                            <FontFamily>Segoe UI</FontFamily>
+                                            <FontFamily>Consolas</FontFamily>
+                                        </x:Array>
+                                    </ComboBox.ItemsSource>
+                                    <ComboBox.SelectedItem>
+                                        <FontFamily>Arial</FontFamily>
+                                    </ComboBox.SelectedItem>
+                                </ComboBox>
+                                <Button Grid.Column="1" Content="..." Width="20" Height="20" Click="LoadSystemFonts_Click" Tag="BodyFontFamilyComboBox" ToolTip="Load all system fonts"/>
+                            </Grid>
+                            <ComboBox Grid.Row="1" Grid.Column="1" x:Name="BodyFontSizeComboBox" Width="60" Margin="0,0,10,5" SelectionChanged="BodyFontSizeComboBox_SelectionChanged">
+                                <ComboBoxItem Content="8"/>
+                                <ComboBoxItem Content="9"/>
+                                <ComboBoxItem Content="10"/>
+                                <ComboBoxItem Content="11"/>
+                                <ComboBoxItem Content="12" IsSelected="True"/>
+                                <ComboBoxItem Content="14"/>
+                                <ComboBoxItem Content="16"/>
+                            </ComboBox>
+                            <ComboBox Grid.Row="1" Grid.Column="2" x:Name="BodyTextAlignmentComboBox" Width="100" Margin="0,0,0,5" SelectionChanged="BodyTextAlignmentComboBox_SelectionChanged">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                        </Grid>
+                        
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Split on:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                        <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Margin="0,0,0,5">
+                            <!-- Using buttons styled as checkboxes for heading levels -->
+                            <Button x:Name="PdfSplitOnH1Button" Click="SplitOnH1Button_Click" Margin="0,0,5,0" Padding="3,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border x:Name="PdfSplitOnH1Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Green"/>
+                                    <TextBlock Text="H1" FontSize="12"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <Button x:Name="PdfSplitOnH2Button" Click="SplitOnH2Button_Click" Margin="0,0,5,0" Padding="3,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border x:Name="PdfSplitOnH2Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Green"/>
+                                    <TextBlock Text="H2" FontSize="12"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <Button x:Name="PdfSplitOnH3Button" Click="SplitOnH3Button_Click" Margin="0,0,5,0" Padding="3,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border x:Name="PdfSplitOnH3Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Transparent"/>
+                                    <TextBlock Text="H3" FontSize="12"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <Button x:Name="PdfSplitOnH4Button" Click="SplitOnH4Button_Click" Margin="0,0,5,0" Padding="3,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border x:Name="PdfSplitOnH4Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Transparent"/>
+                                    <TextBlock Text="H4" FontSize="12"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <Button x:Name="PdfSplitOnH5Button" Click="SplitOnH5Button_Click" Margin="0,0,5,0" Padding="3,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border x:Name="PdfSplitOnH5Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Transparent"/>
+                                    <TextBlock Text="H5" FontSize="12"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <Button x:Name="PdfSplitOnH6Button" Click="SplitOnH6Button_Click" Margin="0,0,5,0" Padding="3,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border x:Name="PdfSplitOnH6Checkmark" Width="14" Height="14" BorderThickness="1" BorderBrush="#555555" Margin="0,0,3,0" Background="Transparent"/>
+                                    <TextBlock Text="H6" FontSize="12"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                        
+                        <TextBlock Grid.Row="5" Grid.Column="0" Text="Heading Settings:" Margin="0,0,10,5" VerticalAlignment="Top"/>
+                        <Grid Grid.Row="5" Grid.Column="1" Margin="0,0,0,5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            
+                            <!-- Load All System Fonts Button -->
+                            <Button Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4" Content="Load All System Fonts" Margin="0,0,0,10" Padding="5,2" HorizontalAlignment="Left" Click="LoadAllSystemFonts_Click" ToolTip="Load all system fonts for all font selectors"/>
+                            
+                            <!-- Headers -->
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Level" Margin="0,0,10,5" FontWeight="Bold"/>
+                            <TextBlock Grid.Row="1" Grid.Column="1" Text="Font Family" Margin="0,0,10,5" FontWeight="Bold"/>
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="Size" Margin="0,0,10,5" FontWeight="Bold"/>
+                            <TextBlock Grid.Row="1" Grid.Column="3" Text="Alignment" Margin="0,0,10,5" FontWeight="Bold"/>
+                            
+                            <!-- H1 Settings -->
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="H1:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <Grid Grid.Row="2" Grid.Column="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="H1FontFamilyComboBox" Width="150" Margin="0,0,5,5" SelectionChanged="HeadingFontFamilyComboBox_SelectionChanged" Tag="1">
+                                    <ComboBox.ItemsSource>
+                                        <x:Array Type="FontFamily">
+                                            <FontFamily>Arial</FontFamily>
+                                            <FontFamily>Times New Roman</FontFamily>
+                                            <FontFamily>Courier New</FontFamily>
+                                            <FontFamily>Verdana</FontFamily>
+                                            <FontFamily>Tahoma</FontFamily>
+                                            <FontFamily>Calibri</FontFamily>
+                                            <FontFamily>Cambria</FontFamily>
+                                            <FontFamily>Georgia</FontFamily>
+                                            <FontFamily>Segoe UI</FontFamily>
+                                            <FontFamily>Consolas</FontFamily>
+                                        </x:Array>
+                                    </ComboBox.ItemsSource>
+                                    <ComboBox.SelectedItem>
+                                        <FontFamily>Arial</FontFamily>
+                                    </ComboBox.SelectedItem>
+                                </ComboBox>
+                                <Button Grid.Column="1" Content="..." Width="20" Height="20" Click="LoadSystemFonts_Click" Tag="H1FontFamilyComboBox" ToolTip="Load all system fonts"/>
+                            </Grid>
+                            <ComboBox Grid.Row="2" Grid.Column="2" x:Name="H1FontSizeComboBox" Width="60" Margin="0,0,10,5" SelectionChanged="HeadingFontSizeComboBox_SelectionChanged" Tag="1">
+                                <ComboBoxItem Content="12"/>
+                                <ComboBoxItem Content="14"/>
+                                <ComboBoxItem Content="16"/>
+                                <ComboBoxItem Content="18" IsSelected="True"/>
+                                <ComboBoxItem Content="20"/>
+                                <ComboBoxItem Content="22"/>
+                                <ComboBoxItem Content="24"/>
+                            </ComboBox>
+                            <ComboBox Grid.Row="2" Grid.Column="3" x:Name="PdfH1AlignmentComboBox" Width="100" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="1">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H2 Settings -->
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="H2:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <Grid Grid.Row="3" Grid.Column="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="H2FontFamilyComboBox" Width="150" Margin="0,0,5,5" SelectionChanged="HeadingFontFamilyComboBox_SelectionChanged" Tag="2">
+                                    <ComboBox.ItemsSource>
+                                        <x:Array Type="FontFamily">
+                                            <FontFamily>Arial</FontFamily>
+                                            <FontFamily>Times New Roman</FontFamily>
+                                            <FontFamily>Courier New</FontFamily>
+                                            <FontFamily>Verdana</FontFamily>
+                                            <FontFamily>Tahoma</FontFamily>
+                                            <FontFamily>Calibri</FontFamily>
+                                            <FontFamily>Cambria</FontFamily>
+                                            <FontFamily>Georgia</FontFamily>
+                                            <FontFamily>Segoe UI</FontFamily>
+                                            <FontFamily>Consolas</FontFamily>
+                                        </x:Array>
+                                    </ComboBox.ItemsSource>
+                                    <ComboBox.SelectedItem>
+                                        <FontFamily>Arial</FontFamily>
+                                    </ComboBox.SelectedItem>
+                                </ComboBox>
+                                <Button Grid.Column="1" Content="..." Width="20" Height="20" Click="LoadSystemFonts_Click" Tag="H2FontFamilyComboBox" ToolTip="Load all system fonts"/>
+                            </Grid>
+                            <ComboBox Grid.Row="3" Grid.Column="2" x:Name="H2FontSizeComboBox" Width="60" Margin="0,0,10,5" SelectionChanged="HeadingFontSizeComboBox_SelectionChanged" Tag="2">
+                                <ComboBoxItem Content="12"/>
+                                <ComboBoxItem Content="14"/>
+                                <ComboBoxItem Content="16" IsSelected="True"/>
+                                <ComboBoxItem Content="18"/>
+                                <ComboBoxItem Content="20"/>
+                            </ComboBox>
+                            <ComboBox Grid.Row="3" Grid.Column="3" x:Name="PdfH2AlignmentComboBox" Width="100" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="2">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H3 Settings -->
+                            <TextBlock Grid.Row="4" Grid.Column="0" Text="H3:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <Grid Grid.Row="4" Grid.Column="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="H3FontFamilyComboBox" Width="150" Margin="0,0,5,5" SelectionChanged="HeadingFontFamilyComboBox_SelectionChanged" Tag="3">
+                                    <ComboBox.ItemsSource>
+                                        <x:Array Type="FontFamily">
+                                            <FontFamily>Arial</FontFamily>
+                                            <FontFamily>Times New Roman</FontFamily>
+                                            <FontFamily>Courier New</FontFamily>
+                                            <FontFamily>Verdana</FontFamily>
+                                            <FontFamily>Tahoma</FontFamily>
+                                            <FontFamily>Calibri</FontFamily>
+                                            <FontFamily>Cambria</FontFamily>
+                                            <FontFamily>Georgia</FontFamily>
+                                            <FontFamily>Segoe UI</FontFamily>
+                                            <FontFamily>Consolas</FontFamily>
+                                        </x:Array>
+                                    </ComboBox.ItemsSource>
+                                    <ComboBox.SelectedItem>
+                                        <FontFamily>Arial</FontFamily>
+                                    </ComboBox.SelectedItem>
+                                </ComboBox>
+                                <Button Grid.Column="1" Content="..." Width="20" Height="20" Click="LoadSystemFonts_Click" Tag="H3FontFamilyComboBox" ToolTip="Load all system fonts"/>
+                            </Grid>
+                            <ComboBox Grid.Row="4" Grid.Column="2" x:Name="H3FontSizeComboBox" Width="60" Margin="0,0,10,5" SelectionChanged="HeadingFontSizeComboBox_SelectionChanged" Tag="3">
+                                <ComboBoxItem Content="12"/>
+                                <ComboBoxItem Content="14" IsSelected="True"/>
+                                <ComboBoxItem Content="16"/>
+                                <ComboBoxItem Content="18"/>
+                            </ComboBox>
+                            <ComboBox Grid.Row="4" Grid.Column="3" x:Name="PdfH3AlignmentComboBox" Width="100" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="3">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H4 Settings -->
+                            <TextBlock Grid.Row="5" Grid.Column="0" Text="H4:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <Grid Grid.Row="5" Grid.Column="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="H4FontFamilyComboBox" Width="150" Margin="0,0,5,5" SelectionChanged="HeadingFontFamilyComboBox_SelectionChanged" Tag="4">
+                                    <ComboBox.ItemsSource>
+                                        <x:Array Type="FontFamily">
+                                            <FontFamily>Arial</FontFamily>
+                                            <FontFamily>Times New Roman</FontFamily>
+                                            <FontFamily>Courier New</FontFamily>
+                                            <FontFamily>Verdana</FontFamily>
+                                            <FontFamily>Tahoma</FontFamily>
+                                            <FontFamily>Calibri</FontFamily>
+                                            <FontFamily>Cambria</FontFamily>
+                                            <FontFamily>Georgia</FontFamily>
+                                            <FontFamily>Segoe UI</FontFamily>
+                                            <FontFamily>Consolas</FontFamily>
+                                        </x:Array>
+                                    </ComboBox.ItemsSource>
+                                    <ComboBox.SelectedItem>
+                                        <FontFamily>Arial</FontFamily>
+                                    </ComboBox.SelectedItem>
+                                </ComboBox>
+                                <Button Grid.Column="1" Content="..." Width="20" Height="20" Click="LoadSystemFonts_Click" Tag="H4FontFamilyComboBox" ToolTip="Load all system fonts"/>
+                            </Grid>
+                            <ComboBox Grid.Row="5" Grid.Column="2" x:Name="H4FontSizeComboBox" Width="60" Margin="0,0,10,5" SelectionChanged="HeadingFontSizeComboBox_SelectionChanged" Tag="4">
+                                <ComboBoxItem Content="11"/>
+                                <ComboBoxItem Content="12"/>
+                                <ComboBoxItem Content="13" IsSelected="True"/>
+                                <ComboBoxItem Content="14"/>
+                            </ComboBox>
+                            <ComboBox Grid.Row="5" Grid.Column="3" x:Name="PdfH4AlignmentComboBox" Width="100" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="4">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H5 Settings -->
+                            <TextBlock Grid.Row="6" Grid.Column="0" Text="H5:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <Grid Grid.Row="6" Grid.Column="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="H5FontFamilyComboBox" Width="150" Margin="0,0,5,5" SelectionChanged="HeadingFontFamilyComboBox_SelectionChanged" Tag="5">
+                                    <ComboBox.ItemsSource>
+                                        <x:Array Type="FontFamily">
+                                            <FontFamily>Arial</FontFamily>
+                                            <FontFamily>Times New Roman</FontFamily>
+                                            <FontFamily>Courier New</FontFamily>
+                                            <FontFamily>Verdana</FontFamily>
+                                            <FontFamily>Tahoma</FontFamily>
+                                            <FontFamily>Calibri</FontFamily>
+                                            <FontFamily>Cambria</FontFamily>
+                                            <FontFamily>Georgia</FontFamily>
+                                            <FontFamily>Segoe UI</FontFamily>
+                                            <FontFamily>Consolas</FontFamily>
+                                        </x:Array>
+                                    </ComboBox.ItemsSource>
+                                    <ComboBox.SelectedItem>
+                                        <FontFamily>Arial</FontFamily>
+                                    </ComboBox.SelectedItem>
+                                </ComboBox>
+                                <Button Grid.Column="1" Content="..." Width="20" Height="20" Click="LoadSystemFonts_Click" Tag="H5FontFamilyComboBox" ToolTip="Load all system fonts"/>
+                            </Grid>
+                            <ComboBox Grid.Row="6" Grid.Column="2" x:Name="H5FontSizeComboBox" Width="60" Margin="0,0,10,5" SelectionChanged="HeadingFontSizeComboBox_SelectionChanged" Tag="5">
+                                <ComboBoxItem Content="10"/>
+                                <ComboBoxItem Content="11"/>
+                                <ComboBoxItem Content="12" IsSelected="True"/>
+                                <ComboBoxItem Content="13"/>
+                            </ComboBox>
+                            <ComboBox Grid.Row="6" Grid.Column="3" x:Name="PdfH5AlignmentComboBox" Width="100" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="5">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                            
+                            <!-- H6 Settings -->
+                            <TextBlock Grid.Row="7" Grid.Column="0" Text="H6:" Margin="0,0,10,5" VerticalAlignment="Center"/>
+                            <Grid Grid.Row="7" Grid.Column="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" x:Name="H6FontFamilyComboBox" Width="150" Margin="0,0,5,5" SelectionChanged="HeadingFontFamilyComboBox_SelectionChanged" Tag="6">
+                                    <ComboBox.ItemsSource>
+                                        <x:Array Type="FontFamily">
+                                            <FontFamily>Arial</FontFamily>
+                                            <FontFamily>Times New Roman</FontFamily>
+                                            <FontFamily>Courier New</FontFamily>
+                                            <FontFamily>Verdana</FontFamily>
+                                            <FontFamily>Tahoma</FontFamily>
+                                            <FontFamily>Calibri</FontFamily>
+                                            <FontFamily>Cambria</FontFamily>
+                                            <FontFamily>Georgia</FontFamily>
+                                            <FontFamily>Segoe UI</FontFamily>
+                                            <FontFamily>Consolas</FontFamily>
+                                        </x:Array>
+                                    </ComboBox.ItemsSource>
+                                    <ComboBox.SelectedItem>
+                                        <FontFamily>Arial</FontFamily>
+                                    </ComboBox.SelectedItem>
+                                </ComboBox>
+                                <Button Grid.Column="1" Content="..." Width="20" Height="20" Click="LoadSystemFonts_Click" Tag="H6FontFamilyComboBox" ToolTip="Load all system fonts"/>
+                            </Grid>
+                            <ComboBox Grid.Row="7" Grid.Column="2" x:Name="H6FontSizeComboBox" Width="60" Margin="0,0,10,5" SelectionChanged="HeadingFontSizeComboBox_SelectionChanged" Tag="6">
+                                <ComboBoxItem Content="9"/>
+                                <ComboBoxItem Content="10"/>
+                                <ComboBoxItem Content="11" IsSelected="True"/>
+                                <ComboBoxItem Content="12"/>
+                            </ComboBox>
+                            <ComboBox Grid.Row="7" Grid.Column="3" x:Name="PdfH6AlignmentComboBox" Width="100" Margin="0,0,0,5" SelectionChanged="HeadingAlignmentComboBox_SelectionChanged" Tag="6">
+                                <ComboBoxItem Content="Left" IsSelected="True"/>
+                                <ComboBoxItem Content="Center"/>
+                                <ComboBoxItem Content="Right"/>
+                                <ComboBoxItem Content="Justify"/>
+                            </ComboBox>
+                        </Grid>
+                    </Grid>
                 </StackPanel>
                 
                 <!-- DOCX options -->
@@ -234,13 +653,22 @@
             </StackPanel>
         </GroupBox>
         
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
-            <Button x:Name="CancelButton" Content="Cancel" Width="80" Margin="0,0,10,0" Click="CancelButton_Click"/>
-            <Button x:Name="ExportButton" Content="Export" Width="80" Click="ExportButton_Click"/>
-        </StackPanel>
+        <TextBlock Grid.Row="5" Text="Note: The export process may take a few moments depending on the document size." 
+                   Margin="0,10,0,10" TextWrapping="Wrap" Foreground="#555555"/>
+        
+        <Grid Grid.Row="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <Button x:Name="CancelButton" Grid.Column="1" Content="Cancel" Margin="0,0,10,0" Padding="15,5" Click="CancelButton_Click"/>
+            <Button x:Name="ExportButton" Grid.Column="2" Content="Export" Padding="15,5" Click="ExportButton_Click"/>
+        </Grid>
         
         <!-- Status Bar -->
-        <Border x:Name="StatusBar" Grid.Row="6" Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0" Padding="10,5" Margin="0,10,0,0" Visibility="Collapsed">
+        <Border x:Name="StatusBar" Grid.Row="7" Background="#F0F0F0" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0" Padding="10,5" Margin="0,10,0,0" Visibility="Collapsed">
             <TextBlock x:Name="StatusMessage" Text="Exporting..." Foreground="#333333"/>
         </Border>
     </Grid>

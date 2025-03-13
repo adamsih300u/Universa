@@ -14,6 +14,8 @@ namespace Universa.Desktop.Services
         Task<List<MusicItem>> GetPlaylists();
         Task<List<MusicItem>> GetPlaylistTracks(string playlistId);
         Task AddToPlaylistAsync(string playlistId, string songId);
+        Task<bool> AddTracksToPlaylistAsync(string playlistId, List<string> trackIds);
+        Task<bool> RemoveTrackFromPlaylistAsync(string playlistId, string trackId, int trackIndex);
         Task CreatePlaylistAsync(string name);
         Task DeletePlaylistAsync(string playlistId);
         Task<List<MusicItem>> GetArtists();

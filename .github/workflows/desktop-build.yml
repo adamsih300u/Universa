@@ -32,34 +32,47 @@ jobs:
     - name: Test
       run: dotnet test Universa.Desktop/Universa.csproj --configuration Release --no-build
       
-    - name: Publish
-      run: dotnet publish Universa.Desktop/Universa.csproj --configuration Release --no-build --output ./publish
+    - name: Publish Self-Contained Single-File
+      run: dotnet publish Universa.Desktop/Universa.csproj --configuration Release --runtime win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:PublishReadyToRun=true --output ./publish-portable
       
-    - name: Create release directory
-      run: |
-        mkdir -p ./release
-        Copy-Item -Path "./publish/*" -Destination "./release/" -Recurse -Exclude @("*.resources.dll", "*.so")
-      shell: pwsh
-      
-    - name: Create ZIP file
+    - name: Rename executable
       run: |
         $version = "${{ github.ref_name }}"
-        Compress-Archive -Path "./release/*" -DestinationPath "./Universa-Desktop-$version.zip"
+        $versionNumber = $version.TrimStart('v')
+        Rename-Item -Path "./publish-portable/Universa.Desktop.exe" -NewName "Universa-Desktop-$versionNumber.exe"
       shell: pwsh
       
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: Universa-Desktop-App
-        path: ./publish
+        name: Universa-Desktop-Portable
+        path: ./publish-portable/Universa-Desktop-*.exe
         
     - name: Create Release
       id: create_release
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        files: ./Universa-Desktop-${{ github.ref_name }}.zip
+        files: ./publish-portable/Universa-Desktop-*.exe
         name: Release ${{ github.ref_name }}
+        body: |
+          ## Universa Desktop ${{ github.ref_name }}
+          
+          ### Portable Edition
+          
+          Download the single executable file and run it without installation:
+          
+          1. Download the `Universa-Desktop-*.exe` file
+          2. Save it to any location on your computer
+          3. Double-click to run the application
+          
+          No installation required - just download and run!
+          
+          ### Notes
+          
+          - The first run may take slightly longer as the application extracts necessary components.
+          - User data is stored in your AppData folder.
+          - Requires Windows 10 (version 1903 or later) or Windows 11.
         draft: false
         prerelease: false
       env:

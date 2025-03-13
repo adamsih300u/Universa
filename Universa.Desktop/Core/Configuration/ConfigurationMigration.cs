@@ -68,8 +68,6 @@ namespace Universa.Desktop.Core.Configuration
                 configManager.Set(ConfigurationKeys.AI.OllamaEnabled, oldConfig.EnableOllama);
                 configManager.Set(ConfigurationKeys.AI.OllamaUrl, oldConfig.OllamaUrl);
                 configManager.Set(ConfigurationKeys.AI.OllamaModel, oldConfig.OllamaModel);
-                configManager.Set(ConfigurationKeys.AI.CharacterizationEnabled, oldConfig.EnableAICharacterization);
-                configManager.Set(ConfigurationKeys.AI.LocalEmbeddingsEnabled, oldConfig.EnableLocalEmbeddings);
                 configManager.Set(ConfigurationKeys.AI.ChatEnabled, oldConfig.EnableAIChat);
 
                 // Migrate Theme Settings

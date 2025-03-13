@@ -632,33 +632,105 @@ namespace Universa.Desktop.Views
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
 
-        public async Task DeletePlaylistAsync(string playlistId)
+        public async Task<bool> DeletePlaylistAsync(string playlistId)
         {
-            if (string.IsNullOrEmpty(playlistId))
-            {
-                throw new ArgumentException("Playlist ID cannot be null or empty", nameof(playlistId));
-            }
-            
-            Debug.WriteLine($"Deleting playlist: {playlistId}");
-            
             try
             {
-                // Delete the playlist using the Subsonic service
+                Debug.WriteLine($"Deleting playlist with ID: {playlistId}");
                 await _subsonicService.DeletePlaylistAsync(playlistId);
                 
-                // Remove the playlist from the local collection
-                var playlistToRemove = _playlists.FirstOrDefault(p => p.Id == playlistId);
-                if (playlistToRemove != null)
+                // Since SubsonicService.DeletePlaylistAsync doesn't return a value,
+                // we'll consider it successful if no exception was thrown
+                Debug.WriteLine("Playlist deleted successfully");
+                
+                // Remove from local collection
+                var playlist = _playlists.FirstOrDefault(p => p.Id == playlistId);
+                if (playlist != null)
                 {
-                    _playlists.Remove(playlistToRemove);
+                    _playlists.Remove(playlist);
                 }
                 
-                Debug.WriteLine($"Playlist {playlistId} deleted successfully");
+                return true;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error deleting playlist: {ex.Message}");
-                throw; // Rethrow to allow the UI to handle the error
+                return false;
+            }
+        }
+        
+        public async Task<bool> AddTracksToPlaylistAsync(string playlistId, List<string> trackIds)
+        {
+            try
+            {
+                Debug.WriteLine($"Adding {trackIds.Count} tracks to playlist {playlistId}");
+                
+                // Call the Subsonic service to add the tracks
+                bool success = await _subsonicService.AddTracksToPlaylistAsync(playlistId, trackIds);
+                
+                if (success)
+                {
+                    Debug.WriteLine("Tracks added to playlist successfully");
+                }
+                else
+                {
+                    Debug.WriteLine("Failed to add tracks to playlist");
+                }
+                
+                return success;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error adding tracks to playlist: {ex.Message}");
+                return false;
+            }
+        }
+        
+        public async Task<bool> RemoveTrackFromPlaylistAsync(string playlistId, MusicContentItem track, int trackIndex)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(playlistId))
+                {
+                    Debug.WriteLine("Playlist ID is null or empty, cannot remove track");
+                    return false;
+                }
+                
+                if (track == null)
+                {
+                    Debug.WriteLine("Track is null, cannot remove from playlist");
+                    return false;
+                }
+                
+                Debug.WriteLine($"Removing track {track.Name} from playlist {playlistId} at index {trackIndex}");
+                
+                // Call the Subsonic service to remove the track
+                bool success = await _subsonicService.RemoveTrackFromPlaylistAsync(playlistId, track.Id, trackIndex);
+                
+                if (success)
+                {
+                    Debug.WriteLine("Track removed from playlist successfully");
+                    
+                    // Remove the track from the ContentItems collection if we're currently viewing the playlist
+                    if (SelectedItem?.Type == MusicItemType.Playlist && SelectedItem.Id == playlistId)
+                    {
+                        Application.Current.Dispatcher.Invoke(() =>
+                        {
+                            ContentItems.Remove(track);
+                        });
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("Failed to remove track from playlist");
+                }
+                
+                return success;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error removing track from playlist: {ex.Message}");
+                return false;
             }
         }
     }

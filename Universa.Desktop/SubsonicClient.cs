@@ -427,7 +427,24 @@ namespace Universa.Desktop
 
         public async Task AddToPlaylistAsync(string playlistId, string songId)
         {
+            if (string.IsNullOrWhiteSpace(playlistId))
+                throw new ArgumentException("Playlist ID cannot be empty.", nameof(playlistId));
+                
+            if (string.IsNullOrWhiteSpace(songId))
+                throw new ArgumentException("Song ID cannot be empty.", nameof(songId));
+                
             await MakeRequest("updatePlaylist", $"&playlistId={Uri.EscapeDataString(playlistId)}&songIdToAdd={Uri.EscapeDataString(songId)}");
+        }
+
+        public async Task RemoveTrackFromPlaylistAsync(string playlistId, int index)
+        {
+            if (string.IsNullOrWhiteSpace(playlistId))
+                throw new ArgumentException("Playlist ID cannot be empty.", nameof(playlistId));
+                
+            if (index < 0)
+                throw new ArgumentException("Index cannot be negative.", nameof(index));
+                
+            await MakeRequest("updatePlaylist", $"&playlistId={Uri.EscapeDataString(playlistId)}&songIndexToRemove={index}");
         }
 
         public string GetStreamUrl(string trackId)

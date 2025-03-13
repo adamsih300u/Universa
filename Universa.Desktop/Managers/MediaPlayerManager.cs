@@ -62,6 +62,9 @@ namespace Universa.Desktop.Managers
         private TimeSpan _duration;
         private VideoWindowManager _videoWindowManager;
         private bool _isVideoPlaying;
+        private DateTime? _lastIsPlayingLogTime;
+        private DateTime? _lastHasPlaylistLogTime;
+        private bool _isAutoAdvancing = false;
 
         public event EventHandler PlaybackStarted;
         public event EventHandler PlaybackPaused;
@@ -75,7 +78,11 @@ namespace Universa.Desktop.Managers
         {
             get
             {
-                Debug.WriteLine($"IsPlaying getter called, returning: {_isPlaying}");
+                if (!_lastIsPlayingLogTime.HasValue || (DateTime.Now - _lastIsPlayingLogTime.Value).TotalMilliseconds > 1000)
+                {
+                    Debug.WriteLine($"IsPlaying getter called, returning: {_isPlaying}");
+                    _lastIsPlayingLogTime = DateTime.Now;
+                }
                 return _isPlaying;
             }
             private set
@@ -95,9 +102,24 @@ namespace Universa.Desktop.Managers
         {
             get
             {
-                bool hasPlaylist = _playlist != null && _playlist.Count > 0;
-                Debug.WriteLine($"HasPlaylist getter called, returning: {hasPlaylist}");
-                return hasPlaylist;
+                try
+                {
+                    var playlist = _playlist;
+                    bool hasPlaylist = playlist != null && playlist.Count > 0;
+                    
+                    if (!_lastHasPlaylistLogTime.HasValue || (DateTime.Now - _lastHasPlaylistLogTime.Value).TotalMilliseconds > 1000)
+                    {
+                        Debug.WriteLine($"HasPlaylist getter called, returning: {hasPlaylist}, playlist count: {playlist?.Count ?? 0}, current index: {_currentTrackIndex}");
+                        _lastHasPlaylistLogTime = DateTime.Now;
+                    }
+                    
+                    return hasPlaylist;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in HasPlaylist getter: {ex.Message}");
+                    return false;
+                }
             }
         }
         public Universa.Desktop.Models.Track CurrentTrack => HasPlaylist ? _playlist[_currentTrackIndex] : null;
@@ -108,7 +130,31 @@ namespace Universa.Desktop.Managers
         }
         public TimeSpan CurrentPosition => _mediaElement?.Position ?? TimeSpan.Zero;
         public TimeSpan Duration => _duration;
-        public bool IsShuffleEnabled => _isShuffleEnabled;
+        public bool IsShuffleEnabled 
+        { 
+            get => _isShuffleEnabled;
+            set
+            {
+                if (_isShuffleEnabled != value)
+                {
+                    Debug.WriteLine($"IsShuffleEnabled changing from {_isShuffleEnabled} to {value}");
+                    _isShuffleEnabled = value;
+                    
+                    // Update controls manager
+                    if (_controlsManager != null)
+                    {
+                        Debug.WriteLine($"Notifying controls manager of shuffle state change: {_isShuffleEnabled}");
+                        _controlsManager.UpdateShuffleButton(_isShuffleEnabled);
+                    }
+                    
+                    // Notify listeners
+                    ShuffleChanged?.Invoke(this, _isShuffleEnabled);
+                    
+                    // Trigger property changed notification
+                    OnPropertyChanged(nameof(IsShuffleEnabled));
+                }
+            }
+        }
         public bool HasMedia => _mediaElement?.Source != null;
         public bool IsPlayingVideo => _isPlayingVideo;
         public bool IsVideoPlaying 
@@ -197,12 +243,32 @@ namespace Universa.Desktop.Managers
                 }
             }
             
-            // Initialize the media element events
-            _mediaElement.MediaEnded += OnMediaEnded;
-            _mediaElement.MediaOpened += OnMediaOpened;
-            _mediaElement.MediaFailed += OnMediaFailed;
+            // Detach event handlers first to avoid duplicates
+            if (_mediaElement != null)
+            {
+                // Remove event handlers before adding them
+                Debug.WriteLine("InitializeWithWindow: Detaching existing media element event handlers");
+                _mediaElement.MediaEnded -= OnMediaEnded;
+                _mediaElement.MediaOpened -= OnMediaOpened;
+                _mediaElement.MediaFailed -= OnMediaFailed;
+                
+                // Add event handlers
+                Debug.WriteLine("InitializeWithWindow: Attaching media element event handlers");
+                _mediaElement.MediaEnded += OnMediaEnded;
+                _mediaElement.MediaOpened += OnMediaOpened;
+                _mediaElement.MediaFailed += OnMediaFailed;
+            }
 
+            // If we already have a controls manager, dispose of it
+            if (_controlsManager != null)
+            {
+                Debug.WriteLine("InitializeWithWindow: Clearing existing controls manager");
+                // We don't need to do anything specific since it's not disposable
+                _controlsManager = null;
+            }
+            
             // Create the controls manager
+            Debug.WriteLine("InitializeWithWindow: Creating new controls manager");
             _controlsManager = new MediaControlsManager(
                 _window,
                 this,
@@ -218,7 +284,16 @@ namespace Universa.Desktop.Managers
                 _window.NowPlayingText,
                 _window.MediaControlsGrid);
 
+            // Stop and restart position timer to ensure it's clean
+            if (_positionTimer != null)
+            {
+                Debug.WriteLine("InitializeWithWindow: Stopping existing position timer");
+                _positionTimer.Stop();
+                _positionTimer.Tick -= PositionTimer_Tick;
+            }
+            
             // Initialize position timer
+            Debug.WriteLine("InitializeWithWindow: Creating new position timer");
             _positionTimer = new DispatcherTimer();
             _positionTimer.Interval = TimeSpan.FromMilliseconds(500);
             _positionTimer.Tick += PositionTimer_Tick;
@@ -241,19 +316,30 @@ namespace Universa.Desktop.Managers
 
         private void PositionTimer_Tick(object sender, EventArgs e)
         {
-            if (_mediaElement != null && _mediaElement.Source != null && !_isDraggingTimelineSlider)
+            try
             {
-                // Only update if the position has changed
-                if (_lastReportedPosition != _mediaElement.Position)
+                if (_mediaElement != null && _mediaElement.Source != null && !_isDraggingTimelineSlider)
                 {
-                    _lastReportedPosition = _mediaElement.Position;
-                    PositionChanged?.Invoke(this, _mediaElement.Position);
+                    // Always update position for smoother UI
+                    var currentPosition = _mediaElement.Position;
+                    var currentDuration = _mediaElement.NaturalDuration.HasTimeSpan ? _mediaElement.NaturalDuration.TimeSpan : Duration;
                     
+                    // Store current position and raise event
+                    _lastReportedPosition = currentPosition;
+                    PositionChanged?.Invoke(this, currentPosition);
+                    
+                    // Update time display through controls manager
                     if (_controlsManager != null)
                     {
-                        UpdateTimeDisplay(_mediaElement.Position, Duration);
+                        UpdateTimeDisplay(currentPosition, currentDuration);
                     }
+                    
+                    // Debug.WriteLine($"Position: {currentPosition.TotalSeconds:F1}s / {currentDuration.TotalSeconds:F1}s");
                 }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in PositionTimer_Tick: {ex.Message}");
             }
         }
 
@@ -305,126 +391,92 @@ namespace Universa.Desktop.Managers
             }
         }
 
-        private void PlayCurrentTrack()
+        public void PlayCurrentTrack()
         {
-            Debug.WriteLine("PlayCurrentTrack called");
-            LogPlaylistState("PlayCurrentTrack - Before");
-            
-            // Show media controls immediately
-            _controlsManager?.ShowMediaControls();
-            
             try
             {
+                Debug.WriteLine("PlayCurrentTrack called");
+                
                 if (!HasPlaylist)
                 {
-                    Debug.WriteLine("No playlist available for PlayCurrentTrack");
+                    Debug.WriteLine("PlayCurrentTrack: No playlist available");
                     return;
                 }
 
-                // Ensure we have a valid playlist and index
                 if (_playlist == null || _playlist.Count == 0)
                 {
-                    Debug.WriteLine("Playlist is null or empty in PlayCurrentTrack");
+                    Debug.WriteLine("PlayCurrentTrack: Playlist is null or empty");
                     return;
                 }
 
-                // Validate current track index
                 if (_currentTrackIndex < 0 || _currentTrackIndex >= _playlist.Count)
                 {
-                    Debug.WriteLine($"Invalid track index: {_currentTrackIndex}, resetting to 0");
-                    _currentTrackIndex = 0;
-                }
-
-                var track = _playlist[_currentTrackIndex];
-                if (track == null)
-                {
-                    Debug.WriteLine("Current track is null");
+                    Debug.WriteLine($"PlayCurrentTrack: Invalid track index {_currentTrackIndex}");
                     return;
                 }
 
-                Debug.WriteLine($"Playing track: {track.Title}, StreamUrl: {track.StreamUrl}");
-
-                // Initialize media element if needed
-                var mediaElement = GetMediaElement();
-                if (mediaElement == null)
+                // Set state before starting playback to ensure UI reflects the correct state
+                _isPlaying = true;
+                IsPaused = false;
+                
+                // Notify immediately that IsPlaying changed
+                OnPropertyChanged(nameof(IsPlaying));
+                
+                // Update UI before starting playback
+                var currentTrack = _playlist[_currentTrackIndex];
+                Debug.WriteLine($"PlayCurrentTrack: Preparing to play track: {currentTrack.Title}");
+                
+                // Set duration from track metadata if available
+                if (currentTrack.Duration.TotalSeconds > 0)
                 {
-                    Debug.WriteLine("Media element is null, cannot play track");
-                    return;
-                }
-
-                // Handle video tracks
-                bool isVideo = track.StreamUrl?.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) == true ||
-                               track.StreamUrl?.EndsWith(".avi", StringComparison.OrdinalIgnoreCase) == true ||
-                               track.StreamUrl?.EndsWith(".mov", StringComparison.OrdinalIgnoreCase) == true;
-
-                // Handle video functionality safely
-                if (isVideo && _videoWindowManager != null)
-                {
-                    Debug.WriteLine("Track is a video, but video window manager handling is disabled");
-                    // We'll set the flag but not call methods on _videoWindowManager since we don't know its type
-                    IsVideoPlaying = true;
-                }
-                else
-                {
-                    Debug.WriteLine("Track is audio or video window manager is null");
-                    IsVideoPlaying = false;
-                }
-
-                // Set media source and start playback
-                if (!string.IsNullOrEmpty(track.StreamUrl))
-                {
-                    Debug.WriteLine($"Setting media source to: {track.StreamUrl}");
-                    mediaElement.Source = new Uri(track.StreamUrl);
+                    _duration = currentTrack.Duration;
+                    Debug.WriteLine($"PlayCurrentTrack: Setting duration from track metadata: {_duration}");
+                    OnPropertyChanged(nameof(Duration));
                     
-                    // Ensure event handlers are attached
-                    AttachMediaElementEvents(mediaElement);
-                    
-                    // Start playback
-                    Debug.WriteLine("Starting playback");
-                    mediaElement.Play();
-                    IsPlaying = true;
-                    IsPaused = false;
-                    
-                    // Ensure the button state is updated
-                    _controlsManager?.UpdatePlayPauseButton(true);
-                    
-                    // Update now playing info
-                    if (PlaybackStarted != null)
+                    // Initialize the timeline slider with the track's duration
+                    if (_controlsManager != null)
                     {
-                        Debug.WriteLine("Raising PlaybackStarted event");
-                        PlaybackStarted(this, EventArgs.Empty);
+                        _controlsManager.UpdateTimelineMaximum(_duration.TotalMilliseconds);
+                        _controlsManager.UpdateTimeDisplay(TimeSpan.Zero, _duration);
                     }
-                    
-                    if (TrackChanged != null && track != null)
-                    {
-                        Debug.WriteLine($"Raising TrackChanged event for track: {track.Title}");
-                        TrackChanged(this, track);
-                    }
-                    
-                    // Ensure media controls are visible
-                    _controlsManager?.ShowMediaControls();
-                    
-                    // Ensure position is updated immediately
-                    if (PositionChanged != null)
-                    {
-                        Debug.WriteLine("Raising initial PositionChanged event");
-                        PositionChanged(this, TimeSpan.Zero);
-                    }
-                    
-                    Debug.WriteLine($"Playback started successfully. IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
-                else
+                
+                // Update the UI for current track
+                UpdateNowPlaying(currentTrack.Title, currentTrack.Artist, currentTrack.Series, currentTrack.Season);
+                
+                // Update play/pause button before playback
+                _controlsManager?.UpdatePlayPauseButton(true);
+                
+                // Ensure controls are visible
+                _controlsManager?.ShowMediaControls();
+                
+                // Play the track
+                try
                 {
-                    Debug.WriteLine("Track StreamUrl is null or empty");
+                    PlayTrack(currentTrack);
                 }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in PlayTrack call: {ex.Message}");
+                    Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                    
+                    // Try to recover - directly set the source and play
+                    var mediaElement = GetMediaElement();
+                    if (mediaElement != null && !string.IsNullOrEmpty(currentTrack.StreamUrl))
+                    {
+                        Debug.WriteLine("Attempting direct playback recovery");
+                        mediaElement.Source = new Uri(currentTrack.StreamUrl);
+                        mediaElement.Play();
+                    }
+                }
+
+                Debug.WriteLine($"PlayCurrentTrack: Started playing track: {currentTrack.Title}");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in PlayCurrentTrack: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
-            
-            LogPlaylistState("PlayCurrentTrack - After");
-            Debug.WriteLine("PlayCurrentTrack completed");
         }
 
         private void AttachMediaElementEvents(MediaElement mediaElement)
@@ -433,12 +485,12 @@ namespace Universa.Desktop.Managers
             
             // Remove existing handlers to avoid duplicates
             mediaElement.MediaOpened -= MediaElement_MediaOpened;
-            mediaElement.MediaEnded -= MediaElement_MediaEnded;
+            mediaElement.MediaEnded -= OnMediaEnded;
             mediaElement.MediaFailed -= MediaElement_MediaFailed;
             
             // Add handlers
             mediaElement.MediaOpened += MediaElement_MediaOpened;
-            mediaElement.MediaEnded += MediaElement_MediaEnded;
+            mediaElement.MediaEnded += OnMediaEnded;
             mediaElement.MediaFailed += MediaElement_MediaFailed;
             
             Debug.WriteLine("Media element events attached");
@@ -526,6 +578,10 @@ namespace Universa.Desktop.Managers
                     // Ensure the button state is updated
                     _controlsManager?.UpdatePlayPauseButton(false);
                     
+                    // Raise the PlaybackPaused event instead of stopped
+                    // This is important as it won't hide the controls
+                    PlaybackPaused?.Invoke(this, EventArgs.Empty);
+                    
                     Debug.WriteLine($"Media element paused. IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
             }
@@ -554,8 +610,8 @@ namespace Universa.Desktop.Managers
                     // Call Pause which will set IsPlaying to false
                     Pause();
                     
-                    // Ensure the PlaybackStopped event is raised
-                    PlaybackStopped?.Invoke(this, EventArgs.Empty);
+                    // Ensure the controls remain visible
+                    ShowMediaControls();
                     
                     Debug.WriteLine($"After pause, IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
@@ -580,14 +636,14 @@ namespace Universa.Desktop.Managers
                     // Call Play which will set IsPlaying to true
                     Play();
                     
-                    // Ensure the PlaybackStarted event is raised
-                    PlaybackStarted?.Invoke(this, EventArgs.Empty);
-                    
                     // Also raise the TrackChanged event to update the UI
                     if (HasPlaylist && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
                     {
                         TrackChanged?.Invoke(this, _playlist[_currentTrackIndex]);
                     }
+                    
+                    // Ensure controls are visible
+                    ShowMediaControls();
                     
                     Debug.WriteLine($"After play, IsPlaying={IsPlaying}, IsPaused={IsPaused}");
                 }
@@ -638,55 +694,108 @@ namespace Universa.Desktop.Managers
 
         public void Next()
         {
-            Debug.WriteLine("Next method called");
-            LogPlaylistState("Next - Before");
-
-            try
+            // Add detailed timestamp to track when this method is called
+            Debug.WriteLine($"Next method called at {DateTime.Now.ToString("HH:mm:ss.fff")} (auto-advancing: {_isAutoAdvancing})");
+            
+            // If we're already auto-advancing, don't do it again
+            if (_isAutoAdvancing)
             {
-                if (!HasPlaylist)
-                {
-                    Debug.WriteLine("No playlist available for Next operation");
-                    return;
-                }
-
-                // Ensure we have a valid playlist
-                if (_playlist == null || _playlist.Count == 0)
-                {
-                    Debug.WriteLine("Playlist is null or empty in Next method");
-                    return;
-                }
-
-                // Move to next track
-                _currentTrackIndex++;
-                
-                // Loop back to beginning if we've reached the end
-                if (_currentTrackIndex >= _playlist.Count)
-                {
-                    Debug.WriteLine("Reached end of playlist, looping back to beginning");
-                    _currentTrackIndex = 0;
-                }
-
-                Debug.WriteLine($"Moving to next track at index: {_currentTrackIndex}");
-                
-                // Explicitly raise the TrackChanged event before playing the track
-                if (TrackChanged != null && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
-                {
-                    var track = _playlist[_currentTrackIndex];
-                    Debug.WriteLine($"Explicitly raising TrackChanged event for track: {track.Title}");
-                    TrackChanged(this, track);
-                }
-                
-                PlayCurrentTrack();
-                
-                // Ensure media controls are visible
-                _controlsManager?.ShowMediaControls();
+                Debug.WriteLine("Skipping Next() call because we're already auto-advancing");
+                return;
             }
-            catch (Exception ex)
+            
+            // Lock to prevent concurrent execution
+            lock (this)
             {
-                Debug.WriteLine($"Error in Next method: {ex.Message}");
+                // Log playlist state before any changes
+                LogPlaylistState("Next - Before");
+                
+                try
+                {
+                    if (!HasPlaylist)
+                    {
+                        Debug.WriteLine("No playlist available for Next operation");
+                        return;
+                    }
+                    
+                    // Ensure we have a valid playlist
+                    if (_playlist == null || _playlist.Count == 0)
+                    {
+                        Debug.WriteLine("Playlist is null or empty in Next method");
+                        return;
+                    }
+                    
+                    // First, stop any current playback
+                    var mediaElement = GetMediaElement();
+                    if (mediaElement != null)
+                    {
+                        // Stop before changing track
+                        Debug.WriteLine("Stopping media element before advancing to next track");
+                        mediaElement.Stop();
+                    }
+                    
+                    // Get the current track for logging
+                    string currentTrackTitle = "unknown";
+                    if (_currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                    {
+                        currentTrackTitle = _playlist[_currentTrackIndex].Title;
+                    }
+                    
+                    // Move to next track
+                    int previousIndex = _currentTrackIndex;
+                    _currentTrackIndex++;
+                    
+                    // Loop back to beginning if we've reached the end
+                    if (_currentTrackIndex >= _playlist.Count)
+                    {
+                        Debug.WriteLine("Reached end of playlist, looping back to beginning");
+                        _currentTrackIndex = 0;
+                    }
+                    
+                    Debug.WriteLine($"Moving from track {previousIndex} ({currentTrackTitle}) to index: {_currentTrackIndex}");
+                    
+                    // Verify media element
+                    if (mediaElement == null)
+                    {
+                        Debug.WriteLine("Media element is null, cannot play next track");
+                        return;
+                    }
+                    
+                    // Explicitly raise the TrackChanged event before playing the track
+                    var nextTrack = _playlist[_currentTrackIndex];
+                    if (TrackChanged != null && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                    {
+                        Debug.WriteLine($"Explicitly raising TrackChanged event for track: {nextTrack.Title}");
+                        TrackChanged(this, nextTrack);
+                    }
+                    
+                    // Set flags for playback
+                    _isPlaying = true;
+                    IsPaused = false;
+                    
+                    // Play the next track
+                    Debug.WriteLine($"Starting playback of track: {nextTrack.Title}");
+                    PlayCurrentTrack();
+                    
+                    // Ensure media controls are visible
+                    _controlsManager?.ShowMediaControls();
+                    
+                    // Update play/pause button state
+                    _controlsManager?.UpdatePlayPauseButton(true);
+                    
+                    Debug.WriteLine($"Next method completed successfully, now playing track: {nextTrack.Title}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in Next method: {ex.Message}");
+                    Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                }
+                
+                // Log playlist state after changes
+                LogPlaylistState("Next - After");
             }
-
-            LogPlaylistState("Next - After");
+            
+            Debug.WriteLine($"Next method completed at {DateTime.Now.ToString("HH:mm:ss.fff")}");
         }
 
         public void Previous()
@@ -721,6 +830,14 @@ namespace Universa.Desktop.Managers
 
                 Debug.WriteLine($"Moving to previous track at index: {_currentTrackIndex}");
                 
+                // Get the media element
+                var mediaElement = GetMediaElement();
+                if (mediaElement == null)
+                {
+                    Debug.WriteLine("Media element is null, cannot play previous track");
+                    return;
+                }
+                
                 // Explicitly raise the TrackChanged event before playing the track
                 if (TrackChanged != null && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
                 {
@@ -729,14 +846,22 @@ namespace Universa.Desktop.Managers
                     TrackChanged(this, track);
                 }
                 
+                // Stop any currently playing media first
+                mediaElement.Stop();
+                
+                // Play the selected track
                 PlayCurrentTrack();
                 
                 // Ensure media controls are visible
                 _controlsManager?.ShowMediaControls();
+                
+                // Update play/pause button state
+                _controlsManager?.UpdatePlayPauseButton(true);
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in Previous method: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
 
             LogPlaylistState("Previous - After");
@@ -750,36 +875,228 @@ namespace Universa.Desktop.Managers
 
         private void OnMediaEnded(object sender, EventArgs e)
         {
-            Next();
+            // Add precise timestamp for diagnostics
+            Debug.WriteLine($"OnMediaEnded called at {DateTime.Now.ToString("HH:mm:ss.fff")}");
+            
+            try
+            {
+                // Set the auto-advancing flag to prevent Next() method from being called during auto-advance
+                _isAutoAdvancing = true;
+                
+                // First check if we have a playlist
+                if (!HasPlaylist)
+                {
+                    Debug.WriteLine("No playlist available for OnMediaEnded");
+                    // Even if we don't have a playlist, we should update the UI to reflect that playback has ended
+                    IsPlaying = false;
+                    UpdatePlaybackState(false);
+                    _isAutoAdvancing = false;
+                    return;
+                }
+                
+                Debug.WriteLine($"Current playlist has {_playlist.Count} tracks, current index: {_currentTrackIndex}");
+                
+                // Safety check for playlist and index bounds
+                if (_playlist == null || _playlist.Count == 0)
+                {
+                    Debug.WriteLine("OnMediaEnded: playlist is null or empty");
+                    _isAutoAdvancing = false;
+                    return;
+                }
+                
+                if (_currentTrackIndex < 0 || _currentTrackIndex >= _playlist.Count)
+                {
+                    Debug.WriteLine($"OnMediaEnded: Invalid track index {_currentTrackIndex}, resetting to 0");
+                    _currentTrackIndex = 0;
+                }
+                
+                // Get current track for logging
+                var currentTrack = _playlist[_currentTrackIndex];
+                Debug.WriteLine($"OnMediaEnded: Finished playing track: {currentTrack.Title}");
+                
+                // Log playlist state before advancing
+                LogPlaylistState("OnMediaEnded - Before Next");
+                
+                try
+                {
+                    lock (this) // Lock to prevent concurrent modifications to the track index
+                    {
+                        // Move to the next track
+                        Debug.WriteLine($"OnMediaEnded: Moving to next track from index {_currentTrackIndex}");
+                        int oldIndex = _currentTrackIndex;
+                        
+                        // Manually increment track index instead of calling Next()
+                        _currentTrackIndex++;
+                        
+                        // Loop back to beginning if needed
+                        if (_currentTrackIndex >= _playlist.Count)
+                        {
+                            Debug.WriteLine("OnMediaEnded: Reached end of playlist, looping back to beginning");
+                            _currentTrackIndex = 0;
+                        }
+                        
+                        Debug.WriteLine($"OnMediaEnded: Track index changed from {oldIndex} to {_currentTrackIndex}");
+                    }
+                    
+                    // Use the dispatcher to start playing the next track on the UI thread
+                    Application.Current.Dispatcher.BeginInvoke(new Action(() => 
+                    {
+                        try 
+                        {
+                            Debug.WriteLine($"OnMediaEnded: Dispatcher callback executing at {DateTime.Now.ToString("HH:mm:ss.fff")}");
+                            
+                            // Get a fresh media element
+                            var mediaElement = GetMediaElement();
+                            if (mediaElement == null)
+                            {
+                                Debug.WriteLine("OnMediaEnded: Media element is null");
+                                _isAutoAdvancing = false;
+                                return;
+                            }
+                            
+                            // Stop any existing media (this helps prevent issues)
+                            mediaElement.Stop();
+                            
+                            // Explicitly raise the TrackChanged event
+                            if (TrackChanged != null && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                            {
+                                var nextTrack = _playlist[_currentTrackIndex];
+                                Debug.WriteLine($"OnMediaEnded: Raising TrackChanged event for track: {nextTrack.Title}");
+                                TrackChanged(this, nextTrack);
+                            }
+                            
+                            // Set state to playing
+                            _isPlaying = true;
+                            IsPaused = false;
+                            OnPropertyChanged(nameof(IsPlaying));
+                            
+                            // Play the track directly using a local variable to track
+                            if (_currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                            {
+                                var nextTrack = _playlist[_currentTrackIndex];
+                                Debug.WriteLine($"OnMediaEnded: Starting playback of track: {nextTrack.Title}");
+                                
+                                // Play the track
+                                PlayCurrentTrack();
+                            }
+                            else
+                            {
+                                Debug.WriteLine($"OnMediaEnded: Invalid track index {_currentTrackIndex}");
+                            }
+                            
+                            // Ensure media controls are visible
+                            _controlsManager?.ShowMediaControls();
+                            
+                            // Update play/pause button state
+                            _controlsManager?.UpdatePlayPauseButton(true);
+                            
+                            Debug.WriteLine($"OnMediaEnded: Auto-advancement complete at {DateTime.Now.ToString("HH:mm:ss.fff")}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error in OnMediaEnded dispatcher callback: {ex.Message}");
+                            Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                        }
+                        finally
+                        {
+                            // Always reset the auto-advancing flag
+                            _isAutoAdvancing = false;
+                            Debug.WriteLine("OnMediaEnded: Reset _isAutoAdvancing to false");
+                        }
+                    }), DispatcherPriority.Background, null);
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error in OnMediaEnded before dispatcher: {ex.Message}");
+                    Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                    _isAutoAdvancing = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in OnMediaEnded: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                _isAutoAdvancing = false;
+            }
+            
+            Debug.WriteLine($"OnMediaEnded method completed at {DateTime.Now.ToString("HH:mm:ss.fff")}");
         }
 
         private void OnMediaOpened(object sender, EventArgs e)
         {
-            if (_mediaElement.NaturalDuration.HasTimeSpan)
+            Debug.WriteLine("OnMediaOpened event fired");
+            
+            try
             {
-                // Update the timeline slider maximum
-                if (_controlsManager != null)
+                if (_mediaElement != null && _mediaElement.NaturalDuration.HasTimeSpan)
                 {
-                    _controlsManager.InitializeTimelineSlider(_mediaElement.NaturalDuration.TimeSpan);
-                }
+                    // Update the timeline slider maximum
+                    if (_controlsManager != null)
+                    {
+                        _controlsManager.InitializeTimelineSlider(_mediaElement.NaturalDuration.TimeSpan);
+                    }
 
-                // Start the position timer
-                if (_positionTimer != null)
-                {
+                    // Start the position timer
+                    if (_positionTimer != null)
+                    {
+                        _positionTimer.Start();
+                    }
+                    else
+                    {
+                        // Create a new position timer if it doesn't exist
+                        _positionTimer = new DispatcherTimer();
+                        _positionTimer.Interval = TimeSpan.FromMilliseconds(500);
+                        _positionTimer.Tick += PositionTimer_Tick;
+                    }
+                    
                     _positionTimer.Start();
+
+                    // Get the duration from the media element
+                    TimeSpan mediaDuration = _mediaElement.NaturalDuration.TimeSpan;
+                    
+                    // If media element reports very short duration but we have track metadata with duration
+                    if (mediaDuration.TotalSeconds < 1 && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist?.Count)
+                    {
+                        var currentTrack = _playlist[_currentTrackIndex];
+                        if (currentTrack != null && currentTrack.Duration.TotalSeconds > 0)
+                        {
+                            mediaDuration = currentTrack.Duration;
+                            Debug.WriteLine($"OnMediaOpened: Using duration from track metadata: {mediaDuration}");
+                        }
+                    }
+                    
+                    // Update the time display
+                    UpdateTimeDisplay(TimeSpan.Zero, mediaDuration);
+                    
+                    // Store the duration
+                    _duration = mediaDuration;
+                    OnPropertyChanged(nameof(Duration));
+                    Debug.WriteLine($"Media duration set to: {_duration}");
                 }
                 else
                 {
-                    // Create a new position timer if it doesn't exist
-                    _positionTimer = new DispatcherTimer();
-                    _positionTimer.Interval = TimeSpan.FromMilliseconds(500);
-                    _positionTimer.Tick += PositionTimer_Tick;
+                    Debug.WriteLine("OnMediaOpened: MediaElement has no timespan duration");
+                    
+                    // Try to get duration from track metadata if available
+                    if (_currentTrackIndex >= 0 && _currentTrackIndex < _playlist?.Count)
+                    {
+                        var currentTrack = _playlist[_currentTrackIndex];
+                        if (currentTrack != null && currentTrack.Duration.TotalSeconds > 0)
+                        {
+                            _duration = currentTrack.Duration;
+                            OnPropertyChanged(nameof(Duration));
+                            Debug.WriteLine($"OnMediaOpened: Set duration from track metadata: {_duration}");
+                            
+                            // Update the time display
+                            UpdateTimeDisplay(TimeSpan.Zero, _duration);
+                        }
+                    }
                 }
-                
-                _positionTimer.Start();
-
-                // Update the time display
-                UpdateTimeDisplay(TimeSpan.Zero, _mediaElement.NaturalDuration.TimeSpan);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in OnMediaOpened: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -806,54 +1123,48 @@ namespace Universa.Desktop.Managers
                     // Ensure the button state is updated
                     _controlsManager?.UpdatePlayPauseButton(true);
                     
-                    // Update duration
-                    if (mediaElement.NaturalDuration.HasTimeSpan)
+                    // Get the duration from the media element
+                    TimeSpan mediaDuration = mediaElement.NaturalDuration.HasTimeSpan 
+                        ? mediaElement.NaturalDuration.TimeSpan 
+                        : TimeSpan.Zero;
+                        
+                    Debug.WriteLine($"MediaElement_MediaOpened: Media duration from MediaElement: {mediaDuration}");
+                    
+                    // If media element reports zero duration but we have track metadata with duration
+                    if ((mediaDuration == TimeSpan.Zero || mediaDuration.TotalSeconds < 1) && 
+                        _currentTrackIndex >= 0 && _currentTrackIndex < _playlist?.Count)
                     {
-                        // Check if we have a setter for Duration or use a different approach
-                        _duration = mediaElement.NaturalDuration.TimeSpan;
-                        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Duration)));
-                        Debug.WriteLine($"Media duration set to: {_duration}");
+                        var currentTrack = _playlist[_currentTrackIndex];
+                        if (currentTrack != null && currentTrack.Duration.TotalSeconds > 0)
+                        {
+                            mediaDuration = currentTrack.Duration;
+                            Debug.WriteLine($"MediaElement_MediaOpened: Using duration from track metadata: {mediaDuration}");
+                        }
+                    }
+                    
+                    // Update duration
+                    _duration = mediaDuration;
+                    OnPropertyChanged(nameof(Duration));
+                    Debug.WriteLine($"Media duration set to: {_duration}");
+                    
+                    // Update the timeline and time display
+                    if (_controlsManager != null)
+                    {
+                        _controlsManager.UpdateTimelineMaximum(_duration.TotalMilliseconds);
+                        _controlsManager.UpdateTimeDisplay(TimeSpan.Zero, _duration);
                     }
                     
                     // Show media controls
                     _controlsManager?.ShowMediaControls();
+                    
+                    // Notify that playback has started
+                    PlaybackStarted?.Invoke(this, EventArgs.Empty);
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in MediaElement_MediaOpened: {ex.Message}");
-            }
-        }
-
-        private void MediaElement_MediaEnded(object sender, RoutedEventArgs e)
-        {
-            Debug.WriteLine("MediaElement_MediaEnded event fired");
-            
-            try
-            {
-                IsPlaying = false;
-                
-                // Ensure the button state is updated
-                _controlsManager?.UpdatePlayPauseButton(false);
-                
-                if (HasPlaylist)
-                {
-                    Debug.WriteLine("Media ended, attempting to play next track");
-                    Next();
-                }
-                else
-                {
-                    Debug.WriteLine("Media ended, no playlist available");
-                    var mediaElement = sender as MediaElement;
-                    if (mediaElement != null)
-                    {
-                        mediaElement.Stop();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error in MediaElement_MediaEnded: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -868,25 +1179,47 @@ namespace Universa.Desktop.Managers
         {
             if (_window == null) return;
             
-            var timeInfo = (_window as IMediaWindow).TimeInfo;
-            var timelineSlider = (_window as IMediaWindow).TimelineSlider;
-            
-            if (timeInfo != null)
+            try
             {
-                timeInfo.Text = $"{position:mm\\:ss} / {duration:mm\\:ss}";
+                // Prefer using the controls manager if available
+                if (_controlsManager != null)
+                {
+                    // Let the controls manager handle the update
+                    _controlsManager.UpdateTimeDisplay();
+                    return;
+                }
+                
+                // Fall back to direct UI manipulation if controls manager is not available
+                var timeInfo = (_window as IMediaWindow).TimeInfo;
+                var timelineSlider = (_window as IMediaWindow).TimelineSlider;
+                
+                if (timeInfo != null)
+                {
+                    Application.Current.Dispatcher.InvokeAsync(() => 
+                    {
+                        timeInfo.Text = $"{position:mm\\:ss} / {duration:mm\\:ss}";
+                    });
+                }
+                
+                if (timelineSlider != null && !_isDraggingTimelineSlider)
+                {
+                    Application.Current.Dispatcher.InvokeAsync(() => 
+                    {
+                        timelineSlider.Maximum = duration.TotalSeconds;
+                        timelineSlider.Value = position.TotalSeconds;
+                    });
+                }
+                
+                // Report position change
+                if (_lastReportedPosition == null || Math.Abs((position - _lastReportedPosition.Value).TotalSeconds) >= 1)
+                {
+                    PositionChanged?.Invoke(this, position);
+                    _lastReportedPosition = position;
+                }
             }
-            
-            if (timelineSlider != null && !_isDraggingTimelineSlider)
+            catch (Exception ex)
             {
-                timelineSlider.Maximum = duration.TotalSeconds;
-                timelineSlider.Value = position.TotalSeconds;
-            }
-            
-            // Report position change
-            if (_lastReportedPosition == null || Math.Abs((position - _lastReportedPosition.Value).TotalSeconds) >= 1)
-            {
-                PositionChanged?.Invoke(this, position);
-                _lastReportedPosition = position;
+                Debug.WriteLine($"Error in UpdateTimeDisplay: {ex.Message}");
             }
         }
 
@@ -986,7 +1319,37 @@ namespace Universa.Desktop.Managers
 
         public void SetControlsManager(MediaControlsManager controlsManager)
         {
+            Debug.WriteLine("SetControlsManager called");
+            
+            if (controlsManager == null)
+            {
+                Debug.WriteLine("SetControlsManager: controlsManager is null");
+                return;
+            }
+            
             _controlsManager = controlsManager;
+            Debug.WriteLine("SetControlsManager: Controls manager set successfully");
+            
+            // Sync the initial state
+            if (_controlsManager != null)
+            {
+                _controlsManager.UpdatePlayPauseButton(IsPlaying);
+                _controlsManager.UpdateVolumeControls(_currentVolume, _isMuted);
+                _controlsManager.UpdateShuffleButton(_isShuffleEnabled);
+                
+                if (HasPlaylist && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                {
+                    var currentTrack = _playlist[_currentTrackIndex];
+                    _controlsManager.UpdateNowPlaying(currentTrack.Title, currentTrack.Artist, currentTrack.Series, currentTrack.Season);
+                }
+                
+                _controlsManager.ShowMediaControls();
+            }
+        }
+
+        public MediaControlsManager GetControlsManager()
+        {
+            return _controlsManager;
         }
 
         public void UpdateMetadata(string title, string series = null, string season = null, string episodeNumber = null)
@@ -1076,9 +1439,7 @@ namespace Universa.Desktop.Managers
                 }
             }
             
-            // Also try to directly invoke the PlaybackStarted event to trigger the visibility change
-            Debug.WriteLine("ShowMediaControls: Invoking PlaybackStarted event");
-            PlaybackStarted?.Invoke(this, EventArgs.Empty);
+            Debug.WriteLine("ShowMediaControls: Controls visibility updated");
         }
 
         public void HideMediaControls()
@@ -1212,7 +1573,7 @@ namespace Universa.Desktop.Managers
                     if (_mediaElement != null)
                     {
                         _mediaElement.MediaOpened -= MediaElement_MediaOpened;
-                        _mediaElement.MediaEnded -= MediaElement_MediaEnded;
+                        _mediaElement.MediaEnded -= OnMediaEnded;
                         _mediaElement.MediaFailed -= MediaElement_MediaFailed;
                     }
 
@@ -1291,92 +1652,79 @@ namespace Universa.Desktop.Managers
             }
         }
 
-        public void PlayTracks(IEnumerable<MusicItem> tracks)
+        public void PlayTracksWithShuffle(IEnumerable<MusicItem> musicItems, bool shuffle = false)
         {
-            Debug.WriteLine("PlayTracks called");
-            
-            if (tracks == null || !tracks.Any())
-            {
-                Debug.WriteLine("PlayTracks: No tracks provided");
-                return;
-            }
-            
             try
             {
-                var tracksList = tracks.ToList();
-                var firstTrack = tracksList.First();
+                Debug.WriteLine($"PlayTracksWithShuffle called with {musicItems?.Count() ?? 0} tracks, shuffle={shuffle}");
                 
-                Debug.WriteLine($"Playing {tracksList.Count} tracks. First track: {firstTrack.Name} with URL: {firstTrack.StreamUrl}");
-                
-                // Convert MusicItems to Tracks
-                var convertedTracks = tracksList.Select(t => new Universa.Desktop.Models.Track
+                if (musicItems == null || !musicItems.Any())
                 {
-                    Id = t.Id,
-                    Title = t.Name,
-                    Artist = t.Artist,
-                    Album = t.Album,
-                    StreamUrl = t.StreamUrl,
-                    CoverArtUrl = t.ImageUrl,
-                    Duration = t.Duration,
-                    IsVideo = t.StreamUrl != null && (
-                        t.StreamUrl.EndsWith(".mp4", StringComparison.OrdinalIgnoreCase) ||
-                        t.StreamUrl.EndsWith(".avi", StringComparison.OrdinalIgnoreCase) ||
-                        t.StreamUrl.EndsWith(".mkv", StringComparison.OrdinalIgnoreCase) ||
-                        t.StreamUrl.EndsWith(".mov", StringComparison.OrdinalIgnoreCase) ||
-                        t.StreamUrl.EndsWith(".wmv", StringComparison.OrdinalIgnoreCase) ||
-                        t.StreamUrl.EndsWith(".flv", StringComparison.OrdinalIgnoreCase) ||
-                        t.StreamUrl.EndsWith(".webm", StringComparison.OrdinalIgnoreCase)
-                    )
+                    Debug.WriteLine("PlayTracksWithShuffle: No tracks provided");
+                    return;
+                }
+
+                // Convert MusicItems to Tracks - Note: MusicItem uses 'Name' not 'Title'
+                var tracks = musicItems.Select(item => new Models.Track
+                {
+                    Id = item.Id,
+                    Title = item.Name, // Use Name property since MusicItem doesn't have Title
+                    Artist = item.Artist,
+                    Album = item.Album,
+                    StreamUrl = item.StreamUrl, // Use StreamUrl instead of FilePath
+                    Duration = item.Duration
                 }).ToList();
+
+                // Create a defensive copy to prevent reference issues
+                var tracksCopy = new List<Models.Track>(tracks);
                 
-                // Set the playlist
-                Debug.WriteLine($"Setting playlist with {convertedTracks.Count} tracks");
-                _playlist = convertedTracks;
-                _currentTrackIndex = 0;
+                // Set shuffle state using the property setter for proper notification
+                IsShuffleEnabled = shuffle;
                 
-                // Log playlist state
-                LogPlaylistState("PlayTracks - After setting playlist");
-                
-                // Show media controls
-                Debug.WriteLine("PlayTracks: Showing media controls");
-                ShowMediaControls();
-                
-                // Update the now playing information for the first track
-                var currentTrack = convertedTracks.First();
-                Debug.WriteLine($"Updating now playing info for first track: {currentTrack.Title}");
-                UpdateNowPlaying(currentTrack.Title, currentTrack.Artist, currentTrack.Series, currentTrack.Season);
-                
-                // Start playback
-                if (!_isPlaying)
+                if (shuffle)
                 {
-                    Debug.WriteLine("Starting playback");
-                    Play();
+                    Debug.WriteLine("PlayTracksWithShuffle: Creating shuffled playlist");
+                    
+                    // Save original playlist order for potential later use
+                    _originalPlaylist = new List<Models.Track>(tracksCopy);
+                    
+                    // Create a shuffled copy
+                    var random = new Random();
+                    _playlist = tracksCopy.OrderBy(x => random.Next()).ToList();
+                    
+                    // Set current track index to 0 to start with the first (random) track
+                    _currentTrackIndex = 0;
                 }
                 else
                 {
-                    // If already playing, just play the current track
-                    Debug.WriteLine("Already playing, playing current track");
-                    PlayCurrentTrack();
+                    Debug.WriteLine("PlayTracksWithShuffle: Using ordered playlist");
+                    
+                    // Use the original order
+                    _playlist = tracksCopy;
+                    _currentTrackIndex = 0;
+                    _originalPlaylist = null; // Clear original playlist since we're not shuffling
                 }
                 
-                // Ensure the media control bar is visible by invoking the PlaybackStarted event
-                Debug.WriteLine("PlayTracks: Invoking PlaybackStarted event to ensure media control bar is visible");
-                PlaybackStarted?.Invoke(this, EventArgs.Empty);
+                Debug.WriteLine($"PlayTracksWithShuffle: Playlist created with {_playlist.Count} tracks");
+                OnPropertyChanged(nameof(HasPlaylist));
                 
-                // Show media controls again after playback has started
-                Debug.WriteLine("PlayTracks: Showing media controls again after playback has started");
-                ShowMediaControls();
-                
-                // Log playlist state again
-                LogPlaylistState("PlayTracks - After starting playback");
-                
-                Debug.WriteLine("PlayTracks completed successfully");
+                // Start playing the first track in the playlist
+                if (_playlist.Count > 0)
+                {
+                    PlayCurrentTrack();
+                }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error in PlayTracks: {ex.Message}");
+                Debug.WriteLine($"Error in PlayTracksWithShuffle: {ex.Message}");
                 Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
+        }
+        
+        // Fix PlayTracks to utilize the new PlayTracksWithShuffle method with shuffle disabled
+        public void PlayTracks(IEnumerable<MusicItem> tracks)
+        {
+            PlayTracksWithShuffle(tracks, false);
         }
 
         public void SetMute(bool isMuted)
@@ -1520,13 +1868,13 @@ namespace Universa.Desktop.Managers
             
             try
             {
-                _isShuffleEnabled = !_isShuffleEnabled;
-                Debug.WriteLine($"ToggleShuffle: Shuffle is now {(_isShuffleEnabled ? "enabled" : "disabled")}");
+                // Toggle the shuffle state using the property setter
+                IsShuffleEnabled = !IsShuffleEnabled;
                 
-                // Save the current track
+                // Save the current track to maintain position in playlist
                 var currentTrack = CurrentTrack;
                 
-                if (_isShuffleEnabled)
+                if (IsShuffleEnabled)
                 {
                     // If enabling shuffle, save the original playlist and create a shuffled version
                     if (_originalPlaylist == null)
@@ -1567,7 +1915,7 @@ namespace Universa.Desktop.Managers
                         Debug.WriteLine("ToggleShuffle: Restoring original playlist order");
                         
                         // Find the current track in the original playlist
-                        int originalIndex = _originalPlaylist.FindIndex(t => t.Id == currentTrack.Id);
+                        int originalIndex = _originalPlaylist.FindIndex(t => t.Id == currentTrack?.Id);
                         
                         if (originalIndex >= 0)
                         {
@@ -1585,10 +1933,6 @@ namespace Universa.Desktop.Managers
                         Debug.WriteLine("ToggleShuffle: No original playlist available");
                     }
                 }
-                
-                // Notify listeners that shuffle state has changed
-                Debug.WriteLine("ToggleShuffle: Invoking ShuffleChanged event");
-                ShuffleChanged?.Invoke(this, _isShuffleEnabled);
             }
             catch (Exception ex)
             {
@@ -1627,8 +1971,8 @@ namespace Universa.Desktop.Managers
             // Update the play/pause button
             _controlsManager?.UpdatePlayPauseButton(false);
             
-            // Raise the PlaybackStopped event
-            PlaybackStopped?.Invoke(this, EventArgs.Empty);
+            // Raise the PlaybackPaused event instead of stopped
+            PlaybackPaused?.Invoke(this, EventArgs.Empty);
             
             Debug.WriteLine("Media paused");
         }
@@ -1733,7 +2077,7 @@ namespace Universa.Desktop.Managers
                             Debug.WriteLine("EnsureMediaElementInitialized: Successfully set _mediaElement using reflection");
                             
                             // Set up event handlers
-                            mediaElement.MediaEnded += MediaElement_MediaEnded;
+                            mediaElement.MediaEnded += OnMediaEnded;
                             mediaElement.MediaOpened += MediaElement_MediaOpened;
                             mediaElement.MediaFailed += MediaElement_MediaFailed;
                             
@@ -1770,7 +2114,7 @@ namespace Universa.Desktop.Managers
                             Debug.WriteLine("EnsureMediaElementInitialized: Successfully set _mediaElement using reflection");
                             
                             // Set up event handlers
-                            mediaElement.MediaEnded += MediaElement_MediaEnded;
+                            mediaElement.MediaEnded += OnMediaEnded;
                             mediaElement.MediaOpened += MediaElement_MediaOpened;
                             mediaElement.MediaFailed += MediaElement_MediaFailed;
                             
@@ -1814,6 +2158,10 @@ namespace Universa.Desktop.Managers
                 if (_mediaElement != null)
                 {
                     Debug.WriteLine("GetMediaElement: Using existing _mediaElement");
+                    
+                    // Make sure events are attached
+                    AttachMediaElementEvents(_mediaElement);
+                    
                     return _mediaElement;
                 }
                 
@@ -1822,14 +2170,18 @@ namespace Universa.Desktop.Managers
                 {
                     Debug.WriteLine("GetMediaElement: Using _window.MediaPlayer");
                     
+                    // Make sure events are attached before returning
+                    var mediaElement = _window.MediaPlayer;
+                    AttachMediaElementEvents(mediaElement);
+                    
                     // Try to set the _mediaElement field using reflection
                     try
                     {
                         var field = this.GetType().GetField("_mediaElement", BindingFlags.NonPublic | BindingFlags.Instance);
                         if (field != null)
                         {
-                            field.SetValue(this, _window.MediaPlayer);
-                            Debug.WriteLine("GetMediaElement: Successfully set _mediaElement field using reflection");
+                            field.SetValue(this, mediaElement);
+                            Debug.WriteLine("GetMediaElement: Successfully set _mediaElement using reflection");
                         }
                     }
                     catch (Exception ex)
@@ -1837,40 +2189,30 @@ namespace Universa.Desktop.Managers
                         Debug.WriteLine($"GetMediaElement: Error setting _mediaElement field: {ex.Message}");
                     }
                     
-                    return _window.MediaPlayer;
+                    return mediaElement;
                 }
                 
-                // If that's null, try to get it from the main window
+                // As a last resort, try to get it from the main window
                 var mainWindow = Application.Current.MainWindow as IMediaWindow;
                 if (mainWindow != null && mainWindow.MediaPlayer != null)
                 {
-                    Debug.WriteLine("GetMediaElement: Using mainWindow.MediaPlayer");
+                    Debug.WriteLine("GetMediaElement: Using Application.Current.MainWindow.MediaPlayer");
                     
-                    // Try to set the _mediaElement field using reflection
-                    try
-                    {
-                        var field = this.GetType().GetField("_mediaElement", BindingFlags.NonPublic | BindingFlags.Instance);
-                        if (field != null)
-                        {
-                            field.SetValue(this, mainWindow.MediaPlayer);
-                            Debug.WriteLine("GetMediaElement: Successfully set _mediaElement field using reflection");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"GetMediaElement: Error setting _mediaElement field: {ex.Message}");
-                    }
+                    var mediaElement = mainWindow.MediaPlayer;
                     
-                    return mainWindow.MediaPlayer;
+                    // Make sure events are attached
+                    AttachMediaElementEvents(mediaElement);
+                    
+                    return mediaElement;
                 }
                 
-                // If all else fails, return null
                 Debug.WriteLine("GetMediaElement: Could not find a media element");
                 return null;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in GetMediaElement: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 return null;
             }
         }
@@ -1900,6 +2242,140 @@ namespace Universa.Desktop.Managers
         protected virtual void OnPropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        private void PlayVideo(Universa.Desktop.Models.Track track)
+        {
+            Debug.WriteLine($"PlayVideo called for track: {track.Title}");
+            
+            try
+            {
+                // Get media element
+                var mediaElement = GetMediaElement();
+                if (mediaElement == null)
+                {
+                    Debug.WriteLine("Media element is null, cannot play video");
+                    return;
+                }
+                
+                // Set the track source
+                mediaElement.Source = new Uri(track.StreamUrl);
+                mediaElement.Play();
+                _isPlaying = true;
+                IsPaused = false;
+                
+                // Set the video playing flag
+                _isPlayingVideo = true;
+                IsVideoPlaying = true;
+                
+                // Update the now playing information
+                UpdateNowPlaying(track.Title, track.Artist, track.Series, track.Season);
+                
+                // Notify listeners that playback has started
+                PlaybackStarted?.Invoke(this, EventArgs.Empty);
+                
+                // Notify listeners that the track has changed
+                TrackChanged?.Invoke(this, track);
+                
+                // Show the video window if available
+                if (_videoWindowManager != null)
+                {
+                    Debug.WriteLine("Showing video window");
+                    _videoWindowManager.ShowVideoWindow(new Uri(track.StreamUrl), track.Title);
+                }
+                else
+                {
+                    Debug.WriteLine("Video window manager is null, playing video in media element");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in PlayVideo: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        private void PlayTrack(Models.Track track)
+        {
+            try
+            {
+                Debug.WriteLine($"PlayTrack called for track: {track.Title}");
+                
+                if (track == null)
+                {
+                    Debug.WriteLine("PlayTrack: Track is null");
+                    return;
+                }
+                
+                // Show media controls immediately
+                _controlsManager?.ShowMediaControls();
+                
+                // Initialize media element if needed
+                var mediaElement = GetMediaElement();
+                if (mediaElement == null)
+                {
+                    Debug.WriteLine("PlayTrack: Media element is null, cannot play track");
+                    return;
+                }
+                
+                // Handle video tracks
+                if (track.IsVideo)
+                {
+                    _isPlayingVideo = true;
+                    PlayVideo(track);
+                    return;
+                }
+                else
+                {
+                    _isPlayingVideo = false;
+                }
+                
+                // Start the position timer if it's not running
+                if (_positionTimer != null && !_positionTimer.IsEnabled)
+                {
+                    _positionTimer.Start();
+                    Debug.WriteLine("PlayTrack: Position timer started");
+                }
+                
+                // Set the track source
+                try
+                {
+                    // Set the source and start playing
+                    if (!string.IsNullOrEmpty(track.StreamUrl))
+                    {
+                        mediaElement.Source = new Uri(track.StreamUrl);
+                        Debug.WriteLine($"PlayTrack: Set source to StreamUrl: {track.StreamUrl}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine("PlayTrack: Track has no valid source URL");
+                        return;
+                    }
+                    
+                    // Start playback
+                    mediaElement.Play();
+                    
+                    // Notify listeners that playback has started
+                    PlaybackStarted?.Invoke(this, EventArgs.Empty);
+                    
+                    // Notify listeners that the track has changed
+                    TrackChanged?.Invoke(this, track);
+                    
+                    Debug.WriteLine($"PlayTrack: Playback started for track: {track.Title}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error setting track source: {ex.Message}");
+                    Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                    _isPlaying = false;
+                    IsPlaying = false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in PlayTrack: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
         }
     }
 } 
