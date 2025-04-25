@@ -69,16 +69,28 @@ namespace Universa.Desktop.Commands
             _canExecute = canExecute;
         }
 
+        public RelayCommand(Action<object> execute, Func<object, bool> canExecute = null)
+        {
+            _execute = () => execute(null);
+            _canExecute = canExecute == null ? null : () => canExecute(null);
+        }
+
         public event EventHandler CanExecuteChanged
         {
             add { CommandManager.RequerySuggested += value; }
             remove { CommandManager.RequerySuggested -= value; }
         }
 
-        public bool CanExecute(object parameter) => _canExecute?.Invoke() ?? true;
+        public bool CanExecute(object parameter)
+        {
+            return _canExecute?.Invoke() ?? true;
+        }
 
-        public void Execute(object parameter) => _execute();
-
+        public void Execute(object parameter)
+        {
+            _execute();
+        }
+        
         public void RaiseCanExecuteChanged()
         {
             CommandManager.InvalidateRequerySuggested();

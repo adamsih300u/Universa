@@ -7,14 +7,21 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json;
 using Universa.Desktop.Models;
+using Universa.Desktop.Interfaces;
+using Universa.Desktop.Services;
+using Universa.Desktop.Core.Configuration;
+using System.Text.Json;
+using ServiceLocator = Universa.Desktop.Services.ServiceLocator;
 
 namespace Universa.Desktop
 {
     public partial class AggregatedToDosTab : UserControl, INotifyPropertyChanged
     {
         private bool _hideFutureItems;
+        private bool _showCompletedItems;
         private ObservableCollection<ToDoItem> _allItems;
         private ObservableCollection<ToDoItem> _filteredItems;
         private string _basePath;
@@ -34,6 +41,20 @@ namespace Universa.Desktop
                 }
             }
         }
+        
+        public bool ShowCompletedItems
+        {
+            get => _showCompletedItems;
+            set
+            {
+                if (_showCompletedItems != value)
+                {
+                    _showCompletedItems = value;
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ShowCompletedItems)));
+                    UpdateFilteredItems();
+                }
+            }
+        }
 
         public AggregatedToDosTab(string basePath)
         {
@@ -49,43 +70,91 @@ namespace Universa.Desktop
             LoadAllTodoFiles();
         }
 
-        private void LoadAllTodoFiles()
+        private async void LoadAllTodoFiles()
         {
             _allItems.Clear();
-            var todoFiles = Directory.GetFiles(_basePath, "*.todo", SearchOption.AllDirectories);
-
-            foreach (var file in todoFiles)
+            
+            try
             {
-                try
+                // Find all .todo and .todo.archive files
+                var todoFiles = Directory.GetFiles(_basePath, "*.todo", SearchOption.AllDirectories);
+                var archiveFiles = Directory.GetFiles(_basePath, "*.todo.archive", SearchOption.AllDirectories);
+                
+                var allFiles = todoFiles.Concat(archiveFiles).ToList();
+                
+                System.Diagnostics.Debug.WriteLine($"Found {todoFiles.Length} .todo files and {archiveFiles.Length} .todo.archive files");
+                
+                // Get the configuration service
+                var configService = ServiceLocator.Instance.GetService<IConfigurationService>();
+                
+                foreach (var filePath in allFiles)
                 {
-                    var json = File.ReadAllText(file);
-                    var items = JsonConvert.DeserializeObject<List<ToDoItem>>(json) ?? new List<ToDoItem>();
-                    var relativePath = Path.GetRelativePath(_basePath, file);
-                    
-                    foreach (var item in items)
+                    try
                     {
-                        item.SourceFile = relativePath;
-                        _allItems.Add(item);
+                        bool isArchived = filePath.EndsWith(".archive");
+                        var relativePath = Path.GetRelativePath(_basePath, filePath);
+                        string sourceFileDisplay = isArchived 
+                            ? $"{relativePath} (Archived)" 
+                            : relativePath;
+                        
+                        // Create a temporary service to read this specific file
+                        var todoService = new ToDoService(configService, filePath);
+                        var todos = await todoService.GetAllTodosAsync();
+                        
+                        foreach (var todo in todos)
+                        {
+                            var item = new ToDoItem
+                            {
+                                Title = todo.Title,
+                                Description = todo.Description,
+                                AdditionalInfo = new[] { 
+                                    todo.Description ?? "", 
+                                    todo.Category ?? "", 
+                                    todo.Notes ?? "", 
+                                    todo.Priority ?? "", 
+                                    todo.AssignedTo ?? "" 
+                                },
+                                StartDate = todo.StartDate,
+                                DueDate = todo.DueDate,
+                                IsCompleted = todo.IsCompleted,
+                                SourceFile = sourceFileDisplay,
+                                IsArchived = isArchived
+                            };
+                            
+                            System.Diagnostics.Debug.WriteLine($"Added todo: {item.Title}, Completed: {item.IsCompleted}, Archived: {item.IsArchived}");
+                            _allItems.Add(item);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error loading todos from {filePath}: {ex.Message}");
+                        System.Diagnostics.Debug.WriteLine(ex.StackTrace);
                     }
                 }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Error loading {file}: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
 
-            UpdateFilteredItems();
+                UpdateFilteredItems();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error scanning for todo files: {ex.Message}");
+                MessageBox.Show($"Error loading todo files: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private void UpdateFilteredItems()
         {
             if (_allItems == null) return;
 
+            // Apply both filters - future items and completed items
             var filtered = _allItems.Where(item => 
-                !HideFutureItems || 
-                !item.StartDate.HasValue || 
-                item.StartDate.Value.Date <= DateTime.Today);
+                // Future items filter
+                (!HideFutureItems || !item.StartDate.HasValue || item.StartDate.Value.Date <= DateTime.Today) &&
+                // Completed items filter
+                (ShowCompletedItems || !item.IsCompleted)
+            );
 
+            System.Diagnostics.Debug.WriteLine($"Filtered from {_allItems.Count} to {filtered.Count()} items");
+            
             _filteredItems.Clear();
             foreach (var item in filtered)
             {
@@ -98,4 +167,4 @@ namespace Universa.Desktop
             LoadAllTodoFiles();
         }
     }
-} 
+}

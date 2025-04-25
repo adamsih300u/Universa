@@ -19,6 +19,8 @@ using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Text;
 using System.Diagnostics;
+using Universa.Desktop.Core.Configuration;
+using Universa.Desktop.Services;
 
 namespace Universa.Desktop
 {
@@ -30,6 +32,8 @@ namespace Universa.Desktop
         private Point _dragStartPoint;
         private bool _isDragging;
         private ProjectTask _draggedTask;
+        private ObservableCollection<Models.DependencyItem> _dependencies;
+        private bool _isContentLoaded = false;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -82,6 +86,19 @@ namespace Universa.Desktop
                     _project.Goal = value;
                     OnPropertyChanged();
                     IsModified = true;
+                }
+            }
+        }
+
+        public ObservableCollection<Models.DependencyItem> Dependencies
+        {
+            get => _dependencies;
+            set
+            {
+                if (_dependencies != value)
+                {
+                    _dependencies = value;
+                    OnPropertyChanged(nameof(Dependencies));
                 }
             }
         }
@@ -174,6 +191,7 @@ namespace Universa.Desktop
 
                 DataContext = this;
                 IsModified = false;
+                _isContentLoaded = true;
             }
             catch (Exception ex)
             {
@@ -328,7 +346,7 @@ namespace Universa.Desktop
             }
         }
 
-        private List<Models.DependencyItem> GetAvailableExternalDependencies()
+        private void LoadDependencies()
         {
             var dependencies = new List<Models.DependencyItem>();
             
@@ -343,23 +361,28 @@ namespace Universa.Desktop
                 });
             dependencies.AddRange(projects);
 
-            // Add ToDos from outside the project
-            var allTodos = ToDoTracker.Instance.GetAllTodos();
-            System.Diagnostics.Debug.WriteLine($"Found {allTodos.Count} ToDos in ToDoTracker");
-            
-            foreach (var todo in allTodos)
+            // Add ToDos from ToDoTracker
+            System.Diagnostics.Debug.WriteLine("Loading ToDos for dependencies");
+            var todos = ToDoTracker.Instance.GetAllTodos();
+            foreach (var todo in todos)
             {
-                System.Diagnostics.Debug.WriteLine($"Processing ToDo: Title={todo.Title}, FilePath={todo.FilePath}");
-                dependencies.Add(new Models.DependencyItem 
-                { 
-                    FilePath = todo.FilePath,
-                    DisplayName = $"ToDo: {todo.Title}",
-                    Type = DependencyType.ToDo
-                });
+                if (todo != null && !string.IsNullOrEmpty(todo.Title))
+                {
+                    dependencies.Add(new Models.DependencyItem
+                    {
+                        FilePath = todo.FilePath,
+                        DisplayName = $"ToDo: {todo.Title}",
+                        Type = DependencyType.ToDo
+                    });
+                    System.Diagnostics.Debug.WriteLine($"Added dependency: {todo.Title}");
+                }
             }
 
-            System.Diagnostics.Debug.WriteLine($"Total dependencies: {dependencies.Count}");
-            return dependencies;
+            Dependencies.Clear();
+            foreach (var dependency in dependencies)
+            {
+                Dependencies.Add(dependency);
+            }
         }
 
         private List<Models.DependencyItem> GetAvailableTaskDependencies(ProjectTask currentTask)
@@ -367,7 +390,7 @@ namespace Universa.Desktop
             var dependencies = new List<Models.DependencyItem>();
             
             // Add external dependencies (projects and todos)
-            dependencies.AddRange(GetAvailableExternalDependencies());
+            LoadDependencies();
 
             // Add internal tasks (except the current task and its subtasks)
             var allProjectTasks = GetAllTasksRecursive(_project.Tasks);
@@ -399,7 +422,7 @@ namespace Universa.Desktop
         {
             if (_project != null)
             {
-                var availableDependencies = GetAvailableExternalDependencies();
+                var availableDependencies = GetDependencyOptions();
                 var dialog = new DependencyDialog(availableDependencies);
 
                 if (dialog.ShowDialog() == true && dialog.SelectedDependency != null)
@@ -425,7 +448,7 @@ namespace Universa.Desktop
         {
             if (_project != null)
             {
-                var availableDependencies = GetAvailableExternalDependencies();
+                var availableDependencies = GetDependencyOptions();
                 var dialog = new DependencyDialog(availableDependencies);
 
                 if (dialog.ShowDialog() == true && dialog.SelectedDependency != null)
@@ -1017,6 +1040,62 @@ namespace Universa.Desktop
             // For project tab, we'll return a simple representation of the project
             // This is a placeholder implementation since project content isn't typically exported
             return "Project content is not available for export.";
+        }
+
+        private List<Models.DependencyItem> GetDependencyOptions()
+        {
+            var dependencies = new List<Models.DependencyItem>();
+            
+            // Add projects (except current)
+            var projects = ProjectTracker.Instance.GetAllProjects()
+                .Where(p => p.FilePath != _filePath)
+                .Select(p => new Models.DependencyItem 
+                { 
+                    FilePath = p.FilePath,
+                    DisplayName = $"Project: {p.Title}",
+                    Type = DependencyType.Project
+                });
+            dependencies.AddRange(projects);
+
+            // Add ToDos from ToDoTracker
+            var todos = ToDoTracker.Instance.GetAllTodos();
+            foreach (var todo in todos)
+            {
+                if (todo != null && !string.IsNullOrEmpty(todo.Title))
+                {
+                    dependencies.Add(new Models.DependencyItem
+                    {
+                        FilePath = todo.FilePath,
+                        DisplayName = $"ToDo: {todo.Title}",
+                        Type = DependencyType.ToDo
+                    });
+                }
+            }
+
+            return dependencies;
+        }
+
+        public void OnTabSelected()
+        {
+            // Load project data when tab is selected if not already loaded
+            if (!_isContentLoaded && !string.IsNullOrEmpty(FilePath))
+            {
+                LoadProjectData();
+            }
+        }
+
+        public void OnTabDeselected()
+        {
+            // Save any pending changes when tab is deselected
+            if (IsModified)
+            {
+                Save().ConfigureAwait(false);
+            }
+        }
+
+        private void LoadProjectData()
+        {
+            // Implementation of LoadProjectData method
         }
     }
 } 

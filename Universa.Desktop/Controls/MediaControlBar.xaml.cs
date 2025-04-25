@@ -23,6 +23,8 @@ namespace Universa.Desktop.Controls
         {
             InitializeComponent();
             InitializeTimer();
+            // Hide the control bar by default
+            this.Visibility = Visibility.Collapsed;
         }
 
         private void InitializeTimer()
@@ -48,6 +50,22 @@ namespace Universa.Desktop.Controls
                 
                 // Initialize play/pause button state
                 UpdatePlayPauseButtonState();
+
+                // Hide the control bar by default
+                this.Visibility = Visibility.Collapsed;
+                NowPlayingText.Text = string.Empty;
+                TimelineSlider.Value = 0;
+                TimeInfo.Text = "00:00 / 00:00";
+
+                // Only show if there's media playing or paused
+                if (_mediaPlayerManager.IsPlaying || _mediaPlayerManager.IsPaused)
+                {
+                    this.Visibility = Visibility.Visible;
+                    if (_mediaPlayerManager.CurrentTrack != null)
+                    {
+                        NowPlayingText.Text = $"{_mediaPlayerManager.CurrentTrack.Artist} - {_mediaPlayerManager.CurrentTrack.Title}";
+                    }
+                }
             }
 
             // Initialize volume
@@ -57,55 +75,52 @@ namespace Universa.Desktop.Controls
 
         private void MediaPlayerManager_PlaybackStarted(object sender, EventArgs e)
         {
-            Debug.WriteLine("MediaPlayerManager_PlaybackStarted event received");
-            UpdatePlayPauseButtonState();
-            _updateTimer.Start();
-            this.Visibility = Visibility.Visible;
+            // Only show the control bar if we have a track playing
+            if (_mediaPlayerManager != null && _mediaPlayerManager.CurrentTrack != null)
+            {
+                this.Visibility = Visibility.Visible;
+                NowPlayingText.Text = $"{_mediaPlayerManager.CurrentTrack.Artist} - {_mediaPlayerManager.CurrentTrack.Title}";
+                UpdatePlayPauseButtonState();
+            }
+            else
+            {
+                this.Visibility = Visibility.Collapsed;
+                NowPlayingText.Text = string.Empty;
+            }
         }
 
         private void MediaPlayerManager_PlaybackStopped(object sender, EventArgs e)
         {
-            Debug.WriteLine("MediaPlayerManager_PlaybackStopped event received");
+            // Hide the control bar and reset all UI elements when playback stops
+            this.Visibility = Visibility.Collapsed;
+            NowPlayingText.Text = string.Empty;
+            TimelineSlider.Value = 0;
+            TimeInfo.Text = "00:00 / 00:00";
             UpdatePlayPauseButtonState();
-            
-            // Don't stop the timer when pausing, only when stopping completely
-            if (_mediaPlayerManager != null && !_mediaPlayerManager.IsPaused)
-            {
-                _updateTimer.Stop();
-            }
         }
 
-        private void MediaPlayerManager_TrackChanged(object sender, Universa.Desktop.Models.Track e)
+        private void MediaPlayerManager_TrackChanged(object sender, Universa.Desktop.Models.Track track)
         {
-            if (e != null)
+            if (track == null)
             {
-                // Update the now playing text
-                NowPlayingText.Text = $"{e.Artist} - {e.Title}";
-                
-                // Update the timeline slider
-                TimelineSlider.Maximum = e.Duration.TotalSeconds;
+                // Hide the control bar and clear the text when no track is playing
+                this.Visibility = Visibility.Collapsed;
+                NowPlayingText.Text = string.Empty;
                 TimelineSlider.Value = 0;
-                
-                // Update the time display
-                UpdateTimeDisplay(TimeSpan.Zero, e.Duration);
-                
-                // Store the current track
-                _currentTrack = e;
-                
-                // Start the update timer if it's not already running
-                if (!_updateTimer.IsEnabled)
-                {
-                    _updateTimer.Start();
-                }
-                
-                // Ensure visibility
+                TimeInfo.Text = "00:00 / 00:00";
+                return;
+            }
+
+            // Only show the control bar if media is playing or paused
+            if (_mediaPlayerManager != null && (_mediaPlayerManager.IsPlaying || _mediaPlayerManager.IsPaused))
+            {
                 this.Visibility = Visibility.Visible;
+                NowPlayingText.Text = $"{track.Artist} - {track.Title}";
             }
             else
             {
-                NowPlayingText.Text = "No track playing";
-                TimelineSlider.Value = 0;
-                TimeInfo.Text = "00:00 / 00:00";
+                this.Visibility = Visibility.Collapsed;
+                NowPlayingText.Text = string.Empty;
             }
         }
 
@@ -144,9 +159,10 @@ namespace Universa.Desktop.Controls
                 if (_currentTrack != null && _mediaPlayerManager.CurrentTrack == null)
                 {
                     _currentTrack = null;
-                    NowPlayingText.Text = "No track playing";
+                    NowPlayingText.Text = string.Empty;
                     TimelineSlider.Value = 0;
                     TimeInfo.Text = "00:00 / 00:00";
+                    this.Visibility = Visibility.Collapsed;
                 }
                 // If the current track has changed, update the display
                 else if (_mediaPlayerManager.CurrentTrack != null && 

@@ -23,6 +23,41 @@ namespace Universa.Desktop.Services.Export
         private static readonly Regex _italicRegex = new Regex(@"(?<!\*)\*([^\*]+)\*(?!\*)", RegexOptions.Compiled);
         private static readonly Regex _boldRegex = new Regex(@"\*\*([^\*]+)\*\*", RegexOptions.Compiled);
         
+        // Reserved IDs that cannot be used for generated content
+        private static readonly HashSet<string> _reservedIds = new HashSet<string>
+        {
+            "nav",           // Navigation document
+            "cover",         // Cover page
+            "cover-image",   // Cover image
+            "title",         // Title metadata
+            "creator",       // Creator metadata
+            "BookID"         // Book identifier
+        };
+        
+        // Track used IDs to ensure uniqueness
+        private readonly HashSet<string> _usedIds = new HashSet<string>();
+        
+        /// <summary>
+        /// Generates a unique ID for an item, ensuring it doesn't conflict with reserved IDs
+        /// </summary>
+        private string GenerateUniqueId(string prefix, string baseName)
+        {
+            // Start with the base ID
+            string id = $"{prefix}-{baseName}";
+            
+            // If the ID conflicts with a reserved ID or is already used, append a number
+            int counter = 1;
+            while (_reservedIds.Contains(id) || _usedIds.Contains(id))
+            {
+                id = $"{prefix}-{baseName}-{counter}";
+                counter++;
+            }
+            
+            // Add the ID to the used set
+            _usedIds.Add(id);
+            return id;
+        }
+        
         /// <summary>
         /// Exports the document content to ePub format
         /// </summary>
@@ -30,7 +65,14 @@ namespace Universa.Desktop.Services.Export
         {
             try
             {
+                // Clear the used IDs set at the start of each export
+                _usedIds.Clear();
+                
                 Debug.WriteLine("Starting custom ePub export...");
+                Debug.WriteLine($"Output path: {options.OutputPath}");
+                Debug.WriteLine($"Include cover: {options.IncludeCover}");
+                Debug.WriteLine($"Include TOC: {options.IncludeToc}");
+                Debug.WriteLine($"Split on headings: {options.SplitOnHeadings}");
                 
                 // Track issues for reporting back to the user
                 List<string> warnings = new List<string>();
@@ -38,6 +80,7 @@ namespace Universa.Desktop.Services.Export
                 // Create a temporary directory for the ePub contents
                 string tempDir = Path.Combine(Path.GetTempPath(), Path.GetRandomFileName());
                 Directory.CreateDirectory(tempDir);
+                Debug.WriteLine($"Created temporary directory: {tempDir}");
                 
                 try
                 {
@@ -45,14 +88,29 @@ namespace Universa.Desktop.Services.Export
                     Directory.CreateDirectory(Path.Combine(tempDir, "META-INF"));
                     Directory.CreateDirectory(Path.Combine(tempDir, "OPS"));
                     Directory.CreateDirectory(Path.Combine(tempDir, "OPS", "images"));
+                    Debug.WriteLine("Created required directory structure");
                     
                     // Create the mimetype file
                     File.WriteAllText(Path.Combine(tempDir, "mimetype"), "application/epub+zip");
+                    Debug.WriteLine("Created mimetype file");
+                    
+                    // Create container.xml
+                    string containerXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<container version=""1.0"" xmlns=""urn:oasis:names:tc:opendocument:xmlns:container"">
+    <rootfiles>
+        <rootfile full-path=""OPS/content.opf"" media-type=""application/oebps-package+xml""/>
+    </rootfiles>
+</container>";
+                    File.WriteAllText(Path.Combine(tempDir, "META-INF", "container.xml"), containerXml);
+                    Debug.WriteLine("Created container.xml");
                     
                     // Process the content to extract chapters based on headings
                     var chapters = new List<(string title, string content)>();
                     string coverImagePath = null;
                     bool coverImageSpecifiedButNotFound = false;
+                    
+                    Debug.WriteLine("Processing content for chapters and cover image...");
+                    Debug.WriteLine($"Content length: {content.Length} characters");
                     
                     // Extract cover image if present
                     if (options.IncludeCover)
@@ -82,6 +140,7 @@ namespace Universa.Desktop.Services.Export
                                 {
                                     baseDir = Directory.GetCurrentDirectory();
                                 }
+                                Debug.WriteLine($"Base directory for cover search: {baseDir}");
                                 
                                 // Get the source file directory if available
                                 string sourceFileDir = null;
@@ -102,13 +161,16 @@ namespace Universa.Desktop.Services.Export
                                 // Add source file directory path if available
                                 if (!string.IsNullOrEmpty(sourceFileDir))
                                 {
-                                    possiblePathsList.Add(Path.Combine(sourceFileDir, coverPathFromMetadata));
+                                    string sourceBasedPath = Path.Combine(sourceFileDir, coverPathFromMetadata);
+                                    possiblePathsList.Add(sourceBasedPath);
+                                    Debug.WriteLine($"Added source-based path: {sourceBasedPath}");
                                     
                                     // If the path starts with ./ or ../, it's relative to the source file
                                     if (coverPathFromMetadata.StartsWith("./") || coverPathFromMetadata.StartsWith("../"))
                                     {
                                         string resolvedPath = Path.GetFullPath(Path.Combine(sourceFileDir, coverPathFromMetadata));
                                         possiblePathsList.Add(resolvedPath);
+                                        Debug.WriteLine($"Added resolved path for relative cover: {resolvedPath}");
                                     }
                                 }
                                 
@@ -117,7 +179,14 @@ namespace Universa.Desktop.Services.Export
                                 Debug.WriteLine("Trying to find cover image at the following paths:");
                                 foreach (string path in possiblePaths)
                                 {
-                                    Debug.WriteLine($"  Checking: {path} - Exists: {File.Exists(path)}");
+                                    bool exists = File.Exists(path);
+                                    Debug.WriteLine($"  Checking: {path}");
+                                    Debug.WriteLine($"    Path exists: {exists}");
+                                    if (exists)
+                                    {
+                                        Debug.WriteLine($"    File size: {new FileInfo(path).Length / 1024.0:F2} KB");
+                                        Debug.WriteLine($"    Last modified: {File.GetLastWriteTime(path)}");
+                                    }
                                 }
                                 
                                 bool found = false;
@@ -127,6 +196,7 @@ namespace Universa.Desktop.Services.Export
                                     {
                                         coverPathFromMetadata = path;
                                         found = true;
+                                        Debug.WriteLine($"Found cover image at: {path}");
                                         break;
                                     }
                                 }
@@ -136,6 +206,7 @@ namespace Universa.Desktop.Services.Export
                                     coverImageSpecifiedButNotFound = true;
                                     warnings.Add($"Cover image specified in frontmatter not found: {originalImagePath}");
                                     Debug.WriteLine($"Cover image from frontmatter not found: {originalImagePath}");
+                                    Debug.WriteLine("Current directory: " + Directory.GetCurrentDirectory());
                                 }
                             }
                             else if (!File.Exists(coverPathFromMetadata))
@@ -143,6 +214,7 @@ namespace Universa.Desktop.Services.Export
                                 coverImageSpecifiedButNotFound = true;
                                 warnings.Add($"Cover image specified in frontmatter not found: {originalImagePath}");
                                 Debug.WriteLine($"Cover image from frontmatter not found: {originalImagePath}");
+                                Debug.WriteLine("Current directory: " + Directory.GetCurrentDirectory());
                             }
                             
                             if (File.Exists(coverPathFromMetadata))
@@ -255,13 +327,17 @@ namespace Universa.Desktop.Services.Export
                     // Split content into chapters if requested
                     if (options.SplitOnHeadings)
                     {
+                        Debug.WriteLine("Splitting content into chapters based on headings...");
+                        var matches = _headingRegex.Matches(content);
+                        Debug.WriteLine($"Found {matches.Count} headings in content");
+                        
                         // Get the heading levels to split on
                         var headingLevels = options.SplitOnHeadingLevels.Count > 0 
                             ? options.SplitOnHeadingLevels 
                             : new List<int> { 1, 2 }; // Default to H1 and H2
                         
                         // Find all headings
-                        var headings = _headingRegex.Matches(content)
+                        var headings = matches
                             .Cast<Match>()
                             .Select(m => new 
                             { 
@@ -316,6 +392,7 @@ namespace Universa.Desktop.Services.Export
                     }
                     else
                     {
+                        Debug.WriteLine("Using entire content as a single chapter");
                         // No splitting, use the entire content as a single chapter
                         string title = "Chapter 1";
                         
@@ -323,20 +400,25 @@ namespace Universa.Desktop.Services.Export
                         if (options.Metadata != null && options.Metadata.TryGetValue("title", out string metadataTitle))
                         {
                             title = metadataTitle;
+                            Debug.WriteLine($"Using title from metadata: {title}");
                         }
                         
                         chapters.Add((title, content));
                     }
                     
+                    Debug.WriteLine($"Total chapters to process: {chapters.Count}");
+                    
                     // Create HTML files for each chapter
                     var chapterFiles = new List<string>();
                     for (int i = 0; i < chapters.Count; i++)
                     {
+                        Debug.WriteLine($"Processing chapter {i + 1}/{chapters.Count}: {chapters[i].title}");
                         string chapterFileName = $"chapter{i + 1}.html";
                         string chapterPath = Path.Combine(tempDir, "OPS", chapterFileName);
                         
                         // Convert markdown to HTML (simple conversion)
                         string htmlContent = ConvertMarkdownToHtml(chapters[i].content, options);
+                        Debug.WriteLine($"Converted chapter {i + 1} to HTML");
                         
                         // Create the HTML file with CSS for heading alignments
                         StringBuilder cssBuilder = new StringBuilder();
@@ -355,15 +437,19 @@ namespace Universa.Desktop.Services.Export
                         
                         string chapterHtml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <!DOCTYPE html>
-<html xmlns=""http://www.w3.org/1999/xhtml"">
+<html xmlns=""http://www.w3.org/1999/xhtml"" xmlns:epub=""http://www.idpf.org/2007/ops"">
 <head>
     <title>{chapters[i].title}</title>
+    <meta charset=""utf-8""/>
+    <meta name=""viewport"" content=""width=device-width, height=device-height, initial-scale=1.0""/>
     <style>
 {cssBuilder.ToString()}
     </style>
 </head>
 <body>
-    {htmlContent}
+    <article>
+        {htmlContent}
+    </article>
 </body>
 </html>";
                         
@@ -396,17 +482,21 @@ namespace Universa.Desktop.Services.Export
                         
                         string coverHtml = $@"<?xml version=""1.0"" encoding=""utf-8""?>
 <!DOCTYPE html>
-<html xmlns=""http://www.w3.org/1999/xhtml"">
+<html xmlns=""http://www.w3.org/1999/xhtml"" xmlns:epub=""http://www.idpf.org/2007/ops"">
 <head>
     <title>Cover - {bookTitle}</title>
+    <meta charset=""utf-8""/>
+    <meta name=""viewport"" content=""width=device-width, height=device-height, initial-scale=1.0""/>
     <style>
 {coverCssBuilder.ToString()}
     </style>
 </head>
 <body>
-    <div>
-        <img src=""{coverImagePath}"" alt=""Cover for {bookTitle}"" />
-    </div>
+    <article>
+        <div>
+            <img src=""{coverImagePath}"" alt=""Cover for {bookTitle}"" />
+        </div>
+    </article>
 </body>
 </html>";
                         
@@ -416,41 +506,33 @@ namespace Universa.Desktop.Services.Export
                         Debug.WriteLine("Cover HTML file created with image reference: " + coverImagePath);
                     }
                     
-                    // Create a simple container.xml
-                    string containerXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
-<container version=""1.0"" xmlns=""urn:oasis:names:tc:opendocument:xmlns:container"">
-    <rootfiles>
-        <rootfile full-path=""OPS/content.opf"" media-type=""application/oebps-package+xml""/>
-    </rootfiles>
-</container>";
-                    
-                    File.WriteAllText(Path.Combine(tempDir, "META-INF", "container.xml"), containerXml);
-                    
                     // Create table of contents if requested
                     string tocNavHtml = "";
+                    StringBuilder contentOpfBuilder = new StringBuilder();
+                    
                     if (options.IncludeToc)
                     {
-                        // Create CSS for the TOC
-                        StringBuilder tocCssBuilder = new StringBuilder();
-                        tocCssBuilder.AppendLine("        body { font-family: sans-serif; margin: 5%; }");
-                        tocCssBuilder.AppendLine("        nav[epub|type='toc'] > ol { list-style-type: none; }");
-                        tocCssBuilder.AppendLine("        nav[epub|type='toc'] > ol > li { margin: 0.5em 0; }");
+                        Debug.WriteLine("Creating navigation document...");
+                        // Create CSS for the navigation
+                        StringBuilder navCssBuilder = new StringBuilder();
+                        navCssBuilder.AppendLine("        body { font-family: sans-serif; margin: 5%; }");
+                        navCssBuilder.AppendLine("        nav[epub|type='toc'] > ol { list-style-type: none; }");
+                        navCssBuilder.AppendLine("        nav[epub|type='toc'] > ol > li { margin: 0.5em 0; }");
+                        navCssBuilder.AppendLine("        nav[epub|type='toc'] > ol > li > ol { list-style-type: none; margin-left: 1em; }");
+                        navCssBuilder.AppendLine("        nav[epub|type='toc'] > ol > li > ol > li { margin: 0.25em 0; }");
+                        navCssBuilder.AppendLine("        nav[epub|type='toc'] a { text-decoration: none; color: inherit; }");
                         
-                        // Add alignment styles for each heading level
-                        foreach (var alignment in options.HeadingAlignments)
-                        {
-                            string textAlign = alignment.Value.ToString().ToLower();
-                            tocCssBuilder.AppendLine($"        h{alignment.Key} {{ text-align: {textAlign}; }}");
-                        }
-                        
-                        StringBuilder tocBuilder = new StringBuilder();
-                        tocBuilder.AppendLine(@"<?xml version=""1.0"" encoding=""utf-8""?>
+                        // Create the navigation document
+                        StringBuilder navBuilder = new StringBuilder();
+                        navBuilder.AppendLine(@"<?xml version=""1.0"" encoding=""utf-8""?>
 <!DOCTYPE html>
 <html xmlns=""http://www.w3.org/1999/xhtml"" xmlns:epub=""http://www.idpf.org/2007/ops"">
 <head>
-    <title>Table of Contents</title>
+    <title>Navigation</title>
+    <meta charset=""utf-8""/>
+    <meta name=""viewport"" content=""width=device-width, height=device-height, initial-scale=1.0""/>
     <style>
-" + tocCssBuilder.ToString() + @"
+" + navCssBuilder.ToString() + @"
     </style>
 </head>
 <body>
@@ -458,9 +540,7 @@ namespace Universa.Desktop.Services.Export
         <h1>Table of Contents</h1>
         <ol>");
                         
-                        // Do NOT add cover page to TOC
-                        
-                        // Add chapters to TOC
+                        // Add chapters to navigation
                         for (int i = 0; i < chapters.Count; i++)
                         {
                             // Get the correct chapter file index based on whether we have a cover
@@ -469,32 +549,32 @@ namespace Universa.Desktop.Services.Export
                             // Use the actual chapter title instead of "Chapter X"
                             string chapterTitle = chapters[i].title;
                             
-                            tocBuilder.AppendLine($"            <li><a href=\"{chapterFiles[fileIndex]}\">{chapterTitle}</a></li>");
+                            navBuilder.AppendLine($"            <li><a href=\"{chapterFiles[fileIndex]}\">{chapterTitle}</a></li>");
                         }
                         
-                        tocBuilder.AppendLine(@"        </ol>
+                        navBuilder.AppendLine(@"        </ol>
     </nav>
 </body>
 </html>");
                         
-                        tocNavHtml = tocBuilder.ToString();
-                        File.WriteAllText(Path.Combine(tempDir, "OPS", "toc.html"), tocNavHtml);
-                        
-                        // Insert the TOC after the cover (if present) or at the beginning
-                        int tocInsertPosition = coverImagePath != null ? 1 : 0;
-                        chapterFiles.Insert(tocInsertPosition, "toc.html");
+                        // Save the navigation document
+                        File.WriteAllText(Path.Combine(tempDir, "OPS", "nav.xhtml"), navBuilder.ToString());
+                        Debug.WriteLine("Created navigation document (nav.xhtml)");
                     }
                     
-                    // Create the content.opf file
-                    StringBuilder contentOpfBuilder = new StringBuilder();
+                    Debug.WriteLine("Creating content.opf file...");
+                    
+                    // Start with XML declaration and package element
                     contentOpfBuilder.AppendLine($@"<?xml version=""1.0"" encoding=""UTF-8""?>
 <package xmlns=""http://www.idpf.org/2007/opf"" unique-identifier=""BookID"" version=""3.0"">
     <metadata xmlns:dc=""http://purl.org/dc/elements/1.1/"" xmlns:opf=""http://www.idpf.org/2007/opf"">
-        <dc:title>{options.Metadata.GetValueOrDefault("title", "Untitled")}</dc:title>
-        <dc:creator>{options.Metadata.GetValueOrDefault("author", "Unknown Author")}</dc:creator>
+        <dc:title id=""title"">{options.Metadata.GetValueOrDefault("title", "Untitled")}</dc:title>
+        <dc:creator id=""creator"">{options.Metadata.GetValueOrDefault("author", "Unknown Author")}</dc:creator>
         <dc:language>{options.Metadata.GetValueOrDefault("language", "en")}</dc:language>
         <dc:identifier id=""BookID"">urn:uuid:{Guid.NewGuid()}</dc:identifier>
-        <meta property=""dcterms:modified"">{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ}</meta>");
+        <meta property=""dcterms:modified"">{DateTime.UtcNow:yyyy-MM-ddTHH:mm:ssZ}</meta>
+        <meta property=""dcterms:title"" refines=""#title"">{options.Metadata.GetValueOrDefault("title", "Untitled")}</meta>
+        <meta property=""dcterms:creator"" refines=""#creator"">{options.Metadata.GetValueOrDefault("author", "Unknown Author")}</meta>");
                     
                     if (coverImagePath != null)
                     {
@@ -504,19 +584,35 @@ namespace Universa.Desktop.Services.Export
                     contentOpfBuilder.AppendLine(@"    </metadata>
     <manifest>");
                     
+                    Debug.WriteLine($"Adding {chapterFiles.Count} chapter files to manifest");
                     // Add all chapter files to the manifest
+                    var chapterIds = new List<string>();
                     for (int i = 0; i < chapterFiles.Count; i++)
                     {
-                        string id = chapterFiles[i].Replace(".", "-");
+                        string id;
                         string properties = "";
                         
                         // Mark the cover.html file as the cover
                         if (chapterFiles[i] == "cover.html")
                         {
                             properties = " properties=\"cover\"";
+                            id = "cover"; // Use reserved ID for cover
+                        }
+                        else
+                        {
+                            // Generate a unique ID for other chapters
+                            id = GenerateUniqueId("chapter", Path.GetFileNameWithoutExtension(chapterFiles[i]));
                         }
                         
+                        chapterIds.Add(id);
                         contentOpfBuilder.AppendLine($"        <item id=\"{id}\" href=\"{chapterFiles[i]}\" media-type=\"application/xhtml+xml\"{properties}/>");
+                    }
+                    
+                    // Add navigation document to manifest if present
+                    if (options.IncludeToc)
+                    {
+                        contentOpfBuilder.AppendLine("        <item id=\"nav\" href=\"nav.xhtml\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>");
+                        Debug.WriteLine("Added navigation document to manifest");
                     }
                     
                     // Add cover image to manifest if present
@@ -525,10 +621,12 @@ namespace Universa.Desktop.Services.Export
                         string extension = Path.GetExtension(coverImagePath).ToLower();
                         string mediaType = extension == ".jpg" || extension == ".jpeg" ? "image/jpeg" : "image/png";
                         contentOpfBuilder.AppendLine($"        <item id=\"cover-image\" href=\"{coverImagePath}\" media-type=\"{mediaType}\" properties=\"cover-image\"/>");
+                        Debug.WriteLine("Added cover image to manifest");
                     }
                     
                     // Add all content images to manifest
                     var contentImages = GetContentImages(content);
+                    Debug.WriteLine($"Found {contentImages.Count} content images");
                     foreach (string imagePath in contentImages)
                     {
                         // Skip if this is the cover image (already added)
@@ -541,12 +639,13 @@ namespace Universa.Desktop.Services.Export
                                           extension == ".gif" ? "image/gif" : 
                                           extension == ".svg" ? "image/svg+xml" : "image/png";
                         
-                        string id = "image-" + Path.GetFileNameWithoutExtension(imagePath).Replace(" ", "-").Replace(".", "-");
+                        string id = GenerateUniqueId("image", Path.GetFileNameWithoutExtension(imagePath));
                         contentOpfBuilder.AppendLine($"        <item id=\"{id}\" href=\"{imagePath}\" media-type=\"{mediaType}\"/>");
                     }
                     
                     // Add all linked resources to manifest
                     var linkedResources = GetLinkedResources(content);
+                    Debug.WriteLine($"Found {linkedResources.Count} linked resources");
                     foreach (string resourcePath in linkedResources)
                     {
                         // Skip if this is already added
@@ -564,42 +663,56 @@ namespace Universa.Desktop.Services.Export
                                           extension == ".pdf" ? "application/pdf" :
                                           "application/octet-stream";
                         
-                        string id = "resource-" + Path.GetFileNameWithoutExtension(resourcePath).Replace(" ", "-").Replace(".", "-");
+                        string id = GenerateUniqueId("resource", Path.GetFileNameWithoutExtension(resourcePath));
                         contentOpfBuilder.AppendLine($"        <item id=\"{id}\" href=\"{resourcePath}\" media-type=\"{mediaType}\"/>");
-                    }
-                    
-                    // Add TOC to manifest if present
-                    if (options.IncludeToc)
-                    {
-                        contentOpfBuilder.AppendLine("        <item id=\"toc\" href=\"toc.html\" media-type=\"application/xhtml+xml\" properties=\"nav\"/>");
                     }
                     
                     contentOpfBuilder.AppendLine(@"    </manifest>
     <spine>");
                     
-                    // Add all chapter files to the spine
-                    foreach (string file in chapterFiles)
+                    Debug.WriteLine($"Adding {chapterFiles.Count} files to spine");
+                    
+                    // Add navigation document first if present
+                    if (options.IncludeToc)
                     {
-                        string id = file.Replace(".", "-");
-                        contentOpfBuilder.AppendLine($"        <itemref idref=\"{id}\"/>");
+                        contentOpfBuilder.AppendLine("        <itemref idref=\"nav\"/>");
+                        Debug.WriteLine("Added navigation document to spine");
+                    }
+                    
+                    // Add cover page if present
+                    if (coverImagePath != null)
+                    {
+                        contentOpfBuilder.AppendLine("        <itemref idref=\"cover\"/>");
+                        Debug.WriteLine("Added cover page to spine");
+                    }
+                    
+                    // Add all chapter files to the spine
+                    for (int i = 0; i < chapterFiles.Count; i++)
+                    {
+                        contentOpfBuilder.AppendLine($"        <itemref idref=\"{chapterIds[i]}\"/>");
                     }
                     
                     contentOpfBuilder.AppendLine(@"    </spine>
 </package>");
                     
                     File.WriteAllText(Path.Combine(tempDir, "OPS", "content.opf"), contentOpfBuilder.ToString());
+                    Debug.WriteLine("content.opf file created successfully");
                     
+                    Debug.WriteLine("Creating ZIP archive...");
                     // Create the ePub file (ZIP archive)
                     if (File.Exists(options.OutputPath))
                     {
+                        Debug.WriteLine($"Removing existing file: {options.OutputPath}");
                         File.Delete(options.OutputPath);
                     }
                     
                     // Ensure the output directory exists
                     Directory.CreateDirectory(Path.GetDirectoryName(options.OutputPath));
+                    Debug.WriteLine($"Created output directory: {Path.GetDirectoryName(options.OutputPath)}");
                     
                     try
                     {
+                        Debug.WriteLine("Adding files to ZIP archive...");
                         // Create the ZIP archive manually to ensure mimetype is first and uncompressed
                         using (var zipArchive = ZipFile.Open(options.OutputPath, ZipArchiveMode.Create))
                         {
@@ -609,16 +722,24 @@ namespace Universa.Desktop.Services.Export
                             {
                                 writer.Write("application/epub+zip");
                             }
+                            Debug.WriteLine("Added mimetype file to ZIP");
                             
                             // Add the rest of the files
                             AddDirectoryToZip(zipArchive, tempDir, "");
+                            Debug.WriteLine("Added all files to ZIP archive");
                         }
                         
                         Debug.WriteLine($"ePub export completed successfully: {options.OutputPath}");
+                        Debug.WriteLine($"File size: {new FileInfo(options.OutputPath).Length / 1024.0:F2} KB");
                         
                         // If there were warnings, return them to the caller
                         if (warnings.Count > 0)
                         {
+                            Debug.WriteLine($"Export completed with {warnings.Count} warnings:");
+                            foreach (var warning in warnings)
+                            {
+                                Debug.WriteLine($"  - {warning}");
+                            }
                             options.Warnings = warnings;
                         }
                         

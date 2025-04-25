@@ -24,7 +24,7 @@
             <!-- Left Column - Now Playing Text -->
             <TextBlock x:Name="NowPlayingText" 
                        Grid.Column="0"
-                       Text="No track playing"
+                       Text=""
                        TextTrimming="CharacterEllipsis"
                        ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
                        VerticalAlignment="Center"

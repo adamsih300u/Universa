@@ -81,10 +81,26 @@ namespace Universa.Desktop.Views
             // Set default metadata values
             if (_currentTab is MarkdownTab markdownTab)
             {
-                _metadata["title"] = _defaultFileName;
-                _metadata["author"] = Environment.UserName;
-                _metadata["language"] = CultureInfo.CurrentCulture.TwoLetterISOLanguageName;
-                _metadata["source"] = _currentTab.FilePath ?? "";
+                // Get metadata from frontmatter first
+                foreach (var key in markdownTab.GetFrontmatterKeys())
+                {
+                    string value = markdownTab.GetFrontmatterValue(key);
+                    if (!string.IsNullOrEmpty(value))
+                    {
+                        _metadata[key] = value;
+                    }
+                }
+                
+                // Set default values for required fields if not present in frontmatter
+                if (!_metadata.ContainsKey("title"))
+                    _metadata["title"] = _defaultFileName;
+                if (!_metadata.ContainsKey("author"))
+                    _metadata["author"] = Environment.UserName;
+                if (!_metadata.ContainsKey("language"))
+                    _metadata["language"] = CultureInfo.CurrentCulture.TwoLetterISOLanguageName;
+                
+                // Add source path to help with resolving relative paths
+                _metadata["_sourcePath"] = _currentTab.FilePath ?? "";
                 _metadata["fontFamily"] = "Arial";
                 _metadata["fontSize"] = "12";
             }

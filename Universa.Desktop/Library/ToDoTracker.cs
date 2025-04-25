@@ -6,6 +6,7 @@ using System.Text.Json;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using Universa.Desktop.Models;
+using System.Threading.Tasks;
 
 namespace Universa.Desktop.Library
 {
@@ -15,6 +16,9 @@ namespace Universa.Desktop.Library
         private FileSystemWatcher _watcher;
         private Dictionary<string, ToDo> _todoFiles = new Dictionary<string, ToDo>();
         private bool _disposed = false;
+        private bool _isScanning = false;
+        private DateTime _lastScanTime = DateTime.MinValue;
+        private const int SCAN_CACHE_DURATION_SECONDS = 5;
         public event Action TodosChanged;
 
         public static ToDoTracker Instance
@@ -33,7 +37,7 @@ namespace Universa.Desktop.Library
         {
         }
 
-        public void Initialize(string libraryPath)
+        public async Task InitializeAsync(string libraryPath)
         {
             if (_watcher != null)
             {
@@ -61,8 +65,8 @@ namespace Universa.Desktop.Library
 
             try
             {
+                await ScanTodoFilesAsync(libraryPath);
                 _watcher.EnableRaisingEvents = true;
-                ScanTodoFiles(libraryPath);
             }
             catch (Exception ex)
             {
@@ -70,76 +74,34 @@ namespace Universa.Desktop.Library
             }
         }
 
-        public void Dispose()
+        private async void TodoFile_Changed(object sender, FileSystemEventArgs e)
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
+            // Debounce rapid file changes
+            await Task.Delay(500);
+            await ScanTodoFilesAsync(Path.GetDirectoryName(e.FullPath));
         }
 
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!_disposed)
-            {
-                if (disposing)
-                {
-                    if (_watcher != null)
-                    {
-                        _watcher.EnableRaisingEvents = false;
-                        _watcher.Created -= TodoFile_Changed;
-                        _watcher.Changed -= TodoFile_Changed;
-                        _watcher.Deleted -= TodoFile_Changed;
-                        _watcher.Renamed -= TodoFile_Changed;
-                        _watcher.Dispose();
-                        _watcher = null;
-                    }
-                }
-                _disposed = true;
-            }
-        }
-
-        ~ToDoTracker()
-        {
-            Dispose(false);
-        }
-
-        private void TodoFile_Changed(object sender, FileSystemEventArgs e)
-        {
-            try
-            {
-                var dispatcher = System.Windows.Application.Current?.Dispatcher;
-                if (dispatcher == null) return;
-
-                if (!dispatcher.CheckAccess())
-                {
-                    dispatcher.Invoke(() => TodoFile_Changed(sender, e));
-                    return;
-                }
-
-                var path = Path.GetDirectoryName(e.FullPath);
-                if (string.IsNullOrEmpty(path)) return;
-
-                ScanTodoFiles(path);
-                TodosChanged?.Invoke();
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in TodoFile_Changed: {ex.Message}");
-            }
-        }
-
-        public void ScanTodoFiles(string path)
+        public async Task ScanTodoFilesAsync(string path)
         {
             if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
 
+            // Check if we're already scanning or if the cache is still valid
+            if (_isScanning || (DateTime.Now - _lastScanTime).TotalSeconds < SCAN_CACHE_DURATION_SECONDS)
+            {
+                return;
+            }
+
             try
             {
+                _isScanning = true;
                 System.Diagnostics.Debug.WriteLine($"\n=== Starting ToDo file scan in {path} ===");
                 
                 // Create a new dictionary to avoid modifying the collection while it might be in use
                 var newTodoFiles = new Dictionary<string, ToDo>();
                 
-                var todoFiles = Directory.GetFiles(path, "*.todo", SearchOption.AllDirectories);
-                var archiveFiles = Directory.GetFiles(path, "*.todo.archive", SearchOption.AllDirectories);
+                // Use async file operations
+                var todoFiles = await Task.Run(() => Directory.GetFiles(path, "*.todo", SearchOption.AllDirectories));
+                var archiveFiles = await Task.Run(() => Directory.GetFiles(path, "*.todo.archive", SearchOption.AllDirectories));
                 var allFiles = todoFiles.Concat(archiveFiles);
                 
                 System.Diagnostics.Debug.WriteLine($"Found {todoFiles.Length} .todo files and {archiveFiles.Length} .todo.archive files");
@@ -148,22 +110,16 @@ namespace Universa.Desktop.Library
                 {
                     try
                     {
-                        if (!File.Exists(file)) continue;
-
-                        var content = File.ReadAllText(file);
-                        if (string.IsNullOrWhiteSpace(content) || content.Length <= 2)
+                        var content = await File.ReadAllTextAsync(file);
+                        if (string.IsNullOrWhiteSpace(content))
                         {
                             System.Diagnostics.Debug.WriteLine($"Skipping empty or invalid file: {file}");
                             continue;
                         }
 
-                        System.Diagnostics.Debug.WriteLine($"\nProcessing file: {file}");
-                        System.Diagnostics.Debug.WriteLine($"File content length: {content.Length} characters");
-                        
                         var options = new JsonSerializerOptions
                         {
                             PropertyNameCaseInsensitive = true,
-                            WriteIndented = true,
                             AllowTrailingCommas = true,
                             ReadCommentHandling = JsonCommentHandling.Skip
                         };
@@ -201,7 +157,6 @@ namespace Universa.Desktop.Library
                         catch (JsonException ex)
                         {
                             System.Diagnostics.Debug.WriteLine($"Error parsing JSON in file {file}: {ex.Message}");
-                            // Skip this file and continue with others
                             continue;
                         }
                     }
@@ -209,7 +164,6 @@ namespace Universa.Desktop.Library
                     {
                         System.Diagnostics.Debug.WriteLine($"Error reading todo file {file}: {ex.Message}");
                         System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                        // Skip this file and continue with others
                         continue;
                     }
                 }
@@ -224,6 +178,7 @@ namespace Universa.Desktop.Library
                     }
                 }
 
+                _lastScanTime = DateTime.Now;
                 System.Diagnostics.Debug.WriteLine($"\nScan complete. Loaded {_todoFiles.Count} ToDo items");
                 TodosChanged?.Invoke();
             }
@@ -231,6 +186,10 @@ namespace Universa.Desktop.Library
             {
                 System.Diagnostics.Debug.WriteLine($"Error scanning todo files: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
+            finally
+            {
+                _isScanning = false;
             }
         }
 
@@ -247,6 +206,20 @@ namespace Universa.Desktop.Library
             lock (_todoFiles)
             {
                 return _todoFiles.TryGetValue(filePath, out var todo) ? todo : null;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                if (_watcher != null)
+                {
+                    _watcher.EnableRaisingEvents = false;
+                    _watcher.Dispose();
+                    _watcher = null;
+                }
+                _disposed = true;
             }
         }
     }

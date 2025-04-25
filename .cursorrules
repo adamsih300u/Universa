@@ -1,0 +1,130 @@
+{
+    "project": {
+        "name": "Universa",
+        "components": {
+            "desktop-app": {
+                "folder": "Universa.Desktop",
+                "type": "wpf"
+            },
+            "sync-server": {
+                "folder": "Universa.Sync",
+                "type": "python"
+            },
+            "web-ui": {
+                "folder": "Universa.Web",
+                "type": "react"
+            }
+        }
+    },
+    "languages": {
+        "csharp": {
+            "framework": "WPF",
+            "architecture": {
+                "pattern": "MVVM",
+                "dependency_injection": {
+                    "enabled": true,
+                    "container": "Microsoft.Extensions.DependencyInjection",
+                    "lifetime": {
+                        "preferred": "scoped",
+                        "fallback": "transient"
+                    }
+                },
+                "conventions": {
+                    "view_models": {
+                        "naming": "*ViewModel",
+                        "location": "ViewModels/"
+                    },
+                    "views": {
+                        "naming": "*View",
+                        "location": "Views/"
+                    },
+                    "models": {
+                        "naming": "*Model",
+                        "location": "Models/"
+                    },
+                    "services": {
+                        "naming": "*Service",
+                        "location": "Services/"
+                    },
+                    "additional_folders": {
+                        "core": "Core/",
+                        "interfaces": "Interfaces/",
+                        "commands": "Commands/",
+                        "data": "Data/",
+                        "helpers": "Helpers/",
+                        "converters": "Converters/",
+                        "managers": "Managers/",
+                        "windows": "Windows/",
+                        "themes": "Themes/",
+                        "styles": "Styles/",
+                        "resources": "Resources/",
+                        "dialogs": "Dialogs/",
+                        "controls": "Controls/",
+                        "behaviors": "Behaviors/",
+                        "extensions": "Extensions/",
+                        "tts": "TTS/",
+                        "cache": "Cache/",
+                        "adorners": "Adorners/"
+                    }
+                }
+            },
+            "linting": {
+                "enabled": true,
+                "rules": {
+                    "style": "Microsoft",
+                    "severity": "warning"
+                }
+            }
+        },
+        "python": {
+            "linting": {
+                "enabled": true,
+                "rules": {
+                    "style": "PEP8",
+                    "severity": "warning"
+                }
+            }
+        },
+        "typescript": {
+            "framework": "React",
+            "linting": {
+                "enabled": true,
+                "rules": {
+                    "style": "ESLint",
+                    "severity": "warning"
+                }
+            }
+        }
+    },
+    "sync": {
+        "protocol": "REST",
+        "versioning": "semantic",
+        "dataFormat": "JSON"
+    },
+    "build": {
+        "desktop-app": {
+            "framework": "net8.0-windows",
+            "output": "bin/Release"
+        },
+        "sync-server": {
+            "requirements": "requirements.txt",
+            "python_version": ">=3.8"
+        },
+        "web-ui": {
+            "build_command": "npm run build",
+            "output": "dist"
+        }
+    },
+    "development": {
+        "recommended_extensions": [
+            "C#",
+            "Python",
+            "ESLint",
+            "Prettier"
+        ],
+        "git": {
+            "branch_naming": "feature|bugfix|hotfix",
+            "commit_message_format": "conventional"
+        }
+    }
+} 

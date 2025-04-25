@@ -37,8 +37,12 @@ namespace Universa.Desktop
         private TTSClient _ttsClient;
         private bool _isPlaying;
         private MediaPlayer _mediaPlayer = new MediaPlayer();
+        private string _title;
+        private bool _isContentLoaded;
+        private string _cachedContent;
 
         public event PropertyChangedEventHandler PropertyChanged;
+        public event EventHandler ContentChanged;
 
         public bool IsPlaying
         {
@@ -61,6 +65,20 @@ namespace Universa.Desktop
                 _filePath = value;
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(FilePath)));
                 UpdateTabHeader();
+            }
+        }
+
+        public string Title
+        {
+            get => _title ?? Path.GetFileName(FilePath);
+            set
+            {
+                if (_title != value)
+                {
+                    _title = value;
+                    OnPropertyChanged(nameof(Title));
+                    UpdateTabHeader();
+                }
             }
         }
 
@@ -152,12 +170,13 @@ namespace Universa.Desktop
         private void Editor_TextChanged(object sender, TextChangedEventArgs e)
         {
             IsModified = true;
+            ContentChanged?.Invoke(this, EventArgs.Empty);
         }
 
         public EditorTab(string filePath) : this()
         {
             FilePath = filePath;
-            LoadFile(filePath);
+            // Don't load content immediately, just store the path
         }
 
         private void LoadFile(string path)
@@ -166,13 +185,31 @@ namespace Universa.Desktop
             {
                 if (File.Exists(path))
                 {
-                    Editor.Text = File.ReadAllText(path);
+                    _cachedContent = File.ReadAllText(path);
+                    Editor.Text = _cachedContent;
                     IsModified = false;
+                    _isContentLoaded = true;
                 }
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Error loading file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        public void OnTabSelected()
+        {
+            if (!_isContentLoaded && !string.IsNullOrEmpty(FilePath))
+            {
+                LoadFile(FilePath);
+            }
+        }
+
+        public void OnTabDeselected()
+        {
+            if (IsModified)
+            {
+                Save().ConfigureAwait(false);
             }
         }
 
@@ -803,6 +840,11 @@ namespace Universa.Desktop
                 TTSButton.Style = null;
                 TTSButton.Style = style;
             }
+        }
+
+        private void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
 } 

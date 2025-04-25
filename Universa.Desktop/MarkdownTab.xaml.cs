@@ -44,6 +44,8 @@ namespace Universa.Desktop
         private Dictionary<string, string> _frontmatter;
         private bool _hasFrontmatter;
         private bool _isFrontmatterVisible = false;
+        private string _title;
+        private bool _isContentLoaded = false;
         public event PropertyChangedEventHandler PropertyChanged;
         public event EventHandler<int> CursorPositionChanged;
 
@@ -55,7 +57,7 @@ namespace Universa.Desktop
                 if (_isPlaying != value)
                 {
                     _isPlaying = value;
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsPlaying)));
+                    OnPropertyChanged(nameof(IsPlaying));
                 }
             }
         }
@@ -67,6 +69,20 @@ namespace Universa.Desktop
             {
                 _filePath = value;
                 UpdateTitle();
+            }
+        }
+
+        public string Title
+        {
+            get => _title ?? Path.GetFileName(FilePath);
+            set
+            {
+                if (_title != value)
+                {
+                    _title = value;
+                    OnPropertyChanged(nameof(Title));
+                    UpdateTitle();
+                }
             }
         }
 
@@ -108,7 +124,7 @@ namespace Universa.Desktop
                 {
                     _lastKnownCursorPosition = value;
                     CursorPositionChanged?.Invoke(this, value);
-                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LastKnownCursorPosition)));
+                    OnPropertyChanged(nameof(LastKnownCursorPosition));
                 }
             }
         }
@@ -301,20 +317,53 @@ namespace Universa.Desktop
                 FilePath = filePath;
                 if (File.Exists(filePath))
                 {
-                    string fileContent = File.ReadAllText(filePath);
-                    
-                    // Parse frontmatter if present
-                    string contentToDisplay = ProcessFrontmatterForLoading(fileContent);
-                    
-                    Editor.Text = contentToDisplay;
-                    IsModified = false;
-                    // Load versions immediately after opening the file
-                    _ = LoadVersions();
+                    // Load file content asynchronously
+                    _ = LoadFileAsync(filePath);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error loading file in markdown tab: {ex.Message}\n\nStack trace: {ex.StackTrace}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Error initializing markdown tab: {ex.Message}\n\nStack trace: {ex.StackTrace}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                throw;
+            }
+        }
+
+        private async Task LoadFileAsync(string filePath)
+        {
+            try
+            {
+                // Show loading indicator
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    Editor.IsEnabled = false;
+                    Editor.Text = "Loading...";
+                });
+
+                // Load file content on background thread
+                string fileContent = await Task.Run(() => File.ReadAllText(filePath));
+                
+                // Process frontmatter on background thread
+                string contentToDisplay = await ProcessFrontmatterForLoading(fileContent);
+                
+                // Update UI on UI thread
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    Editor.Text = contentToDisplay;
+                    IsModified = false;
+                    Editor.IsEnabled = true;
+                });
+
+                // Load versions in the background without blocking UI
+                _ = LoadVersions();
+            }
+            catch (Exception ex)
+            {
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    MessageBox.Show($"Error loading file in markdown tab: {ex.Message}\n\nStack trace: {ex.StackTrace}", 
+                        "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    Editor.IsEnabled = true;
+                });
                 throw;
             }
         }
@@ -663,55 +712,73 @@ namespace Universa.Desktop
             Editor.Focus();
         }
 
-        private void PerformSearch()
+        private async void PerformSearch()
         {
-            _searchResults.Clear();
-            _currentSearchIndex = -1;
-
-            if (string.IsNullOrEmpty(SearchBox.Text) || SearchBox.Text.Length < 2)
+            try
             {
-                _textHighlighter.ClearHighlights();
-                return;
-            }
+                _searchResults.Clear();
+                _currentSearchIndex = -1;
 
-            string text = Editor.Text;
-            int index = 0;
-            while ((index = text.IndexOf(SearchBox.Text, index, StringComparison.CurrentCultureIgnoreCase)) != -1)
-            {
-                _searchResults.Add(index);
-                index += SearchBox.Text.Length;
-            }
-
-            if (_searchResults.Count > 0)
-            {
-                // Just highlight all results initially
-                var ranges = _searchResults.Select(i => (i, SearchBox.Text.Length)).ToList();
-                _textHighlighter.HighlightRanges(ranges, Color.FromRgb(255, 235, 100));
-                
-                // Move to first result
-                _currentSearchIndex = 0;
-                
-                // Scroll to the first result without changing focus
-                if (_currentSearchIndex >= 0 && _currentSearchIndex < _searchResults.Count)
+                if (string.IsNullOrEmpty(SearchBox.Text) || SearchBox.Text.Length < 2)
                 {
-                    int firstIndex = _searchResults[_currentSearchIndex];
-                    var line = Editor.GetLineIndexFromCharacterIndex(firstIndex);
-                    
-                    // Store current focus
-                    var focused = FocusManager.GetFocusedElement(Window.GetWindow(this));
-                    
-                    // Scroll to line
-                    Editor.ScrollToLine(line);
-                    
-                    // Restore focus
-                    if (focused != null)
+                    _textHighlighter.ClearHighlights();
+                    return;
+                }
+
+                string text = Editor.Text;
+                string searchText = SearchBox.Text;
+                
+                // Perform search on background thread
+                await Task.Run(() =>
+                {
+                    int index = 0;
+                    while ((index = text.IndexOf(searchText, index, StringComparison.CurrentCultureIgnoreCase)) != -1)
                     {
-                        focused.Focus();
+                        _searchResults.Add(index);
+                        index += searchText.Length;
                     }
+                });
+
+                if (_searchResults.Count > 0)
+                {
+                    // Update UI on the UI thread
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        // Just highlight all results initially
+                        var ranges = _searchResults.Select(i => (i, SearchBox.Text.Length)).ToList();
+                        _textHighlighter.HighlightRanges(ranges, Color.FromRgb(255, 235, 100));
+                        
+                        // Move to first result
+                        _currentSearchIndex = 0;
+                        
+                        // Scroll to the first result without changing focus
+                        if (_currentSearchIndex >= 0 && _currentSearchIndex < _searchResults.Count)
+                        {
+                            int firstIndex = _searchResults[_currentSearchIndex];
+                            var line = Editor.GetLineIndexFromCharacterIndex(firstIndex);
+                            
+                            // Store current focus
+                            var focused = FocusManager.GetFocusedElement(Window.GetWindow(this));
+                            
+                            // Scroll to line
+                            Editor.ScrollToLine(line);
+                            
+                            // Restore focus
+                            if (focused != null)
+                            {
+                                focused.Focus();
+                            }
+                        }
+                    });
+                }
+                else
+                {
+                    _textHighlighter.ClearHighlights();
                 }
             }
-            else
+            catch (Exception ex)
             {
+                Debug.WriteLine($"Error performing search: {ex.Message}");
                 _textHighlighter.ClearHighlights();
             }
         }
@@ -814,17 +881,31 @@ namespace Universa.Desktop
                 : Editor.Text;
         }
 
-        private void UpdateWordCount()
+        private async void UpdateWordCount()
         {
-            var text = Editor.Text;
-            var wordCount = text.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
-            var charCount = text.Length;
-            
-            // Calculate reading time (assuming 225 words per minute)
-            var readingTimeMinutes = Math.Max(1, (int)Math.Ceiling(wordCount / 225.0));
-            var readingTimeText = readingTimeMinutes == 1 ? "1 minute" : $"{readingTimeMinutes} minutes";
-            
-            WordCountText.Text = $"Words: {wordCount} | Characters: {charCount} | Reading time: {readingTimeText}";
+            try
+            {
+                var text = Editor.Text;
+                await Task.Run(() =>
+                {
+                    var wordCount = text.Split(new[] { ' ', '\n', '\r', '\t' }, StringSplitOptions.RemoveEmptyEntries).Length;
+                    var charCount = text.Length;
+                    
+                    // Calculate reading time (assuming 225 words per minute)
+                    var readingTimeMinutes = Math.Max(1, (int)Math.Ceiling(wordCount / 225.0));
+                    var readingTimeText = readingTimeMinutes == 1 ? "1 minute" : $"{readingTimeMinutes} minutes";
+                    
+                    // Update UI on the UI thread
+                    Dispatcher.Invoke(() =>
+                    {
+                        WordCountText.Text = $"Words: {wordCount} | Characters: {charCount} | Reading time: {readingTimeText}";
+                    });
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error updating word count: {ex.Message}");
+            }
         }
 
         private async Task SaveFileAsync()
@@ -1217,53 +1298,63 @@ namespace Universa.Desktop
         /// <summary>
         /// Processes the content for loading, extracting frontmatter if present
         /// </summary>
-        private string ProcessFrontmatterForLoading(string content)
+        private async Task<string> ProcessFrontmatterForLoading(string content)
         {
             _frontmatter = new Dictionary<string, string>();
             _hasFrontmatter = false;
             
-            // Check if the content starts with frontmatter delimiter
-            if (content.StartsWith("---\n") || content.StartsWith("---\r\n"))
+            // Process frontmatter on background thread
+            return await Task.Run(() =>
             {
+                // Quick check for frontmatter delimiter
+                if (!content.StartsWith("---\n") && !content.StartsWith("---\r\n"))
+                {
+                    return content;
+                }
+
                 // Find the closing delimiter
                 int endIndex = -1;
-                
-                // Skip the first line (opening delimiter)
                 int startIndex = content.IndexOf('\n') + 1;
-                if (startIndex < content.Length)
+                
+                if (startIndex >= content.Length)
                 {
-                    // Look for closing delimiter
-                    endIndex = content.IndexOf("\n---", startIndex);
-                    if (endIndex > startIndex)
-                    {
-                        // Extract frontmatter content
-                        string frontmatterContent = content.Substring(startIndex, endIndex - startIndex);
-                        ParseFrontmatter(frontmatterContent);
-                        
-                        // Skip past the closing delimiter
-                        int contentStartIndex = endIndex + 4; // Length of "\n---"
-                        if (contentStartIndex < content.Length)
-                        {
-                            // If there's a newline after the closing delimiter, skip it too
-                            if (content[contentStartIndex] == '\n')
-                                contentStartIndex++;
-                            
-                            // Return the content without frontmatter
-                            _hasFrontmatter = true;
-                            
-                            // If frontmatter should be visible, return the full content
-                            if (_isFrontmatterVisible)
-                                return content;
-                            
-                            // Return content without frontmatter, ensuring no extra newlines
-                            string contentWithoutFrontmatter = content.Substring(contentStartIndex);
-                            return contentWithoutFrontmatter.TrimStart(); // Remove any leading whitespace
-                        }
-                    }
+                    return content;
                 }
-            }
-            
-            return content;
+
+                endIndex = content.IndexOf("\n---", startIndex);
+                if (endIndex <= startIndex)
+                {
+                    return content;
+                }
+
+                // Extract and parse frontmatter
+                string frontmatterContent = content.Substring(startIndex, endIndex - startIndex);
+                ParseFrontmatter(frontmatterContent);
+                
+                // Skip past the closing delimiter
+                int contentStartIndex = endIndex + 4; // Length of "\n---"
+                if (contentStartIndex >= content.Length)
+                {
+                    return content;
+                }
+
+                // If there's a newline after the closing delimiter, skip it too
+                if (content[contentStartIndex] == '\n')
+                {
+                    contentStartIndex++;
+                }
+
+                _hasFrontmatter = true;
+                
+                // If frontmatter should be visible, return the full content
+                if (_isFrontmatterVisible)
+                {
+                    return content;
+                }
+
+                // Return content without frontmatter, ensuring no extra newlines
+                return content.Substring(contentStartIndex).TrimStart();
+            });
         }
         
         /// <summary>
@@ -1324,11 +1415,22 @@ namespace Universa.Desktop
         {
             _frontmatter = new Dictionary<string, string>();
             
-            // Split by lines
-            string[] lines = frontmatterContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            
-            foreach (string line in lines)
+            // Split by lines and process each line
+            foreach (string line in frontmatterContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
             {
+                // Skip empty lines
+                if (string.IsNullOrWhiteSpace(line))
+                {
+                    continue;
+                }
+
+                // Handle tags (like #fiction)
+                if (line.StartsWith("#"))
+                {
+                    _frontmatter[line.Trim()] = "true";
+                    continue;
+                }
+
                 // Look for key-value pairs (key: value)
                 int colonIndex = line.IndexOf(':');
                 if (colonIndex > 0)
@@ -1336,14 +1438,11 @@ namespace Universa.Desktop
                     string key = line.Substring(0, colonIndex).Trim();
                     string value = line.Substring(colonIndex + 1).Trim();
                     
-                    // Store in dictionary
-                    _frontmatter[key] = value;
-                }
-                else if (line.StartsWith("#"))
-                {
-                    // Handle tags (like #fiction)
-                    string tag = line.Trim();
-                    _frontmatter[tag] = "true";
+                    // Only add non-empty keys
+                    if (!string.IsNullOrWhiteSpace(key))
+                    {
+                        _frontmatter[key] = value;
+                    }
                 }
             }
         }
@@ -1854,6 +1953,50 @@ namespace Universa.Desktop
             }
             
             return string.Empty;
+        }
+
+        protected virtual void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        public void OnTabSelected()
+        {
+            // Load file content when tab is selected if not already loaded
+            if (!_isContentLoaded && !string.IsNullOrEmpty(FilePath))
+            {
+                LoadFile(FilePath);
+            }
+        }
+
+        public void OnTabDeselected()
+        {
+            // Save any pending changes when tab is deselected
+            if (IsModified)
+            {
+                Save().ConfigureAwait(false);
+            }
+        }
+
+        private async void LoadFile(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath)) return;
+            
+            try
+            {
+                var content = await File.ReadAllTextAsync(filePath);
+                
+                // Process frontmatter and get content without it
+                string contentToDisplay = await ProcessFrontmatterForLoading(content);
+                
+                Editor.Text = contentToDisplay;
+                IsModified = false;  // Explicitly set IsModified to false when loading
+                _isContentLoaded = true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 } 

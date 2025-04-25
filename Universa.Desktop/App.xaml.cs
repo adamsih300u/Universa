@@ -8,6 +8,9 @@ using Universa.Desktop.Library;
 using System.IO;
 using System.Diagnostics;
 using SQLite;
+using Universa.Desktop.ViewModels;
+using Universa.Desktop.Interfaces;
+using System.Threading.Tasks;
 
 namespace Universa.Desktop
 {
@@ -37,7 +40,38 @@ namespace Universa.Desktop
                     return configService;
                 });
                 services.AddSingleton<IDialogService, DialogService>();
-                services.AddSingleton<Views.MainWindow>();
+                
+                // ToDo services must be transient (not singleton) to handle multiple different ToDo files
+                services.AddTransient<IToDoService>(provider => {
+                    var configService = provider.GetRequiredService<IConfigurationService>();
+                    var libraryPath = configService.GetValue<string>("LibraryPath") ?? 
+                                      Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "Universa");
+                    
+                    // We'll set a temporary path here, but it will be overridden when a specific ToDo file is opened
+                    var defaultTodoPath = Path.Combine(libraryPath, "default.todo");
+                    
+                    // Ensure the directory exists
+                    if (!Directory.Exists(libraryPath))
+                    {
+                        try
+                        {
+                            Directory.CreateDirectory(libraryPath);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error creating default library directory: {ex.Message}");
+                            // Use temp folder as fallback
+                            libraryPath = Path.GetTempPath();
+                            defaultTodoPath = Path.Combine(libraryPath, "default.todo");
+                        }
+                    }
+                    
+                    return new ToDoService(configService, defaultTodoPath);
+                });
+                
+                // ToDo view model must also be transient to match the service lifecycle
+                services.AddTransient<IToDoViewModel, ToDoViewModel>();
+                services.AddTransient<Views.MainWindow>();
                 services.AddTransient<Views.SettingsWindow>();
                 services.AddTransient<ViewModels.SettingsViewModel>();
 
@@ -65,7 +99,7 @@ namespace Universa.Desktop
                 var mainWindow = _serviceProvider.GetRequiredService<Views.MainWindow>();
 
                 // Check if library path is configured
-                if (ValidateLibraryPath(configService))
+                if (await ValidateLibraryPath(configService))
                 {
                     // Show the main window only after successful validation
                     mainWindow.Show();
@@ -84,7 +118,7 @@ namespace Universa.Desktop
             }
         }
 
-        private bool ValidateLibraryPath(IConfigurationService configService)
+        private async Task<bool> ValidateLibraryPath(IConfigurationService configService)
         {
             var libraryPath = configService.Provider.LibraryPath;
             Debug.WriteLine($"Validating library path: {libraryPath}");
@@ -127,7 +161,7 @@ namespace Universa.Desktop
             // Initialize trackers
             Debug.WriteLine("Initializing ProjectTracker and ToDoTracker");
             ProjectTracker.Instance.Initialize(libraryPath);
-            ToDoTracker.Instance.Initialize(libraryPath);
+            await ToDoTracker.Instance.InitializeAsync(libraryPath);
 
             // Save the configuration after successful validation
             configService.Save();
@@ -191,13 +225,56 @@ namespace Universa.Desktop
 
         protected override void OnExit(ExitEventArgs e)
         {
+            try
+            {
+                Debug.WriteLine("App.OnExit: Application is exiting");
+                
+                // We'll rely on the Window.Closing event to save chat history
+                // since MainWindow is often null at this point
+                
+                // Just in case, verify the history file exists
+                VerifyChatHistoryExists();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"App.OnExit: Error during exit: {ex.Message}");
+            }
+            
             base.OnExit(e);
             
             // Dispose of trackers
             (ProjectTracker.Instance as IDisposable)?.Dispose();
-            (ToDoTracker.Instance as IDisposable)?.Dispose();
+            // We're no longer using ToDoTracker - it causes duplicate ToDos
+            // (ToDoTracker.Instance as IDisposable)?.Dispose();
             
             (_serviceProvider as IDisposable)?.Dispose();
+        }
+        
+        /// <summary>
+        /// Verify that the chat history file exists and has content
+        /// </summary>
+        private void VerifyChatHistoryExists()
+        {
+            try
+            {
+                var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                var universaPath = Path.Combine(appDataPath, "Universa");
+                var historyFilePath = Path.Combine(universaPath, "chat_history.json");
+                
+                if (File.Exists(historyFilePath))
+                {
+                    var fileInfo = new FileInfo(historyFilePath);
+                    Debug.WriteLine($"App.VerifyChatHistoryExists: Chat history file exists, size: {fileInfo.Length} bytes, last write: {fileInfo.LastWriteTime}");
+                }
+                else
+                {
+                    Debug.WriteLine("App.VerifyChatHistoryExists: Chat history file does not exist");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"App.VerifyChatHistoryExists: Error checking chat history file: {ex.Message}");
+            }
         }
     }
 }

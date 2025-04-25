@@ -22,7 +22,10 @@ namespace Universa.Desktop.Services
         public OpenRouterService(string apiKey)
         {
             _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
-            _httpClient = new HttpClient();
+            _httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(240) // Set a longer timeout for AI model generation
+            };
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
             _httpClient.DefaultRequestHeaders.Add("HTTP-Referer", "https://universa.app");
             _httpClient.DefaultRequestHeaders.Add("X-Title", "Universa Desktop");
@@ -141,6 +144,18 @@ namespace Universa.Desktop.Services
             public int ContextLength { get; set; }
         }
 
+        private class ProviderOptions
+        {
+            [JsonPropertyName("allow_fallbacks")]
+            public bool AllowFallbacks { get; set; } = true;
+
+            [JsonPropertyName("order")]
+            public List<string> Order { get; set; }
+
+            [JsonPropertyName("sort")]
+            public string Sort { get; set; }
+        }
+
         private class OpenRouterChatRequest
         {
             [JsonPropertyName("model")]
@@ -151,6 +166,9 @@ namespace Universa.Desktop.Services
 
             [JsonPropertyName("temperature")]
             public double Temperature { get; set; }
+            
+            [JsonPropertyName("provider")]
+            public ProviderOptions Provider { get; set; }
         }
 
         public class ChatResponse
@@ -181,7 +199,11 @@ namespace Universa.Desktop.Services
                     model = actualModelId,
                     messages = messages ?? new List<ChatMessage>(),
                     max_tokens = 16384,
-                    temperature = 0.7
+                    temperature = 0.7,
+                    provider = new
+                    {
+                        allow_fallbacks = true // Enable automatic fallbacks between providers
+                    }
                 };
 
                 var jsonOptions = new JsonSerializerOptions

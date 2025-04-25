@@ -8,12 +8,14 @@ namespace Universa.Desktop.Models
     {
         private bool _isCompleted;
         private string _title;
+        private string _description;
         private DateTime? _startDate;
         private DateTime? _dueDate;
         private string[] _additionalInfo = new string[5];
         private bool _isExpanded;
         private string _sourceFile;
         private List<string> _tags = new List<string>();
+        private bool _isArchived;
 
         public bool IsCompleted
         {
@@ -106,6 +108,32 @@ namespace Universa.Desktop.Models
             }
         }
 
+        public string Description
+        {
+            get => _description;
+            set
+            {
+                if (_description != value)
+                {
+                    _description = value;
+                    OnPropertyChanged(nameof(Description));
+                }
+            }
+        }
+
+        public bool IsArchived
+        {
+            get => _isArchived;
+            set
+            {
+                if (_isArchived != value)
+                {
+                    _isArchived = value;
+                    OnPropertyChanged(nameof(IsArchived));
+                }
+            }
+        }
+
         public List<string> Tags
         {
             get => _tags;
@@ -126,4 +154,4 @@ namespace Universa.Desktop.Models
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
     }
-} 
+}

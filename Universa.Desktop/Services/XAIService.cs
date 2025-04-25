@@ -20,7 +20,8 @@ namespace Universa.Desktop.Services
         {
             _httpClient = new HttpClient
             {
-                BaseAddress = new Uri("https://api.x.ai/v1/")
+                BaseAddress = new Uri("https://api.x.ai/v1/"),
+                Timeout = TimeSpan.FromSeconds(60) // Set a reasonable timeout for AI model requests
             };
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         }

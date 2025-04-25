@@ -1,30 +1,39 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
+using System.Threading.Tasks;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Diagnostics;
+using Universa.Desktop.Models;
+using Universa.Desktop.Services;
+using Universa.Desktop.Core;
+using Universa.Desktop.Core.Configuration;
+using Universa.Desktop.Core.Logging;
+using Universa.Desktop.Library;
+using Universa.Desktop.Interfaces;
+using Universa.Desktop.Tabs;
 using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using Universa.Desktop.Controls;
 using Universa.Desktop.Services;
-using Universa.Desktop.Interfaces;
-using Universa.Desktop.Library;
-using Universa.Desktop.Windows;
-using Universa.Desktop.Core.Configuration;
-using Universa.Desktop.Core.Theme;
 using Universa.Desktop.Managers;
 using Universa.Desktop.Core.TTS;
 using ServiceLocator = Universa.Desktop.Services.ServiceLocator;
 using Universa.Desktop.ViewModels;
 using System.Windows.Input;
-using System.IO;
-using System.ComponentModel;
-using Universa.Desktop.Models;
-using System.Windows.Threading;
-using LibraryItemType = Universa.Desktop.Models.LibraryItemType;
-using System.Collections.Generic;
-using System.Linq;
 using System.Runtime.InteropServices;
-using System.Diagnostics;
+using Universa.Desktop.Windows;
+using Universa.Desktop.Core.Theme;
 
 namespace Universa.Desktop.Views
 {
@@ -105,11 +114,14 @@ namespace Universa.Desktop.Views
             // Add keyboard shortcut handling
             this.KeyDown += MainWindow_KeyDown;
 
+            // Add closing event to save chat history
+            this.Closing += MainWindow_Closing;
+
             // Ensure window style is set correctly immediately
             this.WindowStyle = WindowStyle.SingleBorderWindow;
 
             // Add Loaded event handler to ensure theme is applied after window is fully loaded
-            this.Loaded += (s, e) => {
+            this.Loaded += async (s, e) => {
                 // Apply theme after window is fully loaded
                 var theme = _configService.Provider.CurrentTheme ?? "Light";
                 ApplyTheme(theme);
@@ -130,6 +142,9 @@ namespace Universa.Desktop.Views
                         this.WindowState = currentState;
                     }), DispatcherPriority.Render);
                 }
+
+                // Initialize ToDoTracker asynchronously
+                await ToDoTracker.Instance.InitializeAsync(_configService.Provider.LibraryPath);
             };
 
             _configService = configService;
@@ -154,6 +169,9 @@ namespace Universa.Desktop.Views
                 // Initialize MediaControlBar
                 if (mediaControlBar != null)
                 {
+                    // Ensure the control bar is hidden by default
+                    mediaControlBar.Visibility = Visibility.Collapsed;
+                    
                     mediaControlBar.Initialize(base._mediaPlayerManager);
                     base._mediaPlayerManager.PlaybackStarted += OnPlaybackStarted;
                     base._mediaPlayerManager.PlaybackStopped += OnPlaybackStopped;
@@ -398,7 +416,20 @@ namespace Universa.Desktop.Views
 
         private async void CloseTab(TabItem tabItem)
         {
-            // Check if the tab has unsaved changes
+            // Cleanup for tab content
+            if (tabItem.Content is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+            
+            // Notify ChatSidebarViewModel about tab closing
+            var chatSidebar = FindName("chatSidebar") as Views.ChatSidebar;
+            if (chatSidebar?.DataContext is ViewModels.ChatSidebarViewModel chatVM)
+            {
+                chatVM.HandleEditorTabClosed(tabItem.Content);
+            }
+            
+            // If it's a file tab, check if it needs saving
             if (tabItem.Content is IFileTab fileTab && fileTab.IsModified)
             {
                 var result = MessageBox.Show(
@@ -592,9 +623,9 @@ namespace Universa.Desktop.Views
             if (e.RemovedItems.Count > 0 && e.RemovedItems[0] is TabItem removedTab)
             {
                 // Handle cleanup for the tab being removed from selection
-                if (removedTab.Content is MusicTab musicTab)
+                if (removedTab.Content is IFileTab fileTab)
                 {
-                    // Perform any cleanup needed for music tab
+                    fileTab.OnTabDeselected();
                 }
             }
 
@@ -604,13 +635,9 @@ namespace Universa.Desktop.Views
                 Title = $"Universa - {selectedTab.Header}";
 
                 // Handle specific tab types
-                if (selectedTab.Content is MusicTab musicTab)
+                if (selectedTab.Content is IFileTab fileTab)
                 {
-                    // Music tab specific initialization if needed
-                }
-                else if (selectedTab.Content is ProjectTab projectTab)
-                {
-                    // Project tab specific initialization if needed
+                    fileTab.OnTabSelected();
                 }
             }
         }
@@ -646,7 +673,7 @@ namespace Universa.Desktop.Views
                     editor = new MarkdownTab(filePath);
                     break;
                 case ".todo":
-                    editor = new ToDoTab(filePath);
+                    editor = new ToDoTab(filePath, ServiceLocator.Instance.GetService<IToDoViewModel>(), ServiceLocator.Instance.GetService<IServiceProvider>());
                     break;
                 case ".project":
                     editor = new ProjectTab(filePath);
@@ -1360,6 +1387,29 @@ namespace Universa.Desktop.Views
 
             MainTabControl.Items.Add(newTab);
             MainTabControl.SelectedItem = newTab;
+        }
+
+        private void MainWindow_Closing(object sender, CancelEventArgs e)
+        {
+            try
+            {
+                Debug.WriteLine("MainWindow_Closing: Saving chat history...");
+                
+                // Save chat history
+                if (ChatSidebar?.ViewModel != null)
+                {
+                    ChatSidebar.ViewModel.SaveState();
+                    Debug.WriteLine("MainWindow_Closing: Chat history saved successfully");
+                }
+                else
+                {
+                    Debug.WriteLine("MainWindow_Closing: ChatSidebar or ViewModel is null");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"MainWindow_Closing: Error saving chat history: {ex.Message}");
+            }
         }
     }
 

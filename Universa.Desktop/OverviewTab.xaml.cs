@@ -19,6 +19,8 @@ using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
+using Universa.Desktop.Core;
+using Universa.Desktop.Services;
 
 namespace Universa.Desktop
 {
@@ -33,6 +35,7 @@ namespace Universa.Desktop
         private string _searchText = string.Empty;
         private bool _showCompletedProjects;
         private bool _showCompletedTodos;
+        private string _title = "Overview";
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -40,6 +43,19 @@ namespace Universa.Desktop
         { 
             get => "Overview";
             set { } // No-op as this is a virtual file
+        }
+
+        public string Title
+        {
+            get => _title;
+            set
+            {
+                if (_title != value)
+                {
+                    _title = value;
+                    OnPropertyChanged(nameof(Title));
+                }
+            }
         }
 
         public bool IsModified 
@@ -216,15 +232,16 @@ namespace Universa.Desktop
                     Projects.Add(project);
                 }
 
-                // Load ToDos (both active and archived)
+                // Load ToDos from ToDoTracker
                 Todos.Clear();
                 var todos = ToDoTracker.Instance.GetAllTodos();
-                System.Diagnostics.Debug.WriteLine($"Loaded {todos.Count} todos from ToDoTracker");
                 foreach (var todo in todos)
                 {
                     System.Diagnostics.Debug.WriteLine($"Adding todo: Title='{todo.Title}', FilePath='{todo.FilePath}', IsCompleted={todo.IsCompleted}");
                     Todos.Add(todo);
                 }
+                
+                System.Diagnostics.Debug.WriteLine($"Loaded total of {Todos.Count} todos from ToDoTracker");
 
                 // Refresh views
                 _projectsView?.Refresh();
@@ -234,53 +251,6 @@ namespace Universa.Desktop
             {
                 System.Diagnostics.Debug.WriteLine($"Error in LoadData: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-            }
-        }
-
-        private void LoadArchivedTodos()
-        {
-            try
-            {
-                var libraryPath = Configuration.Instance.LibraryPath;
-                if (string.IsNullOrEmpty(libraryPath)) return;
-
-                // Find all .todo.archive files
-                var archiveFiles = Directory.GetFiles(libraryPath, "*.todo.archive", SearchOption.AllDirectories);
-                foreach (var archiveFile in archiveFiles)
-                {
-                    try
-                    {
-                        var content = File.ReadAllText(archiveFile);
-                        var options = new JsonSerializerOptions
-                        {
-                            PropertyNameCaseInsensitive = true
-                        };
-
-                        var archivedTodos = JsonSerializer.Deserialize<List<ToDo>>(content, options);
-                        if (archivedTodos != null)
-                        {
-                            foreach (var todo in archivedTodos)
-                            {
-                                // Set the file path to help track where this todo came from
-                                todo.FilePath = archiveFile;
-                                // Only add if not already present
-                                if (!Todos.Any(t => t.FilePath == todo.FilePath && t.Title == todo.Title))
-                                {
-                                    todo.IsCompleted = true; // Ensure it's marked as completed
-                                    Todos.Add(todo);
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"Error reading archive file {archiveFile}: {ex.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error loading archived todos: {ex.Message}");
             }
         }
 
@@ -438,7 +408,7 @@ namespace Universa.Desktop
                             File.WriteAllText(filePath, updatedContent);
 
                             // Notify ToDoTracker that the file has changed
-                            ToDoTracker.Instance.ScanTodoFiles(Configuration.Instance.LibraryPath);
+                            ToDoTracker.Instance.ScanTodoFilesAsync(Configuration.Instance.LibraryPath);
                         }
                     }
                     catch (Exception ex)
@@ -461,6 +431,22 @@ namespace Universa.Desktop
             // For overview tab, we'll return a simple representation
             // This is a placeholder implementation since overview content isn't typically exported
             return "Overview content is not available for export.";
+        }
+
+        public void OnTabSelected()
+        {
+            // Refresh overview data when tab is selected
+            RefreshOverviewData();
+        }
+
+        public void OnTabDeselected()
+        {
+            // No cleanup needed for overview tab
+        }
+
+        private void RefreshOverviewData()
+        {
+            LoadData();
         }
     }
 } 

@@ -12,6 +12,8 @@ namespace Universa.Desktop.Views
 {
     public partial class ChatSidebar : UserControl
     {
+        public ChatSidebarViewModel ViewModel => DataContext as ChatSidebarViewModel;
+        
         public ChatSidebar()
         {
             try
@@ -20,6 +22,12 @@ namespace Universa.Desktop.Views
                 
                 // Initialize DataContext after component initialization
                 this.DataContext = new ChatSidebarViewModel();
+                
+                // Set the ScrollViewer in the ViewModel
+                if (ViewModel != null)
+                {
+                    ViewModel.ChatScrollViewer = MessagesScrollViewer;
+                }
             }
             catch (Exception ex)
             {

@@ -18,7 +18,7 @@ namespace Universa.Desktop.Services
         private string _rules;
         private string _outline;
         private readonly FileReferenceService _fileReferenceService;
-        private static FictionWritingBeta _instance;
+        private static Dictionary<string, FictionWritingBeta> _instances = new Dictionary<string, FictionWritingBeta>();
         private static readonly object _lock = new object();
         private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
         private const int MESSAGE_HISTORY_LIMIT = 4;  // Keep last 2 exchanges
@@ -54,8 +54,9 @@ namespace Universa.Desktop.Services
         // Rough token estimation (conservative estimate)
         private int EstimateTokenCount(string text)
         {
-            if (string.IsNullOrEmpty(text)) return 0;
-            // Rough estimation: words * 1.3 (for punctuation and special tokens) + 4 (for safety)
+            if (string.IsNullOrEmpty(text))
+                return 0;
+            // Very rough estimate - using average of 1.3 tokens per word plus a small overhead
             return (int)(text.Split(new[] { ' ', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries).Length * 1.3) + 4;
         }
 
@@ -107,32 +108,26 @@ namespace Universa.Desktop.Services
                 throw new ArgumentNullException(nameof(libraryPath));
             }
 
+            // Default file path to ensure we don't have null keys
+            if (string.IsNullOrEmpty(filePath))
+            {
+                filePath = "default";
+            }
+
             await _semaphore.WaitAsync();
             try
             {
-                if (_instance == null)
-                {
-                    System.Diagnostics.Debug.WriteLine("Creating new FictionWritingBeta instance");
-                    _instance = new FictionWritingBeta(apiKey, model, provider, null, filePath, libraryPath);
-                    // Don't initialize with null content, let the caller handle it
-                }
-                else if (_instance.CurrentProvider != provider || _instance.CurrentModel != model)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Updating existing FictionWritingBeta instance. Provider change: {_instance.CurrentProvider != provider}, Model change: {_instance.CurrentModel != model}");
-                    // Create new instance if provider or model changed
-                    _instance = new FictionWritingBeta(apiKey, model, provider, null, filePath, libraryPath);
-                    // Don't initialize with null content, let the caller handle it
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("Using existing FictionWritingBeta instance");
-                    if (!string.IsNullOrEmpty(filePath))
-                    {
-                        _instance._fileReferenceService.SetCurrentFile(filePath);
-                    }
-                }
-
-                return _instance;
+                FictionWritingBeta instance;
+                
+                // IMPORTANT: Always force a new instance to ensure correct library path
+                // The static cache was causing issues when switching between files in different directories
+                System.Diagnostics.Debug.WriteLine($"Creating new FictionWritingBeta instance for file: {filePath} with library path: {libraryPath}");
+                instance = new FictionWritingBeta(apiKey, model, provider, null, filePath, libraryPath);
+                
+                // Update the cache
+                _instances[filePath] = instance;
+                
+                return instance;
             }
             catch (Exception ex)
             {
@@ -190,214 +185,13 @@ namespace Universa.Desktop.Services
             
             // Process frontmatter if present
             bool hasFrontmatter = false;
-            _frontmatter = null;
+            _frontmatter = new Dictionary<string, string>();
+            
+            System.Diagnostics.Debug.WriteLine($"Checking for frontmatter in content starting with: '{content.Substring(0, Math.Min(20, content.Length))}...'");
             
             if (content.StartsWith("---\n") || content.StartsWith("---\r\n"))
             {
-                // Extract frontmatter
-                _frontmatter = ExtractFrontmatter(content, out string contentWithoutFrontmatter);
-                if (_frontmatter != null)
-                {
-                    hasFrontmatter = true;
-                    content = contentWithoutFrontmatter;
-                    
-                    // Log frontmatter for debugging
-                    System.Diagnostics.Debug.WriteLine("Frontmatter found:");
-                    foreach (var kvp in _frontmatter)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"  {kvp.Key}: {kvp.Value}");
-                    }
-                }
-            }
-            
-            // Process references
-            var lines = content.Split(new[] { '\r', '\n' }, StringSplitOptions.None);
-            var styleLines = new List<string>();
-            var rulesLines = new List<string>();
-            var outlineLines = new List<string>();
-            var bodyLines = new List<string>();
-            
-            // Check for references in frontmatter first
-            if (hasFrontmatter && _frontmatter != null)
-            {
-                // Process style reference
-                if (_frontmatter.TryGetValue("ref style", out string styleRef) || 
-                    _frontmatter.TryGetValue("style", out styleRef))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Processing style reference from frontmatter: {styleRef}");
-                    await ProcessStyleReference(styleRef);
-                }
-                
-                // Process rules reference
-                if (_frontmatter.TryGetValue("ref rules", out string rulesRef) || 
-                    _frontmatter.TryGetValue("rules", out rulesRef))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Processing rules reference from frontmatter: {rulesRef}");
-                    await ProcessRulesReference(rulesRef);
-                }
-                
-                // Process outline reference
-                if (_frontmatter.TryGetValue("ref outline", out string outlineRef) || 
-                    _frontmatter.TryGetValue("outline", out outlineRef))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Processing outline reference from frontmatter: {outlineRef}");
-                    await ProcessOutlineReference(outlineRef);
-                }
-                
-                // Check for fiction tag or type: fiction
-                if (_frontmatter.ContainsKey("fiction") || 
-                    (_frontmatter.TryGetValue("type", out string docType) && docType.Equals("fiction", StringComparison.OrdinalIgnoreCase)))
-                {
-                    // Fiction tag is present in frontmatter
-                    System.Diagnostics.Debug.WriteLine("Fiction tag found in frontmatter");
-                }
-            }
-            
-            // Continue with existing reference processing for backward compatibility
-            foreach (var line in lines)
-            {
-                var trimmedLine = line.Trim();
-                
-                if (trimmedLine.StartsWith("#ref ") || trimmedLine.StartsWith("ref "))
-                {
-                    string refPart = trimmedLine.StartsWith("#ref ") ? trimmedLine.Substring(5) : trimmedLine.Substring(4);
-                    var parts = refPart.Split(new[] { ':' }, 2);
-                    if (parts.Length == 2)
-                    {
-                        var refType = parts[0].Trim();
-                        var refPath = parts[1].Trim();
-                        
-                        if (refType.Equals("style", StringComparison.OrdinalIgnoreCase))
-                        {
-                            await ProcessStyleReference(refPath);
-                        }
-                        else if (refType.Equals("rules", StringComparison.OrdinalIgnoreCase))
-                        {
-                            await ProcessRulesReference(refPath);
-                        }
-                        else if (refType.Equals("outline", StringComparison.OrdinalIgnoreCase))
-                        {
-                            await ProcessOutlineReference(refPath);
-                        }
-                    }
-                }
-            }
-            
-            // Continue with existing section processing
-            bool inStyleSection = false;
-            bool inRulesSection = false;
-            bool inOutlineSection = false;
-            bool inBodySection = false;
-
-            foreach (var line in lines)
-            {
-                var trimmedLine = line.Trim();
-                
-                // Skip reference lines as they've been processed
-                if (trimmedLine.StartsWith("#ref ") || trimmedLine.StartsWith("ref "))
-                    continue;
-                
-                // Check for section starts
-                if (trimmedLine.StartsWith("#style", StringComparison.OrdinalIgnoreCase) || 
-                    trimmedLine.Equals("style", StringComparison.OrdinalIgnoreCase))
-                {
-                    inStyleSection = true;
-                    inRulesSection = false;
-                    inOutlineSection = false;
-                    inBodySection = false;
-                    continue;
-                }
-                else if (trimmedLine.StartsWith("#rules", StringComparison.OrdinalIgnoreCase) || 
-                         trimmedLine.Equals("rules", StringComparison.OrdinalIgnoreCase))
-                {
-                    inStyleSection = false;
-                    inRulesSection = true;
-                    inOutlineSection = false;
-                    inBodySection = false;
-                    continue;
-                }
-                else if (trimmedLine.StartsWith("#outline", StringComparison.OrdinalIgnoreCase) || 
-                         trimmedLine.Equals("outline", StringComparison.OrdinalIgnoreCase))
-                {
-                    inStyleSection = false;
-                    inRulesSection = false;
-                    inOutlineSection = true;
-                    inBodySection = false;
-                    continue;
-                }
-                else if (trimmedLine.StartsWith("#body", StringComparison.OrdinalIgnoreCase) || 
-                         trimmedLine.Equals("body", StringComparison.OrdinalIgnoreCase))
-                {
-                    inStyleSection = false;
-                    inRulesSection = false;
-                    inOutlineSection = false;
-                    inBodySection = true;
-                    continue;
-                }
-                // Check for any other tag to end current section
-                else if (trimmedLine.StartsWith("#"))
-                {
-                    inStyleSection = false;
-                    inRulesSection = false;
-                    inOutlineSection = false;
-                    inBodySection = false;
-                }
-
-                // Add line to appropriate section
-                if (inStyleSection)
-                {
-                    styleLines.Add(line);
-                }
-                else if (inRulesSection)
-                {
-                    rulesLines.Add(line);
-                }
-                else if (inOutlineSection)
-                {
-                    outlineLines.Add(line);
-                }
-                else if (inBodySection)
-                {
-                    bodyLines.Add(line);
-                }
-            }
-            
-            // If we have inline content, use it
-            if (styleLines.Count > 0)
-            {
-                _styleGuide = string.Join("\n", styleLines);
-            }
-            
-            if (rulesLines.Count > 0)
-            {
-                _rules = string.Join("\n", rulesLines);
-            }
-            
-            if (outlineLines.Count > 0)
-            {
-                _outline = string.Join("\n", outlineLines);
-            }
-            
-            // Log token estimates for debugging
-            LogTokenEstimates();
-            
-            // Initialize system message
-            InitializeSystemMessage();
-        }
-        
-        /// <summary>
-        /// Extracts frontmatter from content
-        /// </summary>
-        private Dictionary<string, string> ExtractFrontmatter(string content, out string contentWithoutFrontmatter)
-        {
-            System.Diagnostics.Debug.WriteLine($"ExtractFrontmatter called with content length: {content?.Length ?? 0}");
-            
-            contentWithoutFrontmatter = content;
-            var frontmatter = new Dictionary<string, string>();
-            
-            // Check if the content starts with frontmatter delimiter
-            if (content.StartsWith("---\n") || content.StartsWith("---\r\n"))
-            {
+                System.Diagnostics.Debug.WriteLine("Found frontmatter delimiter at start of content");
                 // Find the closing delimiter
                 int endIndex = -1;
                 
@@ -416,6 +210,7 @@ namespace Universa.Desktop.Services
                         
                         // Parse frontmatter
                         string[] lines = frontmatterContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                        System.Diagnostics.Debug.WriteLine($"Frontmatter contains {lines.Length} lines");
                         
                         foreach (string line in lines)
                         {
@@ -432,13 +227,19 @@ namespace Universa.Desktop.Services
                                     key = key.Substring(1);
                                 }
                                 
-                                frontmatter[key] = value;
+                                _frontmatter[key] = value;
+                                System.Diagnostics.Debug.WriteLine($"Found frontmatter key-value: '{key}' = '{value}'");
                             }
                             else if (line.StartsWith("#"))
                             {
                                 // Handle tags (like #fiction) - remove hashtag
                                 string tag = line.Trim().Substring(1);
-                                frontmatter[tag] = "true";
+                                _frontmatter[tag] = "true";
+                                System.Diagnostics.Debug.WriteLine($"Found frontmatter tag: '{tag}'");
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Ignoring frontmatter line without key-value pair: '{line}'");
                             }
                         }
                         
@@ -450,14 +251,132 @@ namespace Universa.Desktop.Services
                             if (content[contentStartIndex] == '\n')
                                 contentStartIndex++;
                             
-                            // Return the content without frontmatter
-                            contentWithoutFrontmatter = content.Substring(contentStartIndex);
+                            // Update _fictionContent to only contain the content after frontmatter
+                            _fictionContent = content.Substring(contentStartIndex);
                         }
+                        
+                        // Set flag indicating we found and processed frontmatter
+                        hasFrontmatter = true;
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine("No closing frontmatter delimiter found");
                     }
                 }
             }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Content does not start with frontmatter delimiter");
+            }
             
-            return frontmatter;
+            // Log the extracted frontmatter
+            System.Diagnostics.Debug.WriteLine($"Extracted {_frontmatter.Count} frontmatter items");
+            foreach (var key in _frontmatter.Keys)
+            {
+                System.Diagnostics.Debug.WriteLine($"  '{key}' = '{_frontmatter[key]}'");
+            }
+            
+            // Explicitly check for style, rules, and outline keys
+            string[] checkKeys = new[] { "style", "rules", "outline", "ref style", "ref rules", "ref outline" };
+            foreach (var checkKey in checkKeys)
+            {
+                if (_frontmatter.ContainsKey(checkKey))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found important frontmatter key: '{checkKey}' = '{_frontmatter[checkKey]}'");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Important key NOT found in frontmatter: '{checkKey}'");
+                }
+            }
+            
+            // Check for references in frontmatter and process them
+            if (hasFrontmatter)
+            {
+                System.Diagnostics.Debug.WriteLine("Processing frontmatter references");
+                
+                // Define possible variations of keys to check
+                string[] styleKeyVariations = new[] { "style", "ref style", "style-file", "style-ref", "stylefile", "styleref", "style_file", "style_ref" };
+                string[] rulesKeyVariations = new[] { "rules", "ref rules", "rules-file", "rules-ref", "rulesfile", "rulesref", "rules_file", "rules_ref" };
+                string[] outlineKeyVariations = new[] { "outline", "ref outline", "outline-file", "outline-ref", "outlinefile", "outlineref", "outline_file", "outline_ref" };
+                
+                // Process style reference - try all variations
+                string styleRef = null;
+                foreach (var keyVariation in styleKeyVariations)
+                {
+                    if (_frontmatter.TryGetValue(keyVariation, out styleRef) && !string.IsNullOrEmpty(styleRef))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Found style reference using key '{keyVariation}': '{styleRef}'");
+                        break;
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(styleRef))
+                {
+                    await ProcessStyleReference(styleRef);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("No style reference found in frontmatter using any key variation");
+                }
+                
+                // Process rules reference - try all variations
+                string rulesRef = null;
+                foreach (var keyVariation in rulesKeyVariations)
+                {
+                    if (_frontmatter.TryGetValue(keyVariation, out rulesRef) && !string.IsNullOrEmpty(rulesRef))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Found rules reference using key '{keyVariation}': '{rulesRef}'");
+                        break;
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(rulesRef))
+                {
+                    await ProcessRulesReference(rulesRef);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("No rules reference found in frontmatter using any key variation");
+                }
+                
+                // Process outline reference - try all variations
+                string outlineRef = null;
+                foreach (var keyVariation in outlineKeyVariations)
+                {
+                    if (_frontmatter.TryGetValue(keyVariation, out outlineRef) && !string.IsNullOrEmpty(outlineRef))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Found outline reference using key '{keyVariation}': '{outlineRef}'");
+                        break;
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(outlineRef))
+                {
+                    await ProcessOutlineReference(outlineRef);
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("No outline reference found in frontmatter using any key variation");
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("No frontmatter found or no references to process");
+            }
+            
+            // Final summary of what was loaded
+            System.Diagnostics.Debug.WriteLine("=== FICTION CONTENT SUMMARY ===");
+            System.Diagnostics.Debug.WriteLine($"Style guide: {(_styleGuide != null ? $"{_styleGuide.Length} chars" : "NULL")}");
+            System.Diagnostics.Debug.WriteLine($"Rules: {(_rules != null ? $"{_rules.Length} chars" : "NULL")}");
+            System.Diagnostics.Debug.WriteLine($"Outline: {(_outline != null ? $"{_outline.Length} chars" : "NULL")}");
+            System.Diagnostics.Debug.WriteLine($"Fiction content: {(_fictionContent != null ? $"{_fictionContent.Length} chars" : "NULL")}");
+            
+            // Log token estimates for debugging
+            LogTokenEstimates();
+            
+            // Initialize system message
+            InitializeSystemMessage();
         }
         
         /// <summary>
@@ -467,7 +386,10 @@ namespace Universa.Desktop.Services
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"Loading style reference from: {refPath}");
+                System.Diagnostics.Debug.WriteLine($"Loading style reference from: '{refPath}'");
+                System.Diagnostics.Debug.WriteLine($"  Current file path: '{_currentFilePath}'");
+                System.Diagnostics.Debug.WriteLine($"  Library path: '{_fileReferenceService?.GetType().GetField("_libraryPath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_fileReferenceService)}'");
+                
                 string styleContent = await _fileReferenceService.GetFileContent(refPath, _currentFilePath);
                 if (!string.IsNullOrEmpty(styleContent))
                 {
@@ -476,7 +398,18 @@ namespace Universa.Desktop.Services
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"Style reference file was empty or could not be loaded: {refPath}");
+                    System.Diagnostics.Debug.WriteLine($"Style reference file was empty or could not be loaded: '{refPath}'");
+                    
+                    // Try to check if the file exists directly
+                    string directPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(_currentFilePath), refPath);
+                    if (System.IO.File.Exists(directPath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"File exists at direct path: '{directPath}', but content couldn't be loaded");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"File does NOT exist at direct path: '{directPath}'");
+                    }
                 }
             }
             catch (Exception ex)
@@ -493,7 +426,10 @@ namespace Universa.Desktop.Services
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"Loading rules reference from: {refPath}");
+                System.Diagnostics.Debug.WriteLine($"Loading rules reference from: '{refPath}'");
+                System.Diagnostics.Debug.WriteLine($"  Current file path: '{_currentFilePath}'");
+                System.Diagnostics.Debug.WriteLine($"  Library path: '{_fileReferenceService?.GetType().GetField("_libraryPath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_fileReferenceService)}'");
+                
                 string rulesContent = await _fileReferenceService.GetFileContent(refPath, _currentFilePath);
                 if (!string.IsNullOrEmpty(rulesContent))
                 {
@@ -502,7 +438,18 @@ namespace Universa.Desktop.Services
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"Rules reference file was empty or could not be loaded: {refPath}");
+                    System.Diagnostics.Debug.WriteLine($"Rules reference file was empty or could not be loaded: '{refPath}'");
+                    
+                    // Try to check if the file exists directly
+                    string directPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(_currentFilePath), refPath);
+                    if (System.IO.File.Exists(directPath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"File exists at direct path: '{directPath}', but content couldn't be loaded");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"File does NOT exist at direct path: '{directPath}'");
+                    }
                 }
             }
             catch (Exception ex)
@@ -519,7 +466,10 @@ namespace Universa.Desktop.Services
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine($"Loading outline reference from: {refPath}");
+                System.Diagnostics.Debug.WriteLine($"Loading outline reference from: '{refPath}'");
+                System.Diagnostics.Debug.WriteLine($"  Current file path: '{_currentFilePath}'");
+                System.Diagnostics.Debug.WriteLine($"  Library path: '{_fileReferenceService?.GetType().GetField("_libraryPath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_fileReferenceService)}'");
+                
                 string outlineContent = await _fileReferenceService.GetFileContent(refPath, _currentFilePath);
                 if (!string.IsNullOrEmpty(outlineContent))
                 {
@@ -528,7 +478,18 @@ namespace Universa.Desktop.Services
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"Outline reference file was empty or could not be loaded: {refPath}");
+                    System.Diagnostics.Debug.WriteLine($"Outline reference file was empty or could not be loaded: '{refPath}'");
+                    
+                    // Try to check if the file exists directly
+                    string directPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(_currentFilePath), refPath);
+                    if (System.IO.File.Exists(directPath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"File exists at direct path: '{directPath}', but content couldn't be loaded");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"File does NOT exist at direct path: '{directPath}'");
+                    }
                 }
             }
             catch (Exception ex)
@@ -842,21 +803,38 @@ CRITICAL INSTRUCTIONS:
                 return string.Empty;
             }
             
+            // Skip the #file: line if present - this is our own metadata, not part of the document
+            int startLineIndex = 0;
+            if (lines.Length > 0 && lines[0].TrimStart().StartsWith("#file:"))
+            {
+                System.Diagnostics.Debug.WriteLine("Skipping #file: metadata line at beginning of document");
+                startLineIndex = 1;
+            }
+            
             // Find the current line index based on cursor position
-            int currentLineIndex = 0;
+            int currentLineIndex = startLineIndex; // Default to first content line
             int currentPosition = 0;
             bool foundLine = false;
-            for (int i = 0; i < lines.Length; i++)
+            
+            // Skip the first line positions if we're skipping the #file: line
+            if (startLineIndex > 0 && lines.Length > 0)
+            {
+                currentPosition += lines[0].Length + 1; // Skip first line length + newline
+            }
+            
+            for (int i = startLineIndex; i < lines.Length; i++)
             {
                 if (currentPosition <= _currentCursorPosition && 
                     _currentCursorPosition <= currentPosition + lines[i].Length + 1)
                 {
                     currentLineIndex = i;
                     foundLine = true;
+                    System.Diagnostics.Debug.WriteLine($"Found cursor at line {i} (position {_currentCursorPosition} in range {currentPosition}-{currentPosition + lines[i].Length + 1})");
                     break;
                 }
                 currentPosition += lines[i].Length + 1;
             }
+            
             // If we haven't found the line and we're at the end of the file
             if (!foundLine)
             {
@@ -865,33 +843,33 @@ CRITICAL INSTRUCTIONS:
                 {
                     System.Diagnostics.Debug.WriteLine($"Cursor position {_currentCursorPosition} is beyond end of file, using last line");
                     currentLineIndex = lines.Length - 1;
+                    
+                    // Important: when we're at end of file, we should mark this as "found line"
+                    // so the chapter detection works correctly
+                    foundLine = true;
                 }
-                // If cursor is at the start or invalid, use first line
+                // If cursor is at the start or invalid, use first content line (after #file:)
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"Cursor position {_currentCursorPosition} is invalid, using first line");
-                    currentLineIndex = 0;
+                    System.Diagnostics.Debug.WriteLine($"Cursor position {_currentCursorPosition} is invalid, using first content line");
+                    currentLineIndex = startLineIndex;
                 }
             }
 
             // Ensure currentLineIndex is within bounds
-            currentLineIndex = Math.Max(0, Math.Min(currentLineIndex, lines.Length - 1));
+            currentLineIndex = Math.Max(startLineIndex, Math.Min(currentLineIndex, lines.Length - 1));
             System.Diagnostics.Debug.WriteLine($"Current line index: {currentLineIndex}, line content: '{lines[currentLineIndex]}'");
 
             // Find all chapter boundaries in the document
             var chapterBoundaries = new List<int>();
-            chapterBoundaries.Add(0); // Always add start of file as first boundary
-            for (int i = 0; i < lines.Length; i++)
+            chapterBoundaries.Add(startLineIndex); // Start from first content line, not the #file: line
+            
+            for (int i = startLineIndex; i < lines.Length; i++)
             {
                 var line = lines[i].Trim();
                 
-                // Check for Markdown headings (H1-H6)
-                if (line.StartsWith("# ", StringComparison.OrdinalIgnoreCase) || 
-                    line.StartsWith("## ", StringComparison.OrdinalIgnoreCase) ||
-                    line.StartsWith("### ", StringComparison.OrdinalIgnoreCase) ||
-                    line.StartsWith("#### ", StringComparison.OrdinalIgnoreCase) ||
-                    line.StartsWith("##### ", StringComparison.OrdinalIgnoreCase) ||
-                    line.StartsWith("###### ", StringComparison.OrdinalIgnoreCase) ||
+                // Check for chapter headings - ONLY consider ## as chapters, # as title, and ### as subsections
+                if (line.StartsWith("## ", StringComparison.OrdinalIgnoreCase) || 
                     // Check for "Chapter" variations (case-insensitive)
                     line.StartsWith("CHAPTER ", StringComparison.OrdinalIgnoreCase) ||
                     line.Equals("CHAPTER", StringComparison.OrdinalIgnoreCase) ||
@@ -901,8 +879,20 @@ CRITICAL INSTRUCTIONS:
                     (line.StartsWith("Section ", StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(line, @"^Section\s+\d+", RegexOptions.IgnoreCase)) ||
                     line.Equals("Section", StringComparison.OrdinalIgnoreCase))
                 {
-                    System.Diagnostics.Debug.WriteLine($"Found chapter boundary at line {i}: '{line}' (Markdown heading or explicit chapter marker)");
+                    System.Diagnostics.Debug.WriteLine($"Found chapter boundary at line {i}: '{line}' (Level 2 heading or explicit chapter marker)");
                     chapterBoundaries.Add(i);
+                }
+                // Explicitly log when we're skipping level 1 or 3+ headers
+                else if (line.StartsWith("# ", StringComparison.OrdinalIgnoreCase))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Skipping title at line {i}: '{line}' (Level 1 heading is treated as title, not chapter)");
+                }
+                else if (line.StartsWith("### ", StringComparison.OrdinalIgnoreCase) || 
+                         line.StartsWith("#### ", StringComparison.OrdinalIgnoreCase) || 
+                         line.StartsWith("##### ", StringComparison.OrdinalIgnoreCase) || 
+                         line.StartsWith("###### ", StringComparison.OrdinalIgnoreCase))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Skipping subsection at line {i}: '{line}' (Level 3+ heading is treated as subsection, not chapter)");
                 }
                 // Check for numbered headings (e.g., "1.", "1)") ONLY if they appear to be chapter headings
                 // This avoids treating numbered list items as chapter boundaries
@@ -917,7 +907,7 @@ CRITICAL INSTRUCTIONS:
                     bool isPartOfNumberedList = false;
                     
                     // Check if previous line is also a numbered item
-                    if (i > 0)
+                    if (i > startLineIndex)
                     {
                         var prevLine = lines[i - 1].Trim();
                         if (Regex.IsMatch(prevLine, @"^\d+[\.\)]"))
@@ -958,20 +948,38 @@ CRITICAL INSTRUCTIONS:
             {
                 chapterBoundaries.Add(lines.Length); // Add end of file as final boundary if not already added
             }
+            
+            // Ensure boundaries are properly sorted (just in case)
+            chapterBoundaries.Sort();
+            
+            // Remove any duplicates that might have been added
+            chapterBoundaries = chapterBoundaries.Distinct().ToList();
 
             // Find current chapter boundaries
             int currentChapterIndex = 0; // Default to first chapter
+            
+            // Find the chapter that contains our current line
             for (int i = 0; i < chapterBoundaries.Count - 1; i++)
             {
-                if (currentLineIndex >= chapterBoundaries[i] && currentLineIndex < chapterBoundaries[i + 1])
+                // The cursor is in this chapter if:
+                // - It's anywhere between the start and end boundary lines
+                // - Or it's exactly at a chapter boundary (which we treat as being in that chapter)
+                if (currentLineIndex >= chapterBoundaries[i] && currentLineIndex <= chapterBoundaries[i + 1])
                 {
                     currentChapterIndex = i;
+                    
+                    // Special debug for boundary cases
+                    if (currentLineIndex == chapterBoundaries[i] || currentLineIndex == chapterBoundaries[i + 1])
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Cursor is exactly at a chapter boundary for chapter {i}");
+                    }
+                    
                     break;
                 }
             }
             
             System.Diagnostics.Debug.WriteLine($"Found {chapterBoundaries.Count} chapter boundaries");
-            System.Diagnostics.Debug.WriteLine($"Current chapter index: {currentChapterIndex} (boundaries: {chapterBoundaries[currentChapterIndex]} to {chapterBoundaries[currentChapterIndex + 1]})");
+            System.Diagnostics.Debug.WriteLine($"Current chapter index: {currentChapterIndex} (boundaries: {chapterBoundaries[currentChapterIndex]} to {chapterBoundaries[currentChapterIndex + 1]}, cursor at line: {currentLineIndex})");
 
             // Build the content with context
             var result = new StringBuilder();
@@ -1006,13 +1014,13 @@ CRITICAL INSTRUCTIONS:
 
             // Add current chapter content with cursor position
             var chapterStart = chapterBoundaries[currentChapterIndex];
-            var chapterEnd = chapterBoundaries[Math.Min(currentChapterIndex + 1, chapterBoundaries.Count - 1)];
+            var chapterEnd = Math.Min(chapterBoundaries[currentChapterIndex + 1], lines.Length - 1);
             System.Diagnostics.Debug.WriteLine($"Current chapter spans lines {chapterStart}-{chapterEnd}");
             
             // Get the complete current chapter content
             var currentChapterContent = string.Join("\n",
                 lines.Skip(chapterStart)
-                     .Take(chapterEnd - chapterStart));
+                     .Take(chapterEnd - chapterStart + 1));
             
             if (!string.IsNullOrEmpty(currentChapterContent))
             {
@@ -1093,11 +1101,168 @@ CRITICAL INSTRUCTIONS:
             System.Diagnostics.Debug.WriteLine($"Cursor position updated to: {position}");
         }
 
+        /// <summary>
+        /// Sets the current file path for reference resolution
+        /// </summary>
+        /// <param name="filePath">The absolute path to the current file</param>
+        public void SetCurrentFilePath(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+            {
+                System.Diagnostics.Debug.WriteLine("Warning: Attempted to set empty file path");
+                return;
+            }
+            
+            System.Diagnostics.Debug.WriteLine($"Setting current file path: '{filePath}'");
+            _currentFilePath = filePath;
+            
+            // Also update the file reference service
+            if (_fileReferenceService != null)
+            {
+                _fileReferenceService.SetCurrentFile(filePath);
+                System.Diagnostics.Debug.WriteLine("Updated FileReferenceService with the new file path");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Warning: FileReferenceService is null, cannot update");
+            }
+        }
+
+        /// <summary>
+        /// Directly sets the rules content without relying on frontmatter
+        /// </summary>
+        /// <param name="rulesContent">The rules content to use</param>
+        public void SetRulesContent(string rulesContent)
+        {
+            if (!string.IsNullOrEmpty(rulesContent))
+            {
+                _rules = rulesContent;
+                System.Diagnostics.Debug.WriteLine($"Rules content directly set: {rulesContent.Length} characters");
+            }
+        }
+
+        /// <summary>
+        /// Directly sets the style guide content without relying on frontmatter
+        /// </summary>
+        /// <param name="styleContent">The style guide content to use</param>
+        public void SetStyleGuideContent(string styleContent)
+        {
+            if (!string.IsNullOrEmpty(styleContent))
+            {
+                _styleGuide = styleContent;
+                System.Diagnostics.Debug.WriteLine($"Style guide content directly set: {styleContent.Length} characters");
+            }
+        }
+
+        /// <summary>
+        /// Directly sets the outline content without relying on frontmatter
+        /// </summary>
+        /// <param name="outlineContent">The outline content to use</param>
+        public void SetOutlineContent(string outlineContent)
+        {
+            if (!string.IsNullOrEmpty(outlineContent))
+            {
+                _outline = outlineContent;
+                System.Diagnostics.Debug.WriteLine($"Outline content directly set: {outlineContent.Length} characters");
+            }
+        }
+
+        /// <summary>
+        /// Directly loads reference files from paths without relying on frontmatter
+        /// </summary>
+        /// <param name="rulesPath">Path to rules file</param>
+        /// <param name="stylePath">Path to style guide file</param>
+        /// <param name="outlinePath">Path to outline file</param>
+        /// <returns>Async task</returns>
+        public async Task LoadReferencesDirectly(string rulesPath = null, string stylePath = null, string outlinePath = null)
+        {
+            System.Diagnostics.Debug.WriteLine("Loading references directly from paths");
+            
+            try
+            {
+                if (!string.IsNullOrEmpty(rulesPath))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Loading rules directly from: {rulesPath}");
+                    string rulesContent = await _fileReferenceService.GetFileContent(rulesPath, _currentFilePath);
+                    if (!string.IsNullOrEmpty(rulesContent))
+                    {
+                        SetRulesContent(rulesContent);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Failed to load rules from path: {rulesPath}");
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(stylePath))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Loading style guide directly from: {stylePath}");
+                    string styleContent = await _fileReferenceService.GetFileContent(stylePath, _currentFilePath);
+                    if (!string.IsNullOrEmpty(styleContent))
+                    {
+                        SetStyleGuideContent(styleContent);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Failed to load style guide from path: {stylePath}");
+                    }
+                }
+                
+                if (!string.IsNullOrEmpty(outlinePath))
+                {
+                    System.Diagnostics.Debug.WriteLine($"Loading outline directly from: {outlinePath}");
+                    string outlineContent = await _fileReferenceService.GetFileContent(outlinePath, _currentFilePath);
+                    if (!string.IsNullOrEmpty(outlineContent))
+                    {
+                        SetOutlineContent(outlineContent);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Failed to load outline from path: {outlinePath}");
+                    }
+                }
+                
+                // Initialize system message to include the new content
+                InitializeSystemMessage();
+                
+                System.Diagnostics.Debug.WriteLine("=== UPDATED FICTION CONTENT SUMMARY ===");
+                System.Diagnostics.Debug.WriteLine($"Style guide: {(_styleGuide != null ? $"{_styleGuide.Length} chars" : "NULL")}");
+                System.Diagnostics.Debug.WriteLine($"Rules: {(_rules != null ? $"{_rules.Length} chars" : "NULL")}");
+                System.Diagnostics.Debug.WriteLine($"Outline: {(_outline != null ? $"{_outline.Length} chars" : "NULL")}");
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading references directly: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// Clears a specific instance from the cache
+        /// </summary>
+        /// <param name="filePath">The file path of the instance to clear</param>
+        public static void ClearInstance(string filePath)
+        {
+            lock (_lock)
+            {
+                if (!string.IsNullOrEmpty(filePath) && _instances.ContainsKey(filePath))
+                {
+                    _instances.Remove(filePath);
+                    System.Diagnostics.Debug.WriteLine($"Cleared FictionWritingBeta instance for file: {filePath}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Clears all instances from the cache
+        /// </summary>
         public static void ClearInstance()
         {
             lock (_lock)
             {
-                _instance = null;
+                // Clear all instances
+                _instances.Clear();
+                System.Diagnostics.Debug.WriteLine("All FictionWritingBeta instances cleared");
             }
         }
 

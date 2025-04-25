@@ -4,7 +4,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using Universa.Desktop.Models;
 using System.Text;
-using Universa.Desktop.Library;
 
 namespace Universa.Desktop.Services
 {

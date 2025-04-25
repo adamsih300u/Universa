@@ -12,10 +12,11 @@
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
-        <!-- Header with title and hide future items checkbox -->
+        <!-- Header with title and filter options -->
         <Grid Grid.Row="0" Margin="10">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBlock x:Name="TitleTextBlock" 
@@ -24,6 +25,11 @@
                       FontWeight="SemiBold"
                       Foreground="{DynamicResource TextBrush}"/>
             <CheckBox Grid.Column="1"
+                     Content="Show Completed"
+                     IsChecked="{Binding ShowCompletedItems, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                     VerticalAlignment="Center"
+                     Margin="0,0,15,0"/>
+            <CheckBox Grid.Column="2"
                      Content="Hide Future Items"
                      IsChecked="{Binding HideFutureItems, RelativeSource={RelativeSource AncestorType=UserControl}}"
                      VerticalAlignment="Center"
@@ -113,4 +119,4 @@
             </ItemsControl>
         </ScrollViewer>
     </Grid>
-</UserControl> 
+</UserControl>

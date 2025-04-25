@@ -1333,17 +1333,24 @@ namespace Universa.Desktop.Managers
             // Sync the initial state
             if (_controlsManager != null)
             {
-                _controlsManager.UpdatePlayPauseButton(IsPlaying);
-                _controlsManager.UpdateVolumeControls(_currentVolume, _isMuted);
-                _controlsManager.UpdateShuffleButton(_isShuffleEnabled);
+                // Hide controls by default
+                _controlsManager.HideMediaControls();
                 
-                if (HasPlaylist && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                // Only update UI state if we have media playing or paused
+                if (IsPlaying || IsPaused)
                 {
-                    var currentTrack = _playlist[_currentTrackIndex];
-                    _controlsManager.UpdateNowPlaying(currentTrack.Title, currentTrack.Artist, currentTrack.Series, currentTrack.Season);
+                    _controlsManager.UpdatePlayPauseButton(IsPlaying);
+                    _controlsManager.UpdateVolumeControls(_currentVolume, _isMuted);
+                    _controlsManager.UpdateShuffleButton(_isShuffleEnabled);
+                    
+                    if (HasPlaylist && _currentTrackIndex >= 0 && _currentTrackIndex < _playlist.Count)
+                    {
+                        var currentTrack = _playlist[_currentTrackIndex];
+                        _controlsManager.UpdateNowPlaying(currentTrack.Title, currentTrack.Artist, currentTrack.Series, currentTrack.Season);
+                    }
+                    
+                    _controlsManager.ShowMediaControls();
                 }
-                
-                _controlsManager.ShowMediaControls();
             }
         }
 
@@ -1362,84 +1369,30 @@ namespace Universa.Desktop.Managers
 
         public void ShowMediaControls()
         {
-            Debug.WriteLine("ShowMediaControls called");
-            
-            // First try to show controls through the controls manager
+            Debug.WriteLine("\n========== SHOW MEDIA CONTROLS ==========");
+            Debug.WriteLine("ShowMediaControls: Running on UI thread");
+
+            // Only show controls if we have media playing or paused
+            if (!IsPlaying && !IsPaused)
+            {
+                Debug.WriteLine("ShowMediaControls: No media playing or paused, hiding controls");
+                HideMediaControls();
+                return;
+            }
+
+            // Use the controls manager to show controls
             if (_controlsManager != null)
             {
-                Debug.WriteLine("ShowMediaControls: Using _controlsManager to show controls");
+                Debug.WriteLine("ShowMediaControls: Using controls manager to show controls");
                 _controlsManager.ShowMediaControls();
-            }
-            
-            // Also try to show controls directly through the window
-            if (_window != null)
-            {
-                Debug.WriteLine("ShowMediaControls: Showing controls through _window");
-                var mediaControlsGrid = (_window as IMediaWindow).MediaControlsGrid;
-                if (mediaControlsGrid != null)
-                {
-                    Debug.WriteLine("ShowMediaControls: Setting MediaControlsGrid visibility to Visible");
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        mediaControlsGrid.Visibility = Visibility.Visible;
-                    });
-                }
-                else
-                {
-                    Debug.WriteLine("ShowMediaControls: MediaControlsGrid is null");
-                }
-                
-                var mediaControlBar = (_window as IMediaWindow).MediaControlBar;
-                if (mediaControlBar != null)
-                {
-                    Debug.WriteLine("ShowMediaControls: Setting MediaControlBar visibility to Visible");
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        mediaControlBar.Visibility = Visibility.Visible;
-                    });
-                }
-                else
-                {
-                    Debug.WriteLine("ShowMediaControls: MediaControlBar is null");
-                }
             }
             else
             {
-                Debug.WriteLine("ShowMediaControls: _window is null, trying to find main window");
-                
-                // Try to get the main window as a last resort
-                var mainWindow = Application.Current.MainWindow as IMediaWindow;
-                if (mainWindow != null)
-                {
-                    Debug.WriteLine("ShowMediaControls: Found main window");
-                    
-                    var mediaControlsGrid = mainWindow.MediaControlsGrid;
-                    if (mediaControlsGrid != null)
-                    {
-                        Debug.WriteLine("ShowMediaControls: Setting main window's MediaControlsGrid visibility to Visible");
-                        Application.Current.Dispatcher.Invoke(() =>
-                        {
-                            mediaControlsGrid.Visibility = Visibility.Visible;
-                        });
-                    }
-                    
-                    var mediaControlBar = mainWindow.MediaControlBar;
-                    if (mediaControlBar != null)
-                    {
-                        Debug.WriteLine("ShowMediaControls: Setting main window's MediaControlBar visibility to Visible");
-                        Application.Current.Dispatcher.Invoke(() =>
-                        {
-                            mediaControlBar.Visibility = Visibility.Visible;
-                        });
-                    }
-                }
-                else
-                {
-                    Debug.WriteLine("ShowMediaControls: Could not find main window");
-                }
+                Debug.WriteLine("ShowMediaControls: No controls manager available");
             }
-            
-            Debug.WriteLine("ShowMediaControls: Controls visibility updated");
+
+            Debug.WriteLine("ShowMediaControls: Completed setting visibility");
+            Debug.WriteLine("========== SHOW MEDIA CONTROLS END ==========\n");
         }
 
         public void HideMediaControls()

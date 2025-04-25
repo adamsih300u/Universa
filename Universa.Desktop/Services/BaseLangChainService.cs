@@ -460,6 +460,19 @@ Please provide specific and helpful suggestions.";
             TrimMemory();
         }
 
+        public void AddSystemMessage(string content)
+        {
+            // Remove any existing system message
+            var existingSystemMessage = _memory.FirstOrDefault(m => m.Role.Equals("system", StringComparison.OrdinalIgnoreCase));
+            if (existingSystemMessage != null)
+            {
+                _memory.Remove(existingSystemMessage);
+            }
+            
+            // Add the new system message at the beginning
+            _memory.Insert(0, new MemoryMessage("system", content, _model));
+        }
+
         protected void TrimMemory()
         {
             // Keep track of how many non-system messages we have

@@ -618,6 +618,14 @@ namespace Universa.Desktop.Managers
             Debug.WriteLine("\n========== SHOW MEDIA CONTROLS ==========");
             try
             {
+                // Check if media is actually playing or paused
+                if (_mediaPlayerManager == null || (!_mediaPlayerManager.IsPlaying && !_mediaPlayerManager.IsPaused))
+                {
+                    Debug.WriteLine("ShowMediaControls: No media playing or paused, hiding controls");
+                    HideMediaControls();
+                    return;
+                }
+
                 // Make sure we're on the UI thread for all UI operations
                 Application.Current.Dispatcher.Invoke(() =>
                 {
@@ -728,10 +736,8 @@ namespace Universa.Desktop.Managers
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error in ShowMediaControls: {ex.Message}");
-                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                Debug.WriteLine($"ShowMediaControls: Error showing media controls: {ex.Message}");
             }
-            Debug.WriteLine("========== SHOW MEDIA CONTROLS END ==========\n");
         }
 
         public void HideMediaControls()

@@ -21,6 +21,7 @@ using Universa.Desktop.Windows;
 using System.Windows.Threading;
 using Newtonsoft.Json;
 using System.Text;
+using System.Text.Json;
 
 namespace Universa.Desktop.Library
 {
@@ -182,11 +183,11 @@ namespace Universa.Desktop.Library
             }
         }
 
-        private void OnTodosChanged()
+        private async void OnTodosChanged()
         {
-            if (!_isRefreshing)
+            if (!_isHandlingConfigChange)
             {
-                Application.Current.Dispatcher.BeginInvoke(async () => await RefreshItems(true));
+                await ToDoTracker.Instance.ScanTodoFilesAsync(_configService.Provider.LibraryPath);
             }
         }
 
@@ -632,25 +633,47 @@ namespace Universa.Desktop.Library
 
         private async void NewToDo_Click(object sender, RoutedEventArgs e)
         {
-            var selectedItem = LibraryTreeView.SelectedItem as LibraryTreeItem;
-            var libraryPath = _configService?.Provider?.LibraryPath;
-            var parentPath = selectedItem?.Type == Models.LibraryItemType.Directory ? selectedItem.Path : libraryPath;
+            var menuItem = sender as MenuItem;
+            var treeViewItem = menuItem?.Parent as ContextMenu;
+            var parentItem = treeViewItem?.PlacementTarget as TreeViewItem;
+            var parentPath = parentItem?.DataContext as LibraryTreeItem;
 
-            if (string.IsNullOrEmpty(parentPath))
+            if (parentPath != null)
             {
-                MessageBox.Show("Please configure a library path in settings first.", "Library Path Not Set", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-
-            var dialog = new InputDialog("New ToDo", "Enter ToDo name:");
-            if (dialog.ShowDialog() == true)
-            {
-                var fileName = dialog.InputText;
-                if (!fileName.EndsWith(".todo"))
+                var dialog = new Microsoft.Win32.SaveFileDialog
                 {
-                    fileName += ".todo";
+                    Title = "Save ToDo List As",
+                    Filter = "ToDo files (*.todo)|*.todo",
+                    DefaultExt = ".todo",
+                    FileName = "NewToDo.todo",
+                    InitialDirectory = parentPath.Path
+                };
+
+                if (dialog.ShowDialog() == true)
+                {
+                    var todo = new ToDo
+                    {
+                        Title = "New ToDo",
+                        Description = "Enter your task description here",
+                        StartDate = DateTime.Now,
+                        IsCompleted = false,
+                        FilePath = dialog.FileName
+                    };
+
+                    var options = new System.Text.Json.JsonSerializerOptions
+                    {
+                        WriteIndented = true
+                    };
+                    var json = System.Text.Json.JsonSerializer.Serialize(new List<ToDo> { todo }, options);
+                    File.WriteAllText(dialog.FileName, json);
+
+                    // Refresh todo tracker
+                    await ToDoTracker.Instance.ScanTodoFilesAsync(_configService.Provider.LibraryPath);
+
+                    // Open the new todo file
+                    var mainWindow = Application.Current.MainWindow as Views.MainWindow;
+                    mainWindow?.OpenFileInEditor(dialog.FileName);
                 }
-                await AddNewFile(parentPath, fileName, "[]");
             }
         }
 
@@ -830,10 +853,24 @@ namespace Universa.Desktop.Library
 
         private async void Delete_Click(object sender, RoutedEventArgs e)
         {
-            var selectedItem = LibraryTreeView.SelectedItem as LibraryTreeItem;
-            if (selectedItem == null) return;
+            var menuItem = sender as MenuItem;
+            var treeViewItem = menuItem?.Parent as ContextMenu;
+            var item = treeViewItem?.PlacementTarget as TreeViewItem;
+            var libraryItem = item?.DataContext as LibraryTreeItem;
 
-            await DeleteItem(selectedItem);
+            if (libraryItem != null)
+            {
+                var result = MessageBox.Show(
+                    $"Are you sure you want to delete '{libraryItem.Name}'?",
+                    "Confirm Delete",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    await DeleteItem(libraryItem);
+                }
+            }
         }
 
         private void LibraryTreeView_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1213,7 +1250,7 @@ namespace Universa.Desktop.Library
                 // If it's a todo file, notify the tracker
                 if (fileName.EndsWith(".todo", StringComparison.OrdinalIgnoreCase))
                 {
-                    ToDoTracker.Instance.ScanTodoFiles(parentPath);
+                    await ToDoTracker.Instance.ScanTodoFilesAsync(parentPath);
                 }
 
                 // Ensure the parent folder is expanded if it exists
@@ -1310,7 +1347,7 @@ namespace Universa.Desktop.Library
                     // If it's a todo file, notify the tracker
                     if (item.Type == Models.LibraryItemType.File && item.Name.EndsWith(".todo", StringComparison.OrdinalIgnoreCase))
                     {
-                        ToDoTracker.Instance.ScanTodoFiles(Path.GetDirectoryName(item.Path));
+                        await ToDoTracker.Instance.ScanTodoFilesAsync(Path.GetDirectoryName(item.Path));
                     }
 
                     // Refresh with saved states
@@ -1544,7 +1581,7 @@ namespace Universa.Desktop.Library
                     // If it's a todo file, notify the tracker
                     if (oldPath.EndsWith(".todo", StringComparison.OrdinalIgnoreCase))
                     {
-                        ToDoTracker.Instance.ScanTodoFiles(Path.GetDirectoryName(oldPath));
+                        await ToDoTracker.Instance.ScanTodoFilesAsync(Path.GetDirectoryName(oldPath));
                     }
 
                     // Refresh with saved states

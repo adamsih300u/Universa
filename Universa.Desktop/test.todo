@@ -1,0 +1,53 @@
+[
+  {
+    "Title": "Test Task 1",
+    "Description": "This is a test task description",
+    "StartDate": "2025-02-15T12:00:00.0000000-05:00",
+    "DueDate": "2025-02-20T12:00:00.0000000-05:00",
+    "CompletedDate": null,
+    "IsCompleted": false,
+    "IsExpanded": false,
+    "HasSubTask": false,
+    "SubTasks": [],
+    "FilePath": "test.todo",
+    "Tags": ["test", "sample"],
+    "SubTask": null,
+    "IsRecurring": false,
+    "RecurrenceInterval": 1,
+    "RecurrenceUnit": "day"
+  },
+  {
+    "Title": "Test Task 2",
+    "Description": "Another test task",
+    "StartDate": null,
+    "DueDate": "2025-03-01T12:00:00.0000000-05:00",
+    "CompletedDate": null,
+    "IsCompleted": false,
+    "IsExpanded": false,
+    "HasSubTask": false,
+    "SubTasks": [],
+    "FilePath": "test.todo",
+    "Tags": [],
+    "SubTask": null,
+    "IsRecurring": false,
+    "RecurrenceInterval": 1,
+    "RecurrenceUnit": "day"
+  },
+  {
+    "Title": "Completed Task",
+    "Description": "This task is already completed",
+    "StartDate": "2025-01-05T10:00:00.0000000-05:00",
+    "DueDate": "2025-01-10T12:00:00.0000000-05:00",
+    "CompletedDate": "2025-01-08T15:30:00.0000000-05:00",
+    "IsCompleted": true,
+    "IsExpanded": false,
+    "HasSubTask": false,
+    "SubTasks": [],
+    "FilePath": "test.todo",
+    "Tags": ["completed"],
+    "SubTask": null,
+    "IsRecurring": false,
+    "RecurrenceInterval": 1,
+    "RecurrenceUnit": "day"
+  }
+] 

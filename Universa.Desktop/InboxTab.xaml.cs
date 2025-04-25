@@ -26,6 +26,7 @@ namespace Universa.Desktop
         private ICollectionView _itemsView;
         private Views.MainWindow _mainWindow;
         private readonly IConfigurationService _configService;
+        private string _title = "Inbox";
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -43,6 +44,19 @@ namespace Universa.Desktop
         { 
             get => "Inbox";
             set { } // No-op as this is a virtual file
+        }
+
+        public string Title
+        {
+            get => _title;
+            set
+            {
+                if (_title != value)
+                {
+                    _title = value;
+                    OnPropertyChanged(nameof(Title));
+                }
+            }
         }
 
         public bool IsModified 
@@ -369,7 +383,7 @@ namespace Universa.Desktop
                 SaveItems();
 
                 // Refresh todo tracker
-                ToDoTracker.Instance.ScanTodoFiles(_configService.Provider.LibraryPath);
+                OnTodosChanged();
 
                 // Open the new todo file
                 _mainWindow?.OpenFileInEditor(saveDialog.FileName);
@@ -408,7 +422,7 @@ namespace Universa.Desktop
                 SaveItems();
 
                 // Refresh todo tracker
-                ToDoTracker.Instance.ScanTodoFiles(_configService.Provider.LibraryPath);
+                OnTodosChanged();
 
                 // Open the todo file
                 _mainWindow?.OpenFileInEditor(filePath);
@@ -468,6 +482,38 @@ namespace Universa.Desktop
             // For inbox tab, we'll return a simple representation of the inbox items
             // This is a placeholder implementation since inbox content isn't typically exported
             return "Inbox content is not available for export.";
+        }
+
+        protected virtual void OnPropertyChanged(string propertyName)
+        {
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+        }
+
+        private async void OnTodosChanged()
+        {
+            await ToDoTracker.Instance.ScanTodoFilesAsync(_configService.Provider.LibraryPath);
+        }
+
+        public void OnTabSelected()
+        {
+            // Refresh the inbox items when tab is selected
+            RefreshInboxItems();
+        }
+
+        public void OnTabDeselected()
+        {
+            // Save any pending changes when tab is deselected
+            SaveInboxItems();
+        }
+
+        private void RefreshInboxItems()
+        {
+            LoadItems();
+        }
+
+        private void SaveInboxItems()
+        {
+            SaveItems();
         }
     }
 

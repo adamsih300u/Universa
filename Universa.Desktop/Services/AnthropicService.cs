@@ -18,7 +18,8 @@ namespace Universa.Desktop.Services
         {
             _httpClient = new HttpClient
             {
-                BaseAddress = new Uri("https://api.anthropic.com/v1/")
+                BaseAddress = new Uri("https://api.anthropic.com/v1/"),
+                Timeout = TimeSpan.FromSeconds(120) // Set a longer timeout for AI model generation
             };
             _httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
             _httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");

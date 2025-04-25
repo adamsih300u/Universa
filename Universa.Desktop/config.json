@@ -1,5 +1,4 @@
 {
-  "DefaultAIProvider": 0,
   "EnableOpenAI": false,
   "OpenAIApiKey": "",
   "EnableAnthropic": false,
@@ -11,7 +10,7 @@
   "OllamaModel": "llama2",
   "EnableAIChat": false,
   "UseBetaChains": false,
-  "EnableLocalEmbeddings": false,
+  "DefaultAIProvider": 0,
   "LastUsedModel": null,
   "CurrentTheme": "Default",
   "DarkModePlayingColor": "#FF4CAF50",
