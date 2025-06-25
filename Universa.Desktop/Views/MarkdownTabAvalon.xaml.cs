@@ -321,6 +321,9 @@ namespace Universa.Desktop.Views
                             // Fallback to manual update
                             UpdateStatusManually();
                         }
+                        
+                        // Update fiction file status when content changes (e.g., when adding frontmatter)
+                        UpdateFictionFileStatus();
                     }
                     catch (Exception ex)
                     {
@@ -1299,60 +1302,21 @@ namespace Universa.Desktop.Views
 
         private bool DetectFictionFile(string content, string filePath)
         {
-            Debug.WriteLine($"Checking if file is fiction: {filePath ?? "unknown"}");
-            
             // Check for empty content
             if (string.IsNullOrEmpty(content))
-            {
-                Debug.WriteLine("Content is empty, cannot determine file type");
                 return false;
-            }
             
-            // Check frontmatter for fiction indicators
+            // Check frontmatter for type: fiction only
             if (content.StartsWith("---"))
             {
                 int endIndex = content.IndexOf("\n---", 3);
                 if (endIndex > 0)
                 {
                     string frontmatter = content.Substring(0, endIndex + 4).ToLowerInvariant();
-                    Debug.WriteLine($"Examining frontmatter: Length={frontmatter.Length}");
-                    
-                    // Direct string checks for fiction indicators
-                    if (frontmatter.Contains("type: fiction") || 
-                        frontmatter.Contains("type:fiction") ||
-                        frontmatter.Contains("type: novel") || 
-                        frontmatter.Contains("type:novel"))
-                    {
-                        Debug.WriteLine("Fiction file detected based on frontmatter type");
-                        return true;
-                    }
-                    
-                    // Check for fiction reference patterns
-                    if (frontmatter.Contains("ref rules:") ||
-                        frontmatter.Contains("ref style:") ||
-                        frontmatter.Contains("ref outline:"))
-                    {
-                        Debug.WriteLine("Fiction file detected based on reference pattern");
-                        return true;
-                    }
+                    return frontmatter.Contains("type: fiction") || frontmatter.Contains("type:fiction");
                 }
             }
             
-            // Check for fiction by path patterns
-            if (!string.IsNullOrEmpty(filePath)) 
-            {
-                var lowerPath = filePath.ToLowerInvariant();
-                if (lowerPath.Contains("\\fiction\\") || 
-                    lowerPath.Contains("\\novels\\") ||
-                    lowerPath.Contains("\\manuscripts\\") ||
-                    lowerPath.Contains("\\manuscript\\"))
-                {
-                    Debug.WriteLine($"Fiction file detected based on directory pattern: {filePath}");
-                    return true;
-                }
-            }
-            
-            Debug.WriteLine("Not detected as a fiction file");
             return false;
         }
 

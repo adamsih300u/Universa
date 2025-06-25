@@ -141,10 +141,16 @@
                 </ComboBox>
             </StackPanel>
             <Separator Background="{DynamicResource BorderBrush}"/>
+            
+            <!-- Word Count - Higher priority, always visible -->
             <TextBlock x:Name="WordCountText" 
                       VerticalAlignment="Center" 
                       Margin="5,0"
-                      Foreground="{DynamicResource TextBrush}"/>
+                      MinWidth="180"
+                      ToolBar.OverflowMode="Never"
+                      Foreground="{DynamicResource TextBrush}"
+                      FontSize="11"
+                      TextTrimming="CharacterEllipsis"/>
         </ToolBar>
         
         <!-- Search Panel -->
