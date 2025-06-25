@@ -16,6 +16,9 @@ using Universa.Desktop.Services;
 using System.Reflection;
 using System.ComponentModel;
 using Universa.Desktop.Managers;
+using Windows.Media;
+using Windows.Storage.Streams;
+using System.Threading.Tasks;
 
 namespace Universa.Desktop.Managers
 {
@@ -65,6 +68,8 @@ namespace Universa.Desktop.Managers
         private DateTime? _lastIsPlayingLogTime;
         private DateTime? _lastHasPlaylistLogTime;
         private bool _isAutoAdvancing = false;
+        private bool _wasPlayingBeforeSeek = false;
+        private SystemMediaTransportControls _smtc;
 
         public event EventHandler PlaybackStarted;
         public event EventHandler PlaybackPaused;
@@ -193,10 +198,84 @@ namespace Universa.Desktop.Managers
             
             _configService = Services.ServiceLocator.Instance.GetRequiredService<IConfigurationService>();
             
+            // Initialize VideoWindowManager from dependency injection
+            try
+            {
+                _videoWindowManager = Services.ServiceLocator.Instance.GetRequiredService<VideoWindowManager>();
+                Debug.WriteLine("MediaPlayerManager: VideoWindowManager initialized from DI");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"MediaPlayerManager: Failed to initialize VideoWindowManager from DI: {ex.Message}");
+                // Fallback to creating new instance
+                _videoWindowManager = new VideoWindowManager();
+                Debug.WriteLine("MediaPlayerManager: Created fallback VideoWindowManager instance");
+            }
+            
             // Initialize playlist
             _playlist = new List<Universa.Desktop.Models.Track>();
             
             Debug.WriteLine("MediaPlayerManager constructor completed");
+            InitializeSmtc();
+        }
+        
+        private void InitializeSmtc()
+        {
+            try
+            {
+                _smtc = SystemMediaTransportControls.GetForCurrentView();
+
+                if (_smtc != null)
+                {
+                    _smtc.IsPlayEnabled = true;
+                    _smtc.IsPauseEnabled = true;
+                    _smtc.IsNextEnabled = true;
+                    _smtc.IsPreviousEnabled = true;
+                    // Add other buttons as needed e.g. _smtc.IsStopEnabled = true;
+
+                    _smtc.ButtonPressed += Smtc_ButtonPressed;
+                    _smtc.PlaybackStatus = MediaPlaybackStatus.Closed; // Initial status
+                    Debug.WriteLine("SMTC Initialized successfully.");
+                }
+                else
+                {
+                    Debug.WriteLine("Failed to get SMTC instance.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error initializing SMTC: {ex.Message}");
+                // Log or handle the exception appropriately. This can happen if the app doesn't have a window yet
+                // or if running in a context where SMTC is not available (e.g. some test runners).
+            }
+        }
+
+        private async void Smtc_ButtonPressed(SystemMediaTransportControls sender, SystemMediaTransportControlsButtonPressedEventArgs args)
+        {
+            // Ensure execution on the UI thread if necessary for media operations
+            await Application.Current.Dispatcher.InvokeAsync(async () =>
+            {
+                Debug.WriteLine($"SMTC Button Pressed: {args.Button}");
+                switch (args.Button)
+                {
+                    case SystemMediaTransportControlsButton.Play:
+                        Play();
+                        break;
+                    case SystemMediaTransportControlsButton.Pause:
+                        Pause();
+                        break;
+                    case SystemMediaTransportControlsButton.Next:
+                        Next();
+                        break;
+                    case SystemMediaTransportControlsButton.Previous:
+                        Previous();
+                        break;
+                    case SystemMediaTransportControlsButton.Stop:
+                        Stop();
+                        break;
+                        // Handle other buttons if enabled
+                }
+            });
         }
         
         public void InitializeWithWindow(IMediaWindow window)
@@ -318,6 +397,16 @@ namespace Universa.Desktop.Managers
         {
             try
             {
+                // Handle video playback in video window
+                if (_isPlayingVideo && _currentVideoWindow != null)
+                {
+                    // For video playing in video window, the position updates come from the video window itself
+                    // via UpdateVideoPlaybackState method, so we don't need to do anything here
+                    // The video window calls UpdateVideoPlaybackState which triggers PositionChanged events
+                    return;
+                }
+                
+                // Handle regular audio playback in main MediaElement
                 if (_mediaElement != null && _mediaElement.Source != null && !_isDraggingTimelineSlider)
                 {
                     // Always update position for smoother UI
@@ -333,6 +422,7 @@ namespace Universa.Desktop.Managers
                     {
                         UpdateTimeDisplay(currentPosition, currentDuration);
                     }
+                    UpdateSmtcTimelineProperties(currentPosition, currentDuration);
                     
                     // Debug.WriteLine($"Position: {currentPosition.TotalSeconds:F1}s / {currentDuration.TotalSeconds:F1}s");
                 }
@@ -446,6 +536,7 @@ namespace Universa.Desktop.Managers
                 
                 // Update play/pause button before playback
                 _controlsManager?.UpdatePlayPauseButton(true);
+                UpdateSmtcMetadataAsync(currentTrack);
                 
                 // Ensure controls are visible
                 _controlsManager?.ShowMediaControls();
@@ -536,6 +627,7 @@ namespace Universa.Desktop.Managers
                     // Set the playing and paused states
                     IsPlaying = true;
                     IsPaused = false;
+                    if (_smtc != null) _smtc.PlaybackStatus = MediaPlaybackStatus.Playing;
                     
                     // Ensure the button state is updated
                     _controlsManager?.UpdatePlayPauseButton(true);
@@ -574,6 +666,7 @@ namespace Universa.Desktop.Managers
                     // Set the playing and paused states
                     IsPlaying = false;
                     IsPaused = true;
+                    if (_smtc != null) _smtc.PlaybackStatus = MediaPlaybackStatus.Paused;
                     
                     // Ensure the button state is updated
                     _controlsManager?.UpdatePlayPauseButton(false);
@@ -600,6 +693,31 @@ namespace Universa.Desktop.Managers
                 // Add a small delay to prevent rapid toggling
                 System.Threading.Thread.Sleep(100);
                 
+                // Handle video playback in video window
+                if (_isPlayingVideo && _currentVideoWindow != null)
+                {
+                    Debug.WriteLine("Controlling video playback in video window");
+                    if (IsPlaying)
+                    {
+                        _currentVideoWindow.SyncPlaybackState(false);
+                        _isPlaying = false;
+                        IsPaused = true;
+                        PlaybackPaused?.Invoke(this, EventArgs.Empty);
+                    }
+                    else
+                    {
+                        _currentVideoWindow.SyncPlaybackState(true);
+                        _isPlaying = true;
+                        IsPaused = false;
+                        PlaybackStarted?.Invoke(this, EventArgs.Empty);
+                    }
+                    
+                    _controlsManager?.UpdatePlayPauseButton(IsPlaying);
+                    ShowMediaControls();
+                    return;
+                }
+                
+                // Handle regular audio playback
                 if (IsPlaying)
                 {
                     Debug.WriteLine("Currently playing, will pause");
@@ -672,6 +790,7 @@ namespace Universa.Desktop.Managers
                 _isPlayingVideo = false;
                 _isPlaying = false;
                 PlaybackStopped?.Invoke(this, EventArgs.Empty);
+                if (_smtc != null) _smtc.PlaybackStatus = MediaPlaybackStatus.Stopped;
                 return;
             }
             
@@ -684,6 +803,7 @@ namespace Universa.Desktop.Managers
                 mediaElement.Stop();
                 _isPlaying = false;
                 PlaybackStopped?.Invoke(this, EventArgs.Empty);
+                if (_smtc != null) _smtc.PlaybackStatus = MediaPlaybackStatus.Stopped;
                 Debug.WriteLine("Media playback stopped");
             }
             else
@@ -891,6 +1011,7 @@ namespace Universa.Desktop.Managers
                     IsPlaying = false;
                     UpdatePlaybackState(false);
                     _isAutoAdvancing = false;
+                    if (_smtc != null) _smtc.PlaybackStatus = MediaPlaybackStatus.Stopped;
                     return;
                 }
                 
@@ -901,6 +1022,7 @@ namespace Universa.Desktop.Managers
                 {
                     Debug.WriteLine("OnMediaEnded: playlist is null or empty");
                     _isAutoAdvancing = false;
+                    if (_smtc != null) _smtc.PlaybackStatus = MediaPlaybackStatus.Stopped;
                     return;
                 }
                 
@@ -951,6 +1073,7 @@ namespace Universa.Desktop.Managers
                             {
                                 Debug.WriteLine("OnMediaEnded: Media element is null");
                                 _isAutoAdvancing = false;
+                                if (_smtc != null) _smtc.PlaybackStatus = MediaPlaybackStatus.Stopped;
                                 return;
                             }
                             
@@ -1173,6 +1296,7 @@ namespace Universa.Desktop.Managers
             MessageBox.Show($"Media playback failed: {e.ErrorException.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             _isPlaying = false;
             UpdatePlaybackState(false);
+            if (_smtc != null) _smtc.PlaybackStatus = MediaPlaybackStatus.Stopped;
         }
 
         private void UpdateTimeDisplay(TimeSpan position, TimeSpan duration)
@@ -1269,6 +1393,11 @@ namespace Universa.Desktop.Managers
         public void HandleTimelineSliderDragStarted()
         {
             _isDraggingTimelineSlider = true;
+            _wasPlayingBeforeSeek = this.IsPlaying;
+            if (_wasPlayingBeforeSeek)
+            {
+                this.Pause();
+            }
         }
 
         public void HandleTimelineSliderDragCompleted()
@@ -1280,6 +1409,12 @@ namespace Universa.Desktop.Managers
                 _mediaElement.Position = TimeSpan.FromSeconds((_window as IMediaWindow).TimelineSlider.Value);
             }
             _isDraggingTimelineSlider = false;
+
+            if (_wasPlayingBeforeSeek)
+            {
+                this.Play();
+            }
+            _wasPlayingBeforeSeek = false;
         }
 
         public void HandleTimelineSliderValueChanged(double newValue)
@@ -1293,12 +1428,6 @@ namespace Universa.Desktop.Managers
                     // Update time display while dragging
                     TimeSpan newPosition = TimeSpan.FromSeconds(newValue);
                     TimeSpan duration = _mediaElement.NaturalDuration.TimeSpan;
-                    
-                    // Pause playback while dragging to make seeking smoother
-                    if (_isPlaying)
-                    {
-                        _mediaElement.Pause();
-                    }
                     
                     // Update the time display immediately while dragging
                     Application.Current.Dispatcher.Invoke(() =>
@@ -1533,9 +1662,22 @@ namespace Universa.Desktop.Managers
                     // Clear playlist
                     _playlist.Clear();
                     _playlist = null;
+
+                    if (_smtc != null)
+                    {
+                        _smtc.ButtonPressed -= Smtc_ButtonPressed;
+                        // Clear display and update
+                        if (_smtc.DisplayUpdater != null)
+                        {
+                            _smtc.DisplayUpdater.ClearAll();
+                            _smtc.DisplayUpdater.Update();
+                        }
+                         _smtc.PlaybackStatus = MediaPlaybackStatus.Closed;
+                    }
                 }
 
                 _disposed = true;
+                Debug.WriteLine("MediaPlayerManager disposed.");
             }
         }
 
@@ -2203,26 +2345,72 @@ namespace Universa.Desktop.Managers
             
             try
             {
-                // Get media element
-                var mediaElement = GetMediaElement();
-                if (mediaElement == null)
+                // Ensure the position timer is initialized for video playback tracking
+                if (_positionTimer == null)
                 {
-                    Debug.WriteLine("Media element is null, cannot play video");
-                    return;
+                    _positionTimer = new DispatcherTimer();
+                    _positionTimer.Interval = TimeSpan.FromMilliseconds(500);
+                    _positionTimer.Tick += PositionTimer_Tick;
+                    Debug.WriteLine("MediaPlayerManager.PlayVideo: _positionTimer was null, created and configured.");
+                }
+
+                if (!_positionTimer.IsEnabled)
+                {
+                    _positionTimer.Start();
+                    Debug.WriteLine("MediaPlayerManager.PlayVideo: Position timer started.");
                 }
                 
-                // Set the track source
-                mediaElement.Source = new Uri(track.StreamUrl);
-                mediaElement.Play();
+                // Set video playing flags
+                _isPlayingVideo = true;
+                IsVideoPlaying = true;
                 _isPlaying = true;
                 IsPaused = false;
                 
-                // Set the video playing flag
-                _isPlayingVideo = true;
-                IsVideoPlaying = true;
-                
                 // Update the now playing information
                 UpdateNowPlaying(track.Title, track.Artist, track.Series, track.Season);
+                
+                // Show the video window ONLY - don't play in main MediaElement to avoid dual playback
+                if (_videoWindowManager != null)
+                {
+                    Debug.WriteLine("Showing video window (avoiding dual playback with main MediaElement)");
+                    
+                    // Create a better title for TV episodes
+                    string windowTitle = track.Title;
+                    if (track.IsVideo && !string.IsNullOrEmpty(track.Series))
+                    {
+                        if (!string.IsNullOrEmpty(track.Season))
+                        {
+                            windowTitle = $"{track.Series} ({track.Season}) - {track.Title}";
+                        }
+                        else
+                        {
+                            windowTitle = $"{track.Series} - {track.Title}";
+                        }
+                    }
+                    
+                    _videoWindowManager.ShowVideoWindow(new Uri(track.StreamUrl), windowTitle);
+                    
+                    // Store reference to the current video window for control
+                    _currentVideoWindow = _videoWindowManager.CurrentVideoWindow;
+                    
+                    // Set duration from track if available
+                    if (track.Duration.TotalSeconds > 0)
+                    {
+                        _duration = track.Duration;
+                        OnPropertyChanged(nameof(Duration));
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("Video window manager is null, falling back to media element");
+                    // Fallback: play in main MediaElement if no video window manager
+                    var mediaElement = GetMediaElement();
+                    if (mediaElement != null)
+                    {
+                        mediaElement.Source = new Uri(track.StreamUrl);
+                        mediaElement.Play();
+                    }
+                }
                 
                 // Notify listeners that playback has started
                 PlaybackStarted?.Invoke(this, EventArgs.Empty);
@@ -2230,16 +2418,7 @@ namespace Universa.Desktop.Managers
                 // Notify listeners that the track has changed
                 TrackChanged?.Invoke(this, track);
                 
-                // Show the video window if available
-                if (_videoWindowManager != null)
-                {
-                    Debug.WriteLine("Showing video window");
-                    _videoWindowManager.ShowVideoWindow(new Uri(track.StreamUrl), track.Title);
-                }
-                else
-                {
-                    Debug.WriteLine("Video window manager is null, playing video in media element");
-                }
+                Debug.WriteLine($"PlayVideo completed for track: {track.Title}");
             }
             catch (Exception ex)
             {
@@ -2283,11 +2462,19 @@ namespace Universa.Desktop.Managers
                     _isPlayingVideo = false;
                 }
                 
-                // Start the position timer if it's not running
-                if (_positionTimer != null && !_positionTimer.IsEnabled)
+                // Ensure the position timer is initialized and running
+                if (_positionTimer == null)
+                {
+                    _positionTimer = new DispatcherTimer();
+                    _positionTimer.Interval = TimeSpan.FromMilliseconds(500); // Or your desired interval
+                    _positionTimer.Tick += PositionTimer_Tick;
+                    Debug.WriteLine("MediaPlayerManager.PlayTrack: _positionTimer was null, created and configured.");
+                }
+
+                if (!_positionTimer.IsEnabled)
                 {
                     _positionTimer.Start();
-                    Debug.WriteLine("PlayTrack: Position timer started");
+                    Debug.WriteLine("MediaPlayerManager.PlayTrack: Position timer started.");
                 }
                 
                 // Set the track source
@@ -2329,6 +2516,92 @@ namespace Universa.Desktop.Managers
                 Debug.WriteLine($"Error in PlayTrack: {ex.Message}");
                 Debug.WriteLine($"Stack trace: {ex.StackTrace}");
             }
+        }
+
+        private async Task UpdateSmtcMetadataAsync(Universa.Desktop.Models.Track track)
+        {
+            if (_smtc == null || track == null)
+            {
+                Debug.WriteLine("SMTC or Track is null, cannot update metadata.");
+                return;
+            }
+
+            try
+            {
+                var updater = _smtc.DisplayUpdater;
+                updater.Type = MediaPlaybackType.Music; // Assuming music, adjust if video support needed here
+                
+                updater.MusicProperties.Title = track.Title ?? string.Empty;
+                updater.MusicProperties.Artist = track.Artist ?? string.Empty;
+                updater.MusicProperties.AlbumTitle = track.Album ?? string.Empty;
+                // updater.MusicProperties.AlbumArtist = track.AlbumArtist ?? string.Empty; // If you have AlbumArtist
+                // updater.MusicProperties.TrackNumber = (uint)(track.TrackNumber > 0 ? track.TrackNumber : 0); // If you have TrackNumber
+
+                // Placeholder for album art - this needs a valid URI or stream
+                // For example, if track.AlbumArtUri is a valid URI string to an image:
+                // if (!string.IsNullOrEmpty(track.AlbumArtUri))
+                // {
+                //     try
+                //     {
+                //         updater.Thumbnail = RandomAccessStreamReference.CreateFromUri(new Uri(track.AlbumArtUri));
+                //     }
+                //     catch (Exception ex)
+                //     {
+                //         Debug.WriteLine($"Error setting SMTC thumbnail from URI: {track.AlbumArtUri} - {ex.Message}");
+                //     }
+                // }
+                // else
+                // {
+                //      updater.Thumbnail = null; // Or a default image
+                // }
+
+
+                updater.Update(); // Corrected: Removed await and changed to Update()
+                Debug.WriteLine($"SMTC Metadata Updated for: {track.Title}");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error updating SMTC metadata: {ex.Message}");
+            }
+        }
+
+        private void UpdateSmtcTimelineProperties(TimeSpan position, TimeSpan duration)
+        {
+            if (_smtc == null) return;
+
+            try
+            {
+                var timelineProperties = new SystemMediaTransportControlsTimelineProperties();
+                timelineProperties.StartTime = TimeSpan.Zero;
+                timelineProperties.EndTime = duration;
+                timelineProperties.Position = position;
+                timelineProperties.MinSeekTime = TimeSpan.Zero; // Or actual min seek time if applicable
+                timelineProperties.MaxSeekTime = duration;   // Or actual max seek time if applicable
+
+                _smtc.UpdateTimelineProperties(timelineProperties);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error updating SMTC timeline properties: {ex.Message}");
+            }
+        }
+
+        public void UpdateVideoPlaybackState(TimeSpan position, TimeSpan duration)
+        {
+            // Update internal state for video playback
+            _duration = duration;
+            
+            // Update the controls manager with video position/duration
+            if (_controlsManager != null)
+            {
+                _controlsManager.UpdateTimeDisplay(position, duration);
+                _controlsManager.UpdateTimelineSlider(position, duration);
+            }
+            
+            // Raise position changed event for any listeners
+            PositionChanged?.Invoke(this, position);
+            
+            Debug.WriteLine($"UpdateVideoPlaybackState: Position={position:mm\\:ss}, Duration={duration:mm\\:ss}");
         }
     }
 } 

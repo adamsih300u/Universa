@@ -22,6 +22,8 @@ namespace Universa.Desktop
 {
     public partial class InboxTab : UserControl, INotifyPropertyChanged, IFileTab
     {
+        public int LastKnownCursorPosition { get; private set; } = 0;
+        
         private ObservableCollection<InboxItem> _items;
         private ICollectionView _itemsView;
         private Views.MainWindow _mainWindow;

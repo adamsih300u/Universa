@@ -7,11 +7,13 @@
              xmlns:local="clr-namespace:Universa.Desktop.Views"
              xmlns:viewmodels="clr-namespace:Universa.Desktop.ViewModels"
              xmlns:converters="clr-namespace:Universa.Desktop.Converters"
+             xmlns:controls="clr-namespace:Universa.Desktop.Controls"
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="300">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
         <local:InverseBooleanConverter x:Key="InverseBooleanConverter"/>
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
         <converters:GreaterThanOneConverter x:Key="GreaterThanOneConverter"/>
         
         <!-- Message Background Converter -->
@@ -23,6 +25,10 @@
         
         <!-- Code Block Formatter -->
         <converters:FormattedTextConverter x:Key="FormattedTextConverter"/>
+        
+        <!-- Fiction Text Converter -->
+        <converters:HasFictionTextConverter x:Key="HasFictionTextConverter"/>
+        <converters:FictionTextVisibilityConverter x:Key="FictionTextVisibilityConverter"/>
         
         <!-- Chat Tab Control Style -->
         <Style x:Key="ChatTabControlStyle" TargetType="TabControl">
@@ -205,7 +211,10 @@
             <Setter Property="IsUndoEnabled" Value="False"/>
             <Setter Property="Padding" Value="0"/>
             <Setter Property="Margin" Value="0"/>
+            <Setter Property="IsTabStop" Value="True"/>
+            <Setter Property="Focusable" Value="True"/>
             <Setter Property="SelectionBrush" Value="{DynamicResource HighlightBrush}"/>
+            <Setter Property="SelectionTextBrush" Value="{DynamicResource TextBrush}"/>
             <Setter Property="ContextMenu">
                 <Setter.Value>
                     <ContextMenu>
@@ -217,11 +226,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <ScrollViewer x:Name="PART_ContentHost" 
-                                    Margin="{TemplateBinding Padding}"
-                                    Background="Transparent"
-                                    VerticalScrollBarVisibility="Hidden"
-                                    HorizontalScrollBarVisibility="Hidden"/>
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ScrollViewer x:Name="PART_ContentHost" 
+                                        Margin="{TemplateBinding Padding}"
+                                        Background="Transparent"
+                                        VerticalScrollBarVisibility="Hidden"
+                                        HorizontalScrollBarVisibility="Hidden"
+                                        CanContentScroll="False"
+                                        Focusable="False"/>
+                        </Border>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -366,9 +381,69 @@
                                     <TextBlock Text="{Binding Sender}" 
                                              Style="{StaticResource SenderTextStyle}"
                                              Foreground="{DynamicResource TextBrush}"/>
+                                    
+                                    <!-- Regular text display for non-fiction messages -->
                                     <TextBox Text="{Binding Content, Mode=OneWay}"
                                              Style="{StaticResource SelectableTextStyle}"
-                                             Foreground="{DynamicResource TextBrush}"/>
+                                             Foreground="{DynamicResource TextBrush}"
+                                             Visibility="{Binding Content, Converter={StaticResource FictionTextVisibilityConverter}, ConverterParameter=Inverse}"/>
+                                    
+                                    <!-- Fiction message control for messages with Original text patterns -->
+                                    <controls:FictionMessageControl Content="{Binding Content}"
+                                                                   Visibility="{Binding Content, Converter={StaticResource FictionTextVisibilityConverter}}"/>
+                                    
+                                    <!-- Add typing indicator that shows when streaming -->
+                                    <StackPanel Orientation="Horizontal" 
+                                              Margin="0,4,0,0"
+                                              HorizontalAlignment="Left"
+                                              Visibility="{Binding IsThinking, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <TextBlock Text="Typing" 
+                                                 Foreground="{DynamicResource TextBrush}" 
+                                                 Opacity="0.7"
+                                                 FontStyle="Italic"
+                                                 Margin="0,0,5,0"/>
+                                        <Grid Width="24" Height="10">
+                                            <Ellipse x:Name="Dot1" Width="4" Height="4" Fill="{DynamicResource TextBrush}" Opacity="0.7" HorizontalAlignment="Left">
+                                                <Ellipse.Triggers>
+                                                    <EventTrigger RoutedEvent="Ellipse.Loaded">
+                                                        <BeginStoryboard>
+                                                            <Storyboard RepeatBehavior="Forever">
+                                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                From="0.2" To="0.9" Duration="0:0:0.5"
+                                                                                AutoReverse="True"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                </Ellipse.Triggers>
+                                            </Ellipse>
+                                            <Ellipse x:Name="Dot2" Width="4" Height="4" Fill="{DynamicResource TextBrush}" Opacity="0.7" Margin="8,0,0,0" HorizontalAlignment="Left">
+                                                <Ellipse.Triggers>
+                                                    <EventTrigger RoutedEvent="Ellipse.Loaded">
+                                                        <BeginStoryboard>
+                                                            <Storyboard RepeatBehavior="Forever" BeginTime="0:0:0.2">
+                                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                From="0.2" To="0.9" Duration="0:0:0.5"
+                                                                                AutoReverse="True"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                </Ellipse.Triggers>
+                                            </Ellipse>
+                                            <Ellipse x:Name="Dot3" Width="4" Height="4" Fill="{DynamicResource TextBrush}" Opacity="0.7" Margin="16,0,0,0" HorizontalAlignment="Left">
+                                                <Ellipse.Triggers>
+                                                    <EventTrigger RoutedEvent="Ellipse.Loaded">
+                                                        <BeginStoryboard>
+                                                            <Storyboard RepeatBehavior="Forever" BeginTime="0:0:0.4">
+                                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                                From="0.2" To="0.9" Duration="0:0:0.5"
+                                                                                AutoReverse="True"/>
+                                                            </Storyboard>
+                                                        </BeginStoryboard>
+                                                    </EventTrigger>
+                                                </Ellipse.Triggers>
+                                            </Ellipse>
+                                        </Grid>
+                                    </StackPanel>
                                     
                                     <!-- Stop Button for Thinking Messages -->
                                     <Button Content="Stop" 

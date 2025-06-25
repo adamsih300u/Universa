@@ -110,79 +110,83 @@ namespace Universa.Desktop.Views
             try
             {
                 // If we're already loading, don't start another initialization
-                if (IsLoading)
-                {
-                    Debug.WriteLine("InitializeTreeAsync: Already loading, skipping initialization");
-                    return;
-                }
+                // The IsLoading flag is managed by RefreshTreeAsync now.
+                // if (IsLoading) 
+                // {
+                //     Debug.WriteLine("InitializeTreeAsync: Already loading, skipping initialization");
+                //     return;
+                // }
                 
-                Debug.WriteLine("InitializeTreeAsync: Starting initialization");
-                IsLoading = true;
-                ErrorMessage = null;
+                Debug.WriteLine("InitializeTreeAsync: Starting initialization by calling RefreshTreeAsync");
+                // IsLoading = true; // Handled by RefreshTreeAsync
+                // ErrorMessage = null; // Handled by RefreshTreeAsync
                 
-                // Clear existing collections to prevent duplicates
-                _rootItems.Clear();
-                _artists.Clear();
-                _albums.Clear();
-                _playlists.Clear();
+                // // Clear existing collections to prevent duplicates // Handled by RefreshTreeAsync
+                // _rootItems.Clear();
+                // _artists.Clear();
+                // _albums.Clear();
+                // _playlists.Clear();
                 
-                // Create root items for Artists, Albums, and Playlists
-                var artistsRoot = new MusicTreeItem
-                {
-                    Name = "Artists",
-                    Type = MusicItemType.Category,
-                    Children = _artists
-                };
+                // // Create root items for Artists, Albums, and Playlists // Handled by RefreshTreeAsync
+                // var artistsRoot = new MusicTreeItem
+                // {
+                //     Name = "Artists",
+                //     Type = MusicItemType.Category,
+                //     Children = _artists
+                // };
                 
-                var albumsRoot = new MusicTreeItem
-                {
-                    Name = "Albums",
-                    Type = MusicItemType.Category,
-                    Children = _albums
-                };
+                // var albumsRoot = new MusicTreeItem
+                // {
+                //     Name = "Albums",
+                //     Type = MusicItemType.Category,
+                //     Children = _albums
+                // };
                 
-                var playlistsRoot = new MusicTreeItem
-                {
-                    Name = "Playlists",
-                    Type = MusicItemType.Category,
-                    Children = _playlists
-                };
+                // var playlistsRoot = new MusicTreeItem
+                // {
+                //     Name = "Playlists",
+                //     Type = MusicItemType.Category,
+                //     Children = _playlists
+                // };
                 
-                _rootItems.Add(artistsRoot);
-                _rootItems.Add(albumsRoot);
-                _rootItems.Add(playlistsRoot);
+                // _rootItems.Add(artistsRoot);
+                // _rootItems.Add(albumsRoot);
+                // _rootItems.Add(playlistsRoot);
                 
-                Debug.WriteLine($"InitializeTreeAsync: Added root items - RootItems count: {_rootItems.Count}");
+                // Debug.WriteLine($"InitializeTreeAsync: Added root items - RootItems count: {_rootItems.Count}");
                 
-                // Load data from cache first
-                var cacheLoaded = await _musicDataService.LoadFromCacheAsync();
-                Debug.WriteLine($"InitializeTreeAsync: Cache loaded: {cacheLoaded}");
+                // // Load data from cache first // Replaced by full refresh logic
+                // var cacheLoaded = await _musicDataService.LoadFromCacheAsync();
+                // Debug.WriteLine($"InitializeTreeAsync: Cache loaded: {cacheLoaded}");
                 
-                if (!cacheLoaded)
-                {
-                    // If cache loading failed, refresh the data but don't call RefreshTreeAsync
-                    // to avoid circular reference
-                    Debug.WriteLine("InitializeTreeAsync: Cache loading failed, populating tree directly");
-                    await PopulateTreeFromDataServiceAsync();
-                }
-                else
-                {
-                    // If cache was loaded, still populate the tree
-                    Debug.WriteLine("InitializeTreeAsync: Cache loaded, populating tree");
-                    await PopulateTreeFromDataServiceAsync();
-                }
+                // if (!cacheLoaded)
+                // {
+                //     // If cache loading failed, refresh the data but don't call RefreshTreeAsync
+                //     // to avoid circular reference
+                //     Debug.WriteLine("InitializeTreeAsync: Cache loading failed, populating tree directly");
+                //     await PopulateTreeFromDataServiceAsync();
+                // }
+                // else
+                // {
+                //     // If cache was loaded, still populate the tree
+                //     Debug.WriteLine("InitializeTreeAsync: Cache loaded, populating tree");
+                //     await PopulateTreeFromDataServiceAsync();
+                // }
+
+                // Call RefreshTreeAsync to ensure data is fresh from Subsonic and cache is updated.
+                await RefreshTreeAsync();
                 
-                Debug.WriteLine($"InitializeTreeAsync: Initialization complete - RootItems count: {_rootItems.Count}");
+                Debug.WriteLine($"InitializeTreeAsync: Initialization (via RefreshTreeAsync) complete - RootItems count: {_rootItems.Count}");
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error initializing tree: {ex.Message}");
                 ErrorMessage = $"Error initializing music library: {ex.Message}";
             }
-            finally
-            {
-                IsLoading = false;
-            }
+            // finally // Loading state is managed by RefreshTreeAsync
+            // {
+            //     IsLoading = false;
+            // }
         }
         
         public async Task RefreshTreeAsync()
@@ -260,6 +264,7 @@ namespace Universa.Desktop.Views
             var artists = await _musicDataService.GetArtistsAsync();
             Debug.WriteLine($"PopulateTreeFromDataServiceAsync: Got {artists.Count} artists");
             
+            var artistTreeItems = new List<MusicTreeItem>();
             foreach (var artist in artists.OrderBy(a => a.Name))
             {
                 var artistItem = new MusicTreeItem
@@ -273,43 +278,54 @@ namespace Universa.Desktop.Views
                 // Add albums as children
                 if (artist.Albums.Any())
                 {
-                    foreach (var album in artist.Albums.OrderBy(a => a.Title))
+                    var albumChildItems = new List<MusicTreeItem>();
+                    foreach (var album in artist.Albums) // Sort after creating with full name
                     {
-                        var albumItem = new MusicTreeItem
+                        var albumChildItem = new MusicTreeItem
                         {
                             Id = album.Id,
-                            Name = album.Title,
+                            Name = $"{artist.Name} - {album.Title}", // Format: Artist - Album Title
                             Type = MusicItemType.Album,
                             ImageUrl = album.ImageUrl,
                             ParentId = artist.Id,
                             ParentName = artist.Name
                         };
-                        
-                        artistItem.Children.Add(albumItem);
+                        albumChildItems.Add(albumChildItem);
+                    }
+                    // Sort children by the new composite name
+                    foreach(var sortedAlbumChildItem in albumChildItems.OrderBy(a => a.Name))
+                    {
+                        artistItem.Children.Add(sortedAlbumChildItem);
                     }
                 }
                 
-                _artists.Add(artistItem);
+                artistTreeItems.Add(artistItem);
             }
+            // Add sorted artists to the observable collection
+            _artists.Clear(); // Clear before adding to avoid duplicates if method is re-entrant
+            foreach(var item in artistTreeItems) _artists.Add(item);
             
-            // Get albums
-            var albums = await _musicDataService.GetAlbumsAsync();
-            Debug.WriteLine($"PopulateTreeFromDataServiceAsync: Got {albums.Count} albums");
+            // Get albums for the main Albums category
+            var allSystemAlbums = await _musicDataService.GetAlbumsAsync();
+            Debug.WriteLine($"PopulateTreeFromDataServiceAsync: Got {allSystemAlbums.Count} albums for main list");
             
-            foreach (var album in albums.OrderBy(a => a.Title))
+            var albumTreeItems = new List<MusicTreeItem>();
+            foreach (var album in allSystemAlbums) // Sort after creating with full name
             {
                 var albumItem = new MusicTreeItem
                 {
                     Id = album.Id,
-                    Name = album.Title,
+                    Name = $"{album.Artist} - {album.Title}", // Format: Album Artist - Album Title
                     Type = MusicItemType.Album,
                     ImageUrl = album.ImageUrl,
                     ParentId = album.ArtistId,
                     ParentName = album.Artist
                 };
-                
-                _albums.Add(albumItem);
+                albumTreeItems.Add(albumItem);
             }
+            // Sort and add to the observable collection
+            _albums.Clear(); // Clear before adding
+            foreach(var item in albumTreeItems.OrderBy(a => a.Name)) _albums.Add(item);
             
             // Get playlists
             var playlists = await _musicDataService.GetPlaylistsAsync();
@@ -745,6 +761,8 @@ namespace Universa.Desktop.Views
         private string _parentName;
         private string _description;
         private ObservableCollection<MusicTreeItem> _children = new ObservableCollection<MusicTreeItem>();
+        private bool _isSelected;
+        private bool _isExpanded;
         
         public string Id
         {
@@ -851,6 +869,37 @@ namespace Universa.Desktop.Views
         }
         
         public bool HasChildren => Children.Count > 0;
+        
+        public bool IsSelected
+        {
+            get => _isSelected;
+            set
+            {
+                if (_isSelected != value)
+                {
+                    _isSelected = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool IsExpanded
+        {
+            get => _isExpanded;
+            set
+            {
+                if (_isExpanded != value)
+                {
+                    _isExpanded = value;
+                    OnPropertyChanged();
+                    // Optionally: Add logic here if expanding an item should auto-load children
+                    // if (_isExpanded && Children.Count == 0 && Type != MusicItemType.Category) // Example condition
+                    // {
+                    //    // Call a method to load children, e.g., from MusicTabViewModel
+                    // }
+                }
+            }
+        }
         
         public event PropertyChangedEventHandler PropertyChanged;
         

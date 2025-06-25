@@ -10,6 +10,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Diagnostics;
 using System.Windows.Input;
+using System.Threading.Tasks;
 
 namespace Universa.Desktop.Helpers
 {
@@ -112,16 +113,55 @@ namespace Universa.Desktop.Helpers
 
             try
             {
-                // Escape special regex characters but keep spaces as flexible whitespace
-                var pattern = Regex.Escape(text.Trim())
-                    .Replace("\\ ", "\\s+")  // Replace escaped spaces with flexible whitespace
-                    .Replace("\\.", "\\.")   // Keep period as literal
-                    .Replace("\\,", "\\,")   // Keep comma as literal
-                    .Replace("\\!", "\\!")   // Keep exclamation as literal
-                    .Replace("\\?", "\\?");  // Keep question mark as literal
+                // Normalize the search text and create a robust pattern
+                var searchText = text.Trim();
+                
+                // Split into lines and process each line separately for better matching
+                var lines = searchText.Split(new[] { "\r\n", "\n", "\r" }, StringSplitOptions.None);
+                string pattern;
+                
+                if (lines.Length == 1)
+                {
+                    // Single line - use simpler pattern
+                    pattern = Regex.Escape(searchText).Replace("\\ ", "\\s+");
+                }
+                else
+                {
+                    // Multi-line - build pattern line by line
+                    var patternParts = new List<string>();
+                    
+                    for (int i = 0; i < lines.Length; i++)
+                    {
+                        var line = lines[i].Trim();
+                        if (string.IsNullOrEmpty(line))
+                        {
+                            // Empty line - match any whitespace
+                            patternParts.Add("\\s*");
+                        }
+                        else
+                        {
+                            // Non-empty line - escape and allow flexible spacing
+                            var linePart = Regex.Escape(line).Replace("\\ ", "\\s+");
+                            patternParts.Add($"\\s*{linePart}\\s*");
+                        }
+                        
+                        // Add line break pattern between lines (except after the last line)
+                        if (i < lines.Length - 1)
+                        {
+                            patternParts.Add("\\r?\\n");
+                        }
+                    }
+                    
+                    pattern = string.Join("", patternParts);
+                }
 
-                var regex = new Regex(pattern, RegexOptions.IgnoreCase);
+                // Create robust regex that handles multi-line text properly
+                var regex = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Singleline);
                 var match = regex.Match(_textBox.Text);
+
+                // Debug output for troubleshooting
+                Debug.WriteLine($"Search text length: {searchText.Length}");
+                Debug.WriteLine($"Match found: {match.Success}, Index: {match.Index}, Length: {match.Length}");
 
                 if (!match.Success)
                 {
@@ -221,7 +261,7 @@ namespace Universa.Desktop.Helpers
             }
         }
 
-        // Add back compatibility methods
+        // Optimized method for highlighting ranges with viewport culling
         public void HighlightRanges(List<(int start, int length)> ranges, Color highlightColor)
         {
             if (ranges == null || ranges.Count == 0 || _textBox == null)
@@ -235,17 +275,41 @@ namespace Universa.Desktop.Helpers
                 return;
             }
 
+            // PERFORMANCE FIX: For large highlight operations, use async processing
+            if (ranges.Count > 100 || ranges.Any(r => r.length > 1000))
+            {
+                HighlightRangesAsync(ranges, highlightColor);
+                return;
+            }
+
             try
             {
                 var rects = new List<Rect>();
+                var viewportTop = _scrollViewer?.VerticalOffset ?? 0;
+                var viewportBottom = viewportTop + (_scrollViewer?.ViewportHeight ?? _textBox.ActualHeight);
+                
+                // Only process highlights that are likely to be visible or near the viewport
+                var processedCount = 0;
+                const int MAX_HIGHLIGHTS_TO_PROCESS = 500; // Limit for performance
+
                 foreach (var (start, length) in ranges)
                 {
+                    if (processedCount >= MAX_HIGHLIGHTS_TO_PROCESS)
+                        break;
+
                     if (start < 0 || length <= 0 || start >= _textBox.Text.Length)
                         continue;
 
                     try
                     {
                         var startPoint = _textBox.GetRectFromCharacterIndex(start);
+                        
+                        // Skip highlights that are far outside the viewport for performance
+                        if (startPoint.Top < viewportTop - 1000 || startPoint.Top > viewportBottom + 1000)
+                        {
+                            continue;
+                        }
+
                         var endPoint = _textBox.GetRectFromCharacterIndex(start + length);
 
                         // If the highlight spans multiple lines
@@ -255,13 +319,13 @@ namespace Universa.Desktop.Helpers
                             rects.Add(new Rect(
                                 startPoint.X,
                                 startPoint.Y,
-                                _textBox.ViewportWidth - startPoint.X,
+                                Math.Max(0, _textBox.ViewportWidth - startPoint.X),
                                 startPoint.Height
                             ));
 
                             // Add rects for middle lines (if any)
                             double currentY = startPoint.Y + startPoint.Height;
-                            while (currentY < endPoint.Y)
+                            while (currentY < endPoint.Y && rects.Count < MAX_HIGHLIGHTS_TO_PROCESS)
                             {
                                 rects.Add(new Rect(
                                     0,
@@ -273,23 +337,32 @@ namespace Universa.Desktop.Helpers
                             }
 
                             // Add rect for last line
-                            rects.Add(new Rect(
-                                0,
-                                endPoint.Y,
-                                endPoint.X,
-                                endPoint.Height
-                            ));
+                            if (rects.Count < MAX_HIGHLIGHTS_TO_PROCESS)
+                            {
+                                rects.Add(new Rect(
+                                    0,
+                                    endPoint.Y,
+                                    Math.Max(0, endPoint.X),
+                                    endPoint.Height
+                                ));
+                            }
                         }
                         else
                         {
                             // Single line highlight
-                            rects.Add(new Rect(
-                                startPoint.X,
-                                startPoint.Y,
-                                endPoint.X - startPoint.X,
-                                startPoint.Height
-                            ));
+                            var width = Math.Max(0, endPoint.X - startPoint.X);
+                            if (width > 0)
+                            {
+                                rects.Add(new Rect(
+                                    startPoint.X,
+                                    startPoint.Y,
+                                    width,
+                                    startPoint.Height
+                                ));
+                            }
                         }
+
+                        processedCount++;
                     }
                     catch (Exception ex)
                     {
@@ -308,11 +381,101 @@ namespace Universa.Desktop.Helpers
                     // Create and add the new adorner
                     _currentAdorner = new TextHighlightAdorner(_textBox, rects, brush);
                     _adornerLayer.Add(_currentAdorner);
+                    
+                    Debug.WriteLine($"Created {rects.Count} highlight rectangles from {ranges.Count} ranges");
                 }
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in HighlightRanges: {ex}");
+                ClearHighlights();
+            }
+        }
+
+        private async void HighlightRangesAsync(List<(int start, int length)> ranges, Color highlightColor)
+        {
+            try
+            {
+                // Capture UI values on the UI thread before going async
+                var textLength = _textBox.Text.Length;
+                var viewportTop = _scrollViewer?.VerticalOffset ?? 0;
+                var viewportBottom = viewportTop + (_scrollViewer?.ViewportHeight ?? _textBox.ActualHeight);
+                
+                // Process highlights on background thread to avoid UI blocking
+                var validRanges = await Task.Run(() =>
+                {
+                    var validRangesList = new List<(int start, int length)>();
+                    var processedCount = 0;
+                    const int MAX_HIGHLIGHTS_TO_PROCESS = 200; // Lower limit for async processing
+
+                    foreach (var (start, length) in ranges.Take(MAX_HIGHLIGHTS_TO_PROCESS))
+                    {
+                        if (start < 0 || length <= 0 || start >= textLength)
+                            continue;
+
+                        validRangesList.Add((start, Math.Min(length, textLength - start)));
+                        processedCount++;
+                    }
+
+                    return validRangesList;
+                });
+
+                // Update UI on main thread
+                await Application.Current.Dispatcher.InvokeAsync(() =>
+                {
+                    try
+                    {
+                        var finalRects = new List<Rect>();
+                        
+                        foreach (var (start, length) in validRanges)
+                        {
+                            try
+                            {
+                                var startPoint = _textBox.GetRectFromCharacterIndex(start);
+                                var endPoint = _textBox.GetRectFromCharacterIndex(start + length);
+
+                                if (startPoint.Top == endPoint.Top)
+                                {
+                                    // Single line highlight
+                                    var width = Math.Max(0, endPoint.X - startPoint.X);
+                                    if (width > 0)
+                                    {
+                                        finalRects.Add(new Rect(startPoint.X, startPoint.Y, width, startPoint.Height));
+                                    }
+                                }
+                                else
+                                {
+                                    // Multi-line highlight - simplified for async processing
+                                    finalRects.Add(new Rect(startPoint.X, startPoint.Y, 
+                                        Math.Max(0, _textBox.ViewportWidth - startPoint.X), startPoint.Height));
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Error processing highlight range ({start}, {length}): {ex}");
+                            }
+                        }
+
+                        if (finalRects.Count > 0)
+                        {
+                            ClearHighlights();
+                            var brush = new SolidColorBrush(highlightColor) { Opacity = 0.3 };
+                            _currentAdorner = new TextHighlightAdorner(_textBox, finalRects, brush);
+                            _adornerLayer.Add(_currentAdorner);
+                            
+                            Debug.WriteLine($"Created {finalRects.Count} async highlight rectangles from {validRanges.Count} ranges");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error in async highlight UI update: {ex}");
+                        ClearHighlights();
+                    }
+                }, DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in HighlightRangesAsync: {ex}");
                 ClearHighlights();
             }
         }

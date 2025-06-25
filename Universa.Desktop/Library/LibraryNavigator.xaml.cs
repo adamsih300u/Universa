@@ -222,12 +222,12 @@ namespace Universa.Desktop.Library
                     Type = Models.LibraryItemType.Inbox
                 });
 
-                // Add Overview item
+                // Add Global Agenda item
                 RootItems.Add(new LibraryTreeItem
                 {
-                    Name = "Overview",
-                    Icon = "📊",
-                    Type = Models.LibraryItemType.Overview
+                    Name = "📅 Global Agenda",
+                    Icon = "🗓️",
+                    Type = Models.LibraryItemType.GlobalAgenda
                 });
 
                 // Add services
@@ -249,7 +249,22 @@ namespace Universa.Desktop.Library
 
                 if (currentStates != null)
                 {
-                    await RestoreExpandedStatesRecursive(LibraryTreeView.Items, currentStates);
+                    System.Diagnostics.Debug.WriteLine($"Restoring {currentStates.Count} expanded states...");
+                    foreach (var kvp in currentStates)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"  Will restore: {kvp.Key} = {kvp.Value}");
+                    }
+                    
+                    // Force layout update before restoration
+                    LibraryTreeView.UpdateLayout();
+                    
+                    // Use Dispatcher to ensure UI is ready
+                    await Application.Current.Dispatcher.InvokeAsync(async () =>
+                    {
+                        await RestoreExpandedStatesRecursive(LibraryTreeView.Items, currentStates);
+                    }, DispatcherPriority.Loaded);
+                    
+                    System.Diagnostics.Debug.WriteLine("Completed expanded state restoration");
                 }
             }
             finally
@@ -260,15 +275,27 @@ namespace Universa.Desktop.Library
 
         private async Task RestoreExpandedStatesRecursive(ItemCollection items, Dictionary<string, bool> states)
         {
-            foreach (var item in items)
+            for (int i = 0; i < items.Count; i++)
             {
+                var item = items[i];
+                
+                // Ensure container is generated
                 var treeViewItem = LibraryTreeView.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
+                if (treeViewItem == null)
+                {
+                    // Force container generation
+                    LibraryTreeView.UpdateLayout();
+                    treeViewItem = LibraryTreeView.ItemContainerGenerator.ContainerFromItem(item) as TreeViewItem;
+                }
+                
                 if (treeViewItem == null) continue;
 
                 var libraryItem = item as LibraryTreeItem;
-                if (libraryItem?.Type == Models.LibraryItemType.Directory)
+                if (libraryItem?.Type == Models.LibraryItemType.Directory && !string.IsNullOrEmpty(libraryItem.Path))
                 {
                     bool shouldExpand = states.ContainsKey(libraryItem.Path) && states[libraryItem.Path];
+                    System.Diagnostics.Debug.WriteLine($"Restoring {libraryItem.Path}: shouldExpand = {shouldExpand}");
+                    
                     if (shouldExpand)
                     {
                         // Load contents before expanding
@@ -276,11 +303,23 @@ namespace Universa.Desktop.Library
                         {
                             libraryItem.Children = new ObservableCollection<LibraryTreeItem>();
                         }
-                        await LoadDirectory(libraryItem.Path, libraryItem.Children);
+                        
+                        // Check if we need to load directory contents
+                        if (libraryItem.Children.Count <= 1 && 
+                            (libraryItem.Children.Count == 0 || libraryItem.Children[0].Path == null))
+                        {
+                            libraryItem.Children.Clear();
+                            await LoadDirectory(libraryItem.Path, libraryItem.Children);
+                        }
+                        
                         treeViewItem.IsExpanded = true;
+                        System.Diagnostics.Debug.WriteLine($"Expanded: {libraryItem.Path}");
 
+                        // Allow UI to update before processing children
+                        await Application.Current.Dispatcher.InvokeAsync(() => { }, DispatcherPriority.Background);
+                        
                         // Process children after parent is expanded
-                        if (treeViewItem.Items != null)
+                        if (treeViewItem.Items != null && treeViewItem.Items.Count > 0)
                         {
                             await RestoreExpandedStatesRecursive(treeViewItem.Items, states);
                         }
@@ -548,6 +587,10 @@ namespace Universa.Desktop.Library
                 {
                     ParentMainWindow?.OpenOverviewTab();
                 }
+                else if (selectedItem.Type == Models.LibraryItemType.GlobalAgenda)
+                {
+                    ParentMainWindow?.OpenGlobalAgendaTab();
+                }
                 else if (selectedItem.Type == Models.LibraryItemType.Service)
                 {
                     ParentMainWindow?.HandleServiceNavigation(selectedItem);
@@ -585,6 +628,9 @@ namespace Universa.Desktop.Library
                 {
                     case Models.LibraryItemType.Overview:
                         ParentMainWindow?.OpenOverviewTab();
+                        break;
+                    case Models.LibraryItemType.GlobalAgenda:
+                        ParentMainWindow?.OpenGlobalAgendaTab();
                         break;
                     case Models.LibraryItemType.Service:
                         ParentMainWindow?.HandleServiceNavigation(item);
@@ -677,6 +723,81 @@ namespace Universa.Desktop.Library
             }
         }
 
+        private async void NewOrgFile_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedItem = LibraryTreeView.SelectedItem as LibraryTreeItem;
+            var libraryPath = _configService?.Provider?.LibraryPath;
+            var parentPath = selectedItem?.Type == Models.LibraryItemType.Directory ? selectedItem.Path : libraryPath;
+
+            if (string.IsNullOrEmpty(parentPath))
+            {
+                MessageBox.Show("Please configure a library path in settings first.", "Library Path Not Set", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dialog = new InputDialog("New Org File", "Enter org file name:");
+            if (dialog.ShowDialog() == true)
+            {
+                var fileName = dialog.InputText;
+                if (!fileName.EndsWith(".org"))
+                {
+                    fileName += ".org";
+                }
+
+                // Create initial org-mode content with some example items
+                var template = @"#+TITLE: " + Path.GetFileNameWithoutExtension(fileName) + @"
+
+* PROJECT Sample Project [#A] :project:work:
+  DEADLINE: <" + DateTime.Now.AddDays(30).ToString("yyyy-MM-dd ddd") + @">
+  :PROPERTIES:
+  :CATEGORY: Development
+  :BUDGET: $5000
+  :MANAGER: Project Manager
+  :STATUS: Planning
+  :END:
+  
+  This is an example project with multiple tasks.
+
+** TODO Research phase [#A] :research:
+   SCHEDULED: <" + DateTime.Now.ToString("yyyy-MM-dd ddd") + @">
+   
+   Research requirements and gather information.
+
+** TODO Design phase [#B] :design:
+   DEADLINE: <" + DateTime.Now.AddDays(10).ToString("yyyy-MM-dd ddd") + @">
+   
+   Create wireframes and mockups.
+
+** TODO Implementation [#A] :development:
+   
+   Build the actual solution.
+
+** TODO Testing and review [#C] :testing:
+   
+   Quality assurance and final review.
+
+* TODO Individual task [#B] :personal:
+  SCHEDULED: <" + DateTime.Now.AddDays(1).ToString("yyyy-MM-dd ddd") + @">
+  
+  Example of a standalone task not part of a project.
+
+* SOMEDAY Learn new technology :learning:
+  
+  Something to consider for the future.
+  
+  Resources: [[https://example.com/tutorial][Online Tutorial]]
+
+* Links and References :reference:
+  
+  Examples of different link types:
+  - Web link: [[https://orgmode.org][Org-Mode Website]]
+  - File link: [[./documents/notes.md][My Notes]]
+  - Internal link: [[#Sample Project][Jump to Sample Project]]
+";
+                await AddNewFile(parentPath, fileName, template);
+            }
+        }
+
         private async void NewNote_Click(object sender, RoutedEventArgs e)
         {
             var selectedItem = LibraryTreeView.SelectedItem as LibraryTreeItem;
@@ -713,101 +834,668 @@ namespace Universa.Desktop.Library
                 return;
             }
 
-            var dialog = new InputDialog("New Manuscript", "Enter manuscript name:");
+            var manuscriptDialog = new InputDialog("New Manuscript", "Enter manuscript name:");
+            if (manuscriptDialog.ShowDialog() != true) return;
+
+            var manuscriptName = manuscriptDialog.InputText;
+            if (!manuscriptName.EndsWith(".md"))
+            {
+                manuscriptName += ".md";
+            }
+
+            var projectTitle = Path.GetFileNameWithoutExtension(manuscriptName);
+
+            // Ask for optional reference files (following the same pattern as New Outline)
+            var outlineDialog = new InputDialog("Outline File (Optional)", "Enter name for outline file (or leave blank):");
+            var rulesDialog = new InputDialog("Rules File (Optional)", "Enter name for rules file (or leave blank):");
+            var styleDialog = new InputDialog("Style Guide (Optional)", "Enter name for style guide file (or leave blank):");
+
+            string outlineName = null;
+            string rulesName = null;
+            string styleName = null;
+
+            // Get outline name (optional)
+            if (outlineDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(outlineDialog.InputText))
+            {
+                outlineName = outlineDialog.InputText;
+                if (!outlineName.EndsWith(".md")) outlineName += ".md";
+            }
+
+            // Get rules name (optional)
+            if (rulesDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(rulesDialog.InputText))
+            {
+                rulesName = rulesDialog.InputText;
+                if (!rulesName.EndsWith(".md")) rulesName += ".md";
+            }
+
+            // Get style guide name (optional)
+            if (styleDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(styleDialog.InputText))
+            {
+                styleName = styleDialog.InputText;
+                if (!styleName.EndsWith(".md")) styleName += ".md";
+            }
+
+            // Create manuscript with enhanced frontmatter
+            var manuscriptTemplate = new StringBuilder();
+            
+            // Add frontmatter with reference files
+            manuscriptTemplate.AppendLine("---");
+            manuscriptTemplate.AppendLine("type: fiction");
+            manuscriptTemplate.AppendLine($"title: {projectTitle}");
+            manuscriptTemplate.AppendLine("author: ");
+            manuscriptTemplate.AppendLine("genre: ");
+            manuscriptTemplate.AppendLine("series: ");
+            
+            // Add reference file entries if specified
+            if (outlineName != null)
+            {
+                manuscriptTemplate.AppendLine($"outline: {outlineName}");
+            }
+            if (rulesName != null)
+            {
+                manuscriptTemplate.AppendLine($"rules: {rulesName}");
+            }
+            if (styleName != null)
+            {
+                manuscriptTemplate.AppendLine($"style: {styleName}");
+            }
+            
+            manuscriptTemplate.AppendLine("---");
+            manuscriptTemplate.AppendLine();
+            
+            // Add body section
+            manuscriptTemplate.AppendLine($"# {projectTitle}");
+            manuscriptTemplate.AppendLine();
+            
+            // Create manuscript file (NOTE: We do NOT create the reference files - user requested they only be referenced)
+            await AddNewFile(parentPath, manuscriptName, manuscriptTemplate.ToString());
+        }
+
+        private async Task CreateOptimalRulesFile(string parentPath, string fileName, string projectTitle, string seriesName)
+        {
+            var rulesTemplate = new StringBuilder();
+            
+            rulesTemplate.AppendLine($"# Rules: {projectTitle}");
+            rulesTemplate.AppendLine();
+            
+            // Character section optimized for RulesParser
+            rulesTemplate.AppendLine("[Characters]");
+            rulesTemplate.AppendLine();
+            rulesTemplate.AppendLine("# Main Character");
+            rulesTemplate.AppendLine("- Age: (current age)");
+            rulesTemplate.AppendLine("- Role: protagonist");
+            rulesTemplate.AppendLine("- Background: (character background)");
+            rulesTemplate.AppendLine("- Personality: (key personality traits)");
+            rulesTemplate.AppendLine();
+            
+            if (!string.IsNullOrEmpty(seriesName))
+            {
+                rulesTemplate.AppendLine("[Timeline]");
+                rulesTemplate.AppendLine();
+                rulesTemplate.AppendLine($"Book 1 - {projectTitle} (not written yet)");
+                rulesTemplate.AppendLine("- Main events: (key plot points)");
+                rulesTemplate.AppendLine("- Character ages: Main Character (age)");
+                rulesTemplate.AppendLine();
+            }
+            
+            rulesTemplate.AppendLine("[Critical Facts]");
+            rulesTemplate.AppendLine();
+            rulesTemplate.AppendLine("- (Important world-building facts)");
+            rulesTemplate.AppendLine("- (Character relationships)");
+            rulesTemplate.AppendLine("- (Magic system/technology rules)");
+            rulesTemplate.AppendLine();
+            
+            rulesTemplate.AppendLine("[Locations]");
+            rulesTemplate.AppendLine();
+            rulesTemplate.AppendLine("- Primary Setting: (main location description)");
+            rulesTemplate.AppendLine("- Important Places: (key locations in the story)");
+            rulesTemplate.AppendLine();
+            
+            rulesTemplate.AppendLine("[Organizations]");
+            rulesTemplate.AppendLine();
+            rulesTemplate.AppendLine("- (Relevant groups, institutions, or factions)");
+
+            await AddNewFile(parentPath, fileName, rulesTemplate.ToString());
+        }
+
+        private async Task CreateOptimalStyleFile(string parentPath, string fileName, string projectTitle, string genre)
+        {
+            var styleTemplate = new StringBuilder();
+            
+            styleTemplate.AppendLine($"# Style Guide: {projectTitle}");
+            styleTemplate.AppendLine();
+            
+            // Voice section optimized for StyleGuideParser
+            styleTemplate.AppendLine("## Voice Rules - THESE MUST BE FOLLOWED");
+            styleTemplate.AppendLine();
+            styleTemplate.AppendLine("- Primary perspective: (first person / third person limited / etc.)");
+            styleTemplate.AppendLine("- Narrative voice: (formal / casual / literary / etc.)");
+            styleTemplate.AppendLine("- Tense: (past tense / present tense)");
+            styleTemplate.AppendLine();
+            
+            // Genre-specific guidance
+            if (genre == "Fantasy")
+            {
+                styleTemplate.AppendLine("## Fantasy Elements");
+                styleTemplate.AppendLine();
+                styleTemplate.AppendLine("- Magic terminology: (consistent magic system terms)");
+                styleTemplate.AppendLine("- World-building integration: (how to weave fantasy elements naturally)");
+                styleTemplate.AppendLine();
+            }
+            else if (genre == "Science Fiction")
+            {
+                styleTemplate.AppendLine("## Science Fiction Elements");
+                styleTemplate.AppendLine();
+                styleTemplate.AppendLine("- Technical accuracy: (how to handle scientific concepts)");
+                styleTemplate.AppendLine("- Future terminology: (consistent futuristic language)");
+                styleTemplate.AppendLine();
+            }
+            
+            styleTemplate.AppendLine("## Dialogue Guidelines");
+            styleTemplate.AppendLine();
+            styleTemplate.AppendLine("- Character voice distinction: (how each character should sound unique)");
+            styleTemplate.AppendLine("- Dialogue tags: (preferred attribution style)");
+            styleTemplate.AppendLine("- Speech patterns: (formal vs casual, regional dialects, etc.)");
+            styleTemplate.AppendLine();
+            
+            styleTemplate.AppendLine("## Description Style");
+            styleTemplate.AppendLine();
+            styleTemplate.AppendLine("- Sensory details: (which senses to emphasize)");
+            styleTemplate.AppendLine("- Description length: (brief / moderate / detailed)");
+            styleTemplate.AppendLine("- Metaphor usage: (preference for metaphors and similes)");
+            styleTemplate.AppendLine();
+            
+            styleTemplate.AppendLine("## Pacing and Structure");
+            styleTemplate.AppendLine();
+            styleTemplate.AppendLine("- Chapter length: (target word count or pacing)");
+            styleTemplate.AppendLine("- Scene transitions: (how to move between scenes)");
+            styleTemplate.AppendLine("- Tension building: (methods for creating suspense)");
+            styleTemplate.AppendLine();
+            
+            styleTemplate.AppendLine("## Writing Sample");
+            styleTemplate.AppendLine();
+            styleTemplate.AppendLine("(Include a 2-3 paragraph example of your target writing style here)");
+            styleTemplate.AppendLine("(This sample will be used by the AI to match your voice and tone)");
+
+            await AddNewFile(parentPath, fileName, styleTemplate.ToString());
+        }
+
+        private async Task CreateOptimalOutlineFile(string parentPath, string fileName, string projectTitle, string genre, string seriesName)
+        {
+            var outlineTemplate = new StringBuilder();
+            
+            // Frontmatter optimized for OutlineParser
+            outlineTemplate.AppendLine("---");
+            outlineTemplate.AppendLine("type: outline");
+            outlineTemplate.AppendLine($"title: {projectTitle}");
+            outlineTemplate.AppendLine("author: ");
+            outlineTemplate.AppendLine($"genre: {genre}");
+            if (!string.IsNullOrEmpty(seriesName))
+            {
+                outlineTemplate.AppendLine($"series: {seriesName}");
+            }
+            outlineTemplate.AppendLine("---");
+            outlineTemplate.AppendLine();
+            
+            // Structure optimized for OutlineParser
+            outlineTemplate.AppendLine("# Overall Synopsis");
+            outlineTemplate.AppendLine("- Brief 2-3 sentence summary of the entire story");
+            outlineTemplate.AppendLine();
+            
+            outlineTemplate.AppendLine("# Notes");
+            outlineTemplate.AppendLine("- Important notes about themes, tone, special considerations");
+            outlineTemplate.AppendLine("- Use bullet points for better parsing");
+            outlineTemplate.AppendLine();
+            
+            outlineTemplate.AppendLine("# Characters");
+            outlineTemplate.AppendLine("- Protagonists");
+            outlineTemplate.AppendLine("  - Character Name - Brief description of role and personality");
+            outlineTemplate.AppendLine("- Antagonists");
+            outlineTemplate.AppendLine("  - Villain Name - Brief description of role and motivations");
+            outlineTemplate.AppendLine("- Supporting Characters");
+            outlineTemplate.AppendLine("  - Support Character - Brief description");
+            outlineTemplate.AppendLine();
+            
+            outlineTemplate.AppendLine("# Outline");
+            outlineTemplate.AppendLine("## Chapter 1");
+            outlineTemplate.AppendLine("Brief summary of what happens in this chapter (2-4 sentences)");
+            outlineTemplate.AppendLine("- Key event or action that occurs");
+            outlineTemplate.AppendLine("- Character development moment");
+            outlineTemplate.AppendLine("- Plot advancement");
+            outlineTemplate.AppendLine();
+            
+            outlineTemplate.AppendLine("## Chapter 2");
+            outlineTemplate.AppendLine("Brief summary of what happens in this chapter (2-4 sentences)");
+            outlineTemplate.AppendLine("- Key event or action that occurs");
+            outlineTemplate.AppendLine("- Character development moment");
+            outlineTemplate.AppendLine("- Plot advancement");
+
+            await AddNewFile(parentPath, fileName, outlineTemplate.ToString());
+        }
+
+        private async void NewOutline_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedItem = LibraryTreeView.SelectedItem as LibraryTreeItem;
+            var libraryPath = _configService?.Provider?.LibraryPath;
+            var parentPath = selectedItem?.Type == Models.LibraryItemType.Directory ? selectedItem.Path : libraryPath;
+
+            if (string.IsNullOrEmpty(parentPath))
+            {
+                MessageBox.Show("Please configure a library path in settings first.", "Library Path Not Set", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var dialog = new InputDialog("New Outline", "Enter outline name:");
             if (dialog.ShowDialog() == true)
             {
-                var manuscriptName = dialog.InputText;
-                if (!manuscriptName.EndsWith(".md"))
+                var outlineName = dialog.InputText;
+                if (!outlineName.EndsWith(".md"))
                 {
-                    manuscriptName += ".md";
+                    outlineName += ".md";
                 }
 
-                // Ask for custom file names first
-                var outlineDialog = new InputDialog("Outline File", "Enter name for outline file");
-                var rulesDialog = new InputDialog("Rules File", "Enter name for rules file");
-                var styleDialog = new InputDialog("Style Guide", "Enter name for style guide file");
+                // Ask for optional reference files
+                var rulesDialog = new InputDialog("Rules File (Optional)", "Enter name for rules file (or leave blank):");
+                var styleDialog = new InputDialog("Style Guide (Optional)", "Enter name for style guide file (or leave blank):");
 
-                string outlineName = null;
                 string rulesName = null;
                 string styleName = null;
 
-                // Get outline name
-                if (outlineDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(outlineDialog.InputText))
-                {
-                    outlineName = outlineDialog.InputText;
-                    if (!outlineName.EndsWith(".md")) outlineName += ".md";
-                }
-
-                // Get rules name
+                // Get rules name (optional)
                 if (rulesDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(rulesDialog.InputText))
                 {
                     rulesName = rulesDialog.InputText;
                     if (!rulesName.EndsWith(".md")) rulesName += ".md";
                 }
 
-                // Get style guide name
+                // Get style guide name (optional)
                 if (styleDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(styleDialog.InputText))
                 {
                     styleName = styleDialog.InputText;
                     if (!styleName.EndsWith(".md")) styleName += ".md";
                 }
 
-                // Create manuscript file with proper formatting and ref statements
-                var manuscriptTemplate = new StringBuilder();
+                // Create outline file with proper formatting
+                var outlineTemplate = new StringBuilder();
                 
                 // Add frontmatter
-                manuscriptTemplate.AppendLine("---");
-                manuscriptTemplate.AppendLine("#fiction");
+                outlineTemplate.AppendLine("---");
+                outlineTemplate.AppendLine("type: outline");
+                outlineTemplate.AppendLine("title: " + Path.GetFileNameWithoutExtension(outlineName));
+                outlineTemplate.AppendLine("author: ");
+                outlineTemplate.AppendLine("genre: ");
+                outlineTemplate.AppendLine("series: ");
                 
                 // Add ref statements for associated files if they were specified
                 if (rulesName != null)
                 {
-                    manuscriptTemplate.AppendLine($"rules: {rulesName}");
+                    outlineTemplate.AppendLine($"rules: {rulesName}");
                 }
                 if (styleName != null)
                 {
-                    manuscriptTemplate.AppendLine($"style: {styleName}");
+                    outlineTemplate.AppendLine($"style: {styleName}");
                 }
-                if (outlineName != null)
-                {
-                    manuscriptTemplate.AppendLine($"outline: {outlineName}");
-                }
-                
-                // Add other metadata fields
-                manuscriptTemplate.AppendLine("title: " + Path.GetFileNameWithoutExtension(manuscriptName));
-                manuscriptTemplate.AppendLine("author: ");
-                manuscriptTemplate.AppendLine("authorfirst: ");
-                manuscriptTemplate.AppendLine("authorlast: ");
-                manuscriptTemplate.AppendLine("cover: ");
                 
                 // Close frontmatter
-                manuscriptTemplate.AppendLine("---");
-                manuscriptTemplate.AppendLine();
+                outlineTemplate.AppendLine("---");
+                outlineTemplate.AppendLine();
                 
-                // Add body section
-                manuscriptTemplate.AppendLine("# " + Path.GetFileNameWithoutExtension(manuscriptName));
-                manuscriptTemplate.AppendLine();
+                // Add outline structure
+                outlineTemplate.AppendLine("# Overall Synopsis");
+                outlineTemplate.AppendLine("- Brief 2-3 sentence summary of the entire story");
+                outlineTemplate.AppendLine();
+                outlineTemplate.AppendLine("# Notes");
+                outlineTemplate.AppendLine("- Important notes about themes, tone, special considerations");
+                outlineTemplate.AppendLine("- Use bullet points for better parsing");
+                outlineTemplate.AppendLine();
+                outlineTemplate.AppendLine("# Characters");
+                outlineTemplate.AppendLine("- Protagonists");
+                outlineTemplate.AppendLine("  - Character Name - Brief description of role and personality");
+                outlineTemplate.AppendLine("- Antagonists");
+                outlineTemplate.AppendLine("  - Villain Name - Brief description of role and motivations");
+                outlineTemplate.AppendLine("- Supporting Characters");
+                outlineTemplate.AppendLine("  - Support Character - Brief description");
+                outlineTemplate.AppendLine();
+                outlineTemplate.AppendLine("# Outline");
+                outlineTemplate.AppendLine("## Chapter 1");
+                outlineTemplate.AppendLine("Brief summary of what happens in this chapter (2-4 sentences)");
+                outlineTemplate.AppendLine("- Key event or action that occurs");
+                outlineTemplate.AppendLine("- Character development moment");
+                outlineTemplate.AppendLine("- Plot advancement");
+                outlineTemplate.AppendLine();
+                outlineTemplate.AppendLine("## Chapter 2");
+                outlineTemplate.AppendLine("Brief summary of what happens in this chapter (2-4 sentences)");
+                outlineTemplate.AppendLine("- Key event or action that occurs");
+                outlineTemplate.AppendLine("- Character development moment");
+                outlineTemplate.AppendLine("- Plot advancement");
+                outlineTemplate.AppendLine();
+                outlineTemplate.AppendLine("## Chapter 3");
+                outlineTemplate.AppendLine("Brief summary of what happens in this chapter (2-4 sentences)");
+                outlineTemplate.AppendLine("- Key event or action that occurs");
+                outlineTemplate.AppendLine("- Character development moment");
+                outlineTemplate.AppendLine("- Plot advancement");
+                outlineTemplate.AppendLine();
                 
-                // Create manuscript file
-                await AddNewFile(parentPath, manuscriptName, manuscriptTemplate.ToString());
-
-                // Create outline file if name provided
-                if (outlineName != null && !File.Exists(Path.Combine(parentPath, outlineName)))
-                {
-                    await AddNewFile(parentPath, outlineName, "# Outline: " + Path.GetFileNameWithoutExtension(manuscriptName) + "\n\n");
-                }
+                // Create outline file
+                await AddNewFile(parentPath, outlineName, outlineTemplate.ToString());
 
                 // Create rules file if name provided
                 if (rulesName != null && !File.Exists(Path.Combine(parentPath, rulesName)))
                 {
-                    await AddNewFile(parentPath, rulesName, "# Rules: " + Path.GetFileNameWithoutExtension(manuscriptName) + "\n\n");
+                    await AddNewFile(parentPath, rulesName, "# Rules: " + Path.GetFileNameWithoutExtension(outlineName) + "\n\n");
                 }
 
                 // Create style guide file if name provided
                 if (styleName != null && !File.Exists(Path.Combine(parentPath, styleName)))
                 {
-                    await AddNewFile(parentPath, styleName, "# Style Guide: " + Path.GetFileNameWithoutExtension(manuscriptName) + "\n\n");
+                    await AddNewFile(parentPath, styleName, "# Style Guide: " + Path.GetFileNameWithoutExtension(outlineName) + "\n\n");
                 }
+            }
+        }
+
+        private async void NewNonFiction_Click(object sender, RoutedEventArgs e)
+        {
+            var selectedItem = LibraryTreeView.SelectedItem as LibraryTreeItem;
+            var libraryPath = _configService?.Provider?.LibraryPath;
+            var parentPath = selectedItem?.Type == Models.LibraryItemType.Directory ? selectedItem.Path : libraryPath;
+
+            if (string.IsNullOrEmpty(parentPath))
+            {
+                MessageBox.Show("Please configure a library path in settings first.", "Library Path Not Set", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            // Get the main manuscript title
+            var titleDialog = new InputDialog("New Non-Fiction Project", "Enter the title for your non-fiction work:");
+            if (titleDialog.ShowDialog() != true || string.IsNullOrWhiteSpace(titleDialog.InputText))
+                return;
+
+            var projectTitle = titleDialog.InputText;
+            var safeTitle = string.Join("_", projectTitle.Split(Path.GetInvalidFileNameChars()));
+
+            // Create file names
+            var manuscriptName = $"{safeTitle}.md";
+            var outlineName = $"{safeTitle}_Outline.md";
+            var styleName = $"{safeTitle}_Style.md";
+            var rulesName = $"{safeTitle}_Rules.md";
+            var researchName = $"{safeTitle}_Research.md";
+            var sourcesName = $"{safeTitle}_Sources.md";
+            var timelineName = $"{safeTitle}_Timeline.md";
+
+            // Ask for non-fiction type
+            var typeDialog = new NonFictionTypeDialog();
+            var nonfictionType = "general";
+            var subjectMatter = "";
+            var timePeriod = "";
+            
+            if (typeDialog.ShowDialog() == true)
+            {
+                nonfictionType = typeDialog.SelectedType;
+                subjectMatter = typeDialog.SubjectMatter;
+                timePeriod = typeDialog.TimePeriod;
+            }
+
+            try
+            {
+                // Create main manuscript file with proper frontmatter
+                var manuscriptTemplate = new StringBuilder();
+                
+                // Add frontmatter
+                manuscriptTemplate.AppendLine("---");
+                manuscriptTemplate.AppendLine("type: nonfiction");
+                manuscriptTemplate.AppendLine($"subtype: {nonfictionType}");
+                manuscriptTemplate.AppendLine($"title: {projectTitle}");
+                manuscriptTemplate.AppendLine("author: ");
+                
+                if (!string.IsNullOrEmpty(subjectMatter))
+                {
+                    manuscriptTemplate.AppendLine($"subject: {subjectMatter}");
+                }
+                
+                if (!string.IsNullOrEmpty(timePeriod))
+                {
+                    manuscriptTemplate.AppendLine($"time_period: {timePeriod}");
+                }
+                
+                // Add ref statements for associated files
+                manuscriptTemplate.AppendLine($"outline: {outlineName}");
+                manuscriptTemplate.AppendLine($"style: {styleName}");
+                manuscriptTemplate.AppendLine($"rules: {rulesName}");
+                manuscriptTemplate.AppendLine($"research: {researchName}");
+                manuscriptTemplate.AppendLine($"sources: {sourcesName}");
+                manuscriptTemplate.AppendLine($"timeline: {timelineName}");
+                
+                // Close frontmatter
+                manuscriptTemplate.AppendLine("---");
+                manuscriptTemplate.AppendLine();
+                
+                // Add basic manuscript structure
+                manuscriptTemplate.AppendLine($"# {projectTitle}");
+                manuscriptTemplate.AppendLine();
+                
+                if (nonfictionType == "biography" || nonfictionType == "autobiography")
+                {
+                    manuscriptTemplate.AppendLine("## Early Life");
+                    manuscriptTemplate.AppendLine();
+                    manuscriptTemplate.AppendLine("## Career");
+                    manuscriptTemplate.AppendLine();
+                    manuscriptTemplate.AppendLine("## Legacy");
+                    manuscriptTemplate.AppendLine();
+                }
+                else
+                {
+                    manuscriptTemplate.AppendLine("## Introduction");
+                    manuscriptTemplate.AppendLine();
+                    manuscriptTemplate.AppendLine("## Chapter 1");
+                    manuscriptTemplate.AppendLine();
+                    manuscriptTemplate.AppendLine("## Conclusion");
+                    manuscriptTemplate.AppendLine();
+                }
+
+                // Create outline file
+                var outlineTemplate = new StringBuilder();
+                outlineTemplate.AppendLine("---");
+                outlineTemplate.AppendLine("type: outline");
+                outlineTemplate.AppendLine($"title: {projectTitle} - Outline");
+                outlineTemplate.AppendLine("author: ");
+                outlineTemplate.AppendLine($"nonfiction_type: {nonfictionType}");
+                if (!string.IsNullOrEmpty(subjectMatter))
+                {
+                    outlineTemplate.AppendLine($"subject: {subjectMatter}");
+                }
+                outlineTemplate.AppendLine($"style: {styleName}");
+                outlineTemplate.AppendLine($"rules: {rulesName}");
+                outlineTemplate.AppendLine("---");
+                outlineTemplate.AppendLine();
+                outlineTemplate.AppendLine("# Overall Synopsis");
+                outlineTemplate.AppendLine($"- Brief summary of the {nonfictionType} work covering {subjectMatter ?? "the main subject"}");
+                outlineTemplate.AppendLine();
+                outlineTemplate.AppendLine("# Key Themes");
+                outlineTemplate.AppendLine("- Major themes and topics to be covered");
+                outlineTemplate.AppendLine("- Important messages and takeaways");
+                outlineTemplate.AppendLine();
+                outlineTemplate.AppendLine("# Structure");
+                outlineTemplate.AppendLine("## Introduction");
+                outlineTemplate.AppendLine("- Set the stage and introduce the subject");
+                outlineTemplate.AppendLine("- Establish context and importance");
+                outlineTemplate.AppendLine();
+                
+                if (nonfictionType == "biography" || nonfictionType == "autobiography")
+                {
+                    outlineTemplate.AppendLine("## Early Life");
+                    outlineTemplate.AppendLine("- Birth and family background");
+                    outlineTemplate.AppendLine("- Childhood experiences and formative events");
+                    outlineTemplate.AppendLine("- Education and early influences");
+                    outlineTemplate.AppendLine();
+                    outlineTemplate.AppendLine("## Career and Achievements");
+                    outlineTemplate.AppendLine("- Professional development");
+                    outlineTemplate.AppendLine("- Major accomplishments and contributions");
+                    outlineTemplate.AppendLine("- Challenges and setbacks");
+                    outlineTemplate.AppendLine();
+                    outlineTemplate.AppendLine("## Personal Life");
+                    outlineTemplate.AppendLine("- Relationships and family");
+                    outlineTemplate.AppendLine("- Personal struggles and triumphs");
+                    outlineTemplate.AppendLine("- Character and personality");
+                    outlineTemplate.AppendLine();
+                    outlineTemplate.AppendLine("## Legacy and Impact");
+                    outlineTemplate.AppendLine("- Lasting contributions and influence");
+                    outlineTemplate.AppendLine("- How they are remembered");
+                    outlineTemplate.AppendLine("- Lessons from their life");
+                }
+                else
+                {
+                    outlineTemplate.AppendLine("## Main Content Sections");
+                    outlineTemplate.AppendLine("- Key points to be covered");
+                    outlineTemplate.AppendLine("- Supporting evidence and examples");
+                    outlineTemplate.AppendLine("- Logical flow and progression");
+                    outlineTemplate.AppendLine();
+                    outlineTemplate.AppendLine("## Conclusion");
+                    outlineTemplate.AppendLine("- Summary of main points");
+                    outlineTemplate.AppendLine("- Call to action or final thoughts");
+                }
+
+                // Create style guide file
+                var styleTemplate = new StringBuilder();
+                styleTemplate.AppendLine($"# Style Guide: {projectTitle}");
+                styleTemplate.AppendLine();
+                styleTemplate.AppendLine("## Voice and Tone");
+                
+                switch (nonfictionType)
+                {
+                    case "biography":
+                        styleTemplate.AppendLine("- Respectful and engaging narrative voice");
+                        styleTemplate.AppendLine("- Balance between factual accuracy and compelling storytelling");
+                        styleTemplate.AppendLine("- Third-person perspective with objective but empathetic tone");
+                        break;
+                    case "autobiography":
+                        styleTemplate.AppendLine("- Authentic personal voice");
+                        styleTemplate.AppendLine("- First-person perspective with honest reflection");
+                        styleTemplate.AppendLine("- Balance between humility and confidence");
+                        break;
+                    case "academic":
+                        styleTemplate.AppendLine("- Formal, scholarly tone");
+                        styleTemplate.AppendLine("- Objective and analytical approach");
+                        styleTemplate.AppendLine("- Evidence-based argumentation");
+                        break;
+                    default:
+                        styleTemplate.AppendLine("- Clear, accessible prose");
+                        styleTemplate.AppendLine("- Informative yet engaging tone");
+                        styleTemplate.AppendLine("- Appropriate level of formality for the subject matter");
+                        break;
+                }
+                
+                styleTemplate.AppendLine();
+                styleTemplate.AppendLine("## Research and Accuracy");
+                styleTemplate.AppendLine("- All facts must be verifiable and properly sourced");
+                styleTemplate.AppendLine("- Cross-reference multiple sources when possible");
+                styleTemplate.AppendLine("- Note areas requiring further fact-checking");
+                styleTemplate.AppendLine("- Maintain objectivity while telling the story");
+                styleTemplate.AppendLine();
+                styleTemplate.AppendLine("## Citation Style");
+                styleTemplate.AppendLine("- Use appropriate citation format (APA, MLA, Chicago, etc.)");
+                styleTemplate.AppendLine("- Include in-text citations for all borrowed material");
+                styleTemplate.AppendLine("- Maintain comprehensive bibliography");
+                styleTemplate.AppendLine();
+                styleTemplate.AppendLine("## Writing Sample");
+                styleTemplate.AppendLine("(Add a sample paragraph showing the desired tone and style)");
+
+                // Create rules file
+                var rulesTemplate = new StringBuilder();
+                rulesTemplate.AppendLine($"# Rules & Facts: {projectTitle}");
+                rulesTemplate.AppendLine();
+                rulesTemplate.AppendLine("## Core Facts");
+                rulesTemplate.AppendLine("- Key factual information that must be accurately represented");
+                rulesTemplate.AppendLine("- Important dates, names, and events");
+                rulesTemplate.AppendLine("- Verifiable claims and assertions");
+                rulesTemplate.AppendLine();
+                rulesTemplate.AppendLine("## Research Standards");
+                rulesTemplate.AppendLine("- Primary sources preferred over secondary sources");
+                rulesTemplate.AppendLine("- Multiple source verification for controversial claims");
+                rulesTemplate.AppendLine("- Clear distinction between fact and interpretation");
+                rulesTemplate.AppendLine();
+                rulesTemplate.AppendLine("## Ethical Guidelines");
+                rulesTemplate.AppendLine("- Respect privacy of living individuals");
+                rulesTemplate.AppendLine("- Handle sensitive material with appropriate care");
+                rulesTemplate.AppendLine("- Maintain integrity and honesty in presentation");
+
+                // Create research file
+                var researchTemplate = new StringBuilder();
+                researchTemplate.AppendLine($"# Research Notes: {projectTitle}");
+                researchTemplate.AppendLine();
+                researchTemplate.AppendLine("## Primary Sources");
+                researchTemplate.AppendLine("- Letters, diaries, official documents");
+                researchTemplate.AppendLine("- Interviews and first-hand accounts");
+                researchTemplate.AppendLine("- Original records and archives");
+                researchTemplate.AppendLine();
+                researchTemplate.AppendLine("## Secondary Sources");
+                researchTemplate.AppendLine("- Books, articles, and scholarly works");
+                researchTemplate.AppendLine("- Documentaries and media coverage");
+                researchTemplate.AppendLine("- Expert analysis and commentary");
+                researchTemplate.AppendLine();
+                researchTemplate.AppendLine("## Key Facts and Details");
+                researchTemplate.AppendLine("- Important dates and milestones");
+                researchTemplate.AppendLine("- Significant quotes and statements");
+                researchTemplate.AppendLine("- Contextual information and background");
+
+                // Create sources file
+                var sourcesTemplate = new StringBuilder();
+                sourcesTemplate.AppendLine($"# Sources & Bibliography: {projectTitle}");
+                sourcesTemplate.AppendLine();
+                sourcesTemplate.AppendLine("## Books");
+                sourcesTemplate.AppendLine("- Author, Title, Publisher, Year");
+                sourcesTemplate.AppendLine();
+                sourcesTemplate.AppendLine("## Articles");
+                sourcesTemplate.AppendLine("- Author, \"Title,\" Publication, Date");
+                sourcesTemplate.AppendLine();
+                sourcesTemplate.AppendLine("## Online Sources");
+                sourcesTemplate.AppendLine("- Website, \"Page Title,\" URL, Access Date");
+                sourcesTemplate.AppendLine();
+                sourcesTemplate.AppendLine("## Archives and Collections");
+                sourcesTemplate.AppendLine("- Institution, Collection Name, Document Details");
+                sourcesTemplate.AppendLine();
+                sourcesTemplate.AppendLine("## Interviews");
+                sourcesTemplate.AppendLine("- Name, Position, Interview Date, Format");
+
+                // Create timeline file
+                var timelineTemplate = new StringBuilder();
+                timelineTemplate.AppendLine($"# Timeline: {projectTitle}");
+                timelineTemplate.AppendLine();
+                timelineTemplate.AppendLine("## Chronological Events");
+                
+                if (!string.IsNullOrEmpty(timePeriod))
+                {
+                    timelineTemplate.AppendLine($"### {timePeriod}");
+                }
+                
+                timelineTemplate.AppendLine("- Date: Event description");
+                timelineTemplate.AppendLine("- Date: Another significant event");
+                timelineTemplate.AppendLine();
+                timelineTemplate.AppendLine("## Key Milestones");
+                timelineTemplate.AppendLine("- Birth/founding dates");
+                timelineTemplate.AppendLine("- Major achievements");
+                timelineTemplate.AppendLine("- Significant changes or transitions");
+                timelineTemplate.AppendLine("- Death/conclusion dates");
+                timelineTemplate.AppendLine();
+                timelineTemplate.AppendLine("## Historical Context");
+                timelineTemplate.AppendLine("- Contemporary events and developments");
+                timelineTemplate.AppendLine("- Social and political climate");
+                timelineTemplate.AppendLine("- Cultural and technological factors");
+
+                // Create all files
+                await AddNewFile(parentPath, manuscriptName, manuscriptTemplate.ToString());
+                await AddNewFile(parentPath, outlineName, outlineTemplate.ToString());
+                await AddNewFile(parentPath, styleName, styleTemplate.ToString());
+                await AddNewFile(parentPath, rulesName, rulesTemplate.ToString());
+                await AddNewFile(parentPath, researchName, researchTemplate.ToString());
+                await AddNewFile(parentPath, sourcesName, sourcesTemplate.ToString());
+                await AddNewFile(parentPath, timelineName, timelineTemplate.ToString());
+
+                MessageBox.Show($"Non-fiction project '{projectTitle}' created successfully!\n\nFiles created:\n- {manuscriptName} (main manuscript)\n- {outlineName}\n- {styleName}\n- {rulesName}\n- {researchName}\n- {sourcesName}\n- {timelineName}", 
+                    "Project Created", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error creating non-fiction project: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -853,23 +1541,49 @@ namespace Universa.Desktop.Library
 
         private async void Delete_Click(object sender, RoutedEventArgs e)
         {
-            var menuItem = sender as MenuItem;
-            var treeViewItem = menuItem?.Parent as ContextMenu;
-            var item = treeViewItem?.PlacementTarget as TreeViewItem;
-            var libraryItem = item?.DataContext as LibraryTreeItem;
-
-            if (libraryItem != null)
+            try
             {
-                var result = MessageBox.Show(
-                    $"Are you sure you want to delete '{libraryItem.Name}'?",
-                    "Confirm Delete",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
+                System.Diagnostics.Debug.WriteLine("Delete_Click called");
+                
+                var menuItem = sender as MenuItem;
+                System.Diagnostics.Debug.WriteLine($"MenuItem: {menuItem?.Name ?? "null"}");
+                
+                var contextMenu = menuItem?.Parent as ContextMenu;
+                System.Diagnostics.Debug.WriteLine($"ContextMenu: {(contextMenu != null ? "found" : "null")}");
+                
+                var treeViewItem = contextMenu?.PlacementTarget as TreeViewItem;
+                System.Diagnostics.Debug.WriteLine($"TreeViewItem: {(treeViewItem != null ? "found" : "null")}");
+                
+                var libraryItem = treeViewItem?.DataContext as LibraryTreeItem;
+                System.Diagnostics.Debug.WriteLine($"LibraryItem: {libraryItem?.Name ?? "null"}");
 
-                if (result == MessageBoxResult.Yes)
+                if (libraryItem != null)
                 {
+                    System.Diagnostics.Debug.WriteLine($"Attempting to delete: {libraryItem.Name} at {libraryItem.Path}");
                     await DeleteItem(libraryItem);
                 }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine("No library item found to delete");
+                    
+                    // Alternative approach: try to get the selected item directly
+                    var selectedItem = LibraryTreeView.SelectedItem as LibraryTreeItem;
+                    if (selectedItem != null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Using selected item instead: {selectedItem.Name}");
+                        await DeleteItem(selectedItem);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Unable to determine which item to delete. Please try selecting the item first.", 
+                            "Delete Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in Delete_Click: {ex.Message}");
+                MessageBox.Show($"Error during delete operation: {ex.Message}", "Delete Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
@@ -1183,9 +1897,6 @@ namespace Universa.Desktop.Library
         {
             try
             {
-                // Save current expanded states before any changes
-                var expandedStates = GetExpandedStates();
-                
                 // Get unique folder name
                 folderName = GetUniqueFolderName(parentPath, folderName);
                 var newFolderPath = Path.Combine(parentPath, folderName);
@@ -1197,19 +1908,10 @@ namespace Universa.Desktop.Library
                     // Sync the new folder
                     var relativePath = Path.GetRelativePath(libraryPath, newFolderPath);
                     await Managers.SyncManager.GetInstance().HandleLocalFileChangeAsync(relativePath);
-
-                    // Ensure all parent folders are expanded
-                    var current = parentPath;
-                    while (!string.IsNullOrEmpty(current) && current.StartsWith(libraryPath))
-                    {
-                        expandedStates[current] = true;
-                        current = Path.GetDirectoryName(current);
-                    }
                 }
-                expandedStates[newFolderPath] = true;
 
-                // Refresh with saved states
-                await RefreshItems(true, expandedStates);
+                // Add folder to tree without full refresh
+                await AddFolderToTreeView(parentPath, folderName, newFolderPath);
             }
             catch (Exception ex)
             {
@@ -1217,20 +1919,193 @@ namespace Universa.Desktop.Library
             }
         }
 
+        private async Task AddFileToTreeView(string parentPath, string fileName, string filePath)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Adding file to tree view: {fileName} in {parentPath}");
+                
+                // Find the parent directory item in the tree
+                var parentItem = FindLibraryItemByPath(parentPath);
+                if (parentItem != null && parentItem.Children != null)
+                {
+                    // Create new file item
+                    var newFileItem = new LibraryTreeItem
+                    {
+                        Name = fileName,
+                        Path = filePath,
+                        Type = Models.LibraryItemType.File,
+                        Icon = "📄"
+                    };
+                    
+                    // Add to parent's children collection
+                    parentItem.Children.Add(newFileItem);
+                    System.Diagnostics.Debug.WriteLine($"Successfully added {fileName} to tree view");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Could not find parent item for {parentPath}, falling back to refresh");
+                    // Fallback to refresh if we can't find the parent
+                    await RefreshItems();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error adding file to tree view: {ex.Message}");
+                // Fallback to refresh on error
+                await RefreshItems();
+            }
+        }
+
+        private async Task AddFolderToTreeView(string parentPath, string folderName, string folderPath)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Adding folder to tree view: {folderName} in {parentPath}");
+                
+                // Find the parent directory item in the tree
+                var parentItem = FindLibraryItemByPath(parentPath);
+                if (parentItem != null && parentItem.Children != null)
+                {
+                    // Create new folder item
+                    var newFolderItem = new LibraryTreeItem
+                    {
+                        Name = folderName,
+                        Path = folderPath,
+                        Type = Models.LibraryItemType.Directory,
+                        Icon = "📁",
+                        Children = new ObservableCollection<LibraryTreeItem>()
+                    };
+                    
+                    // Add a dummy item to show expand arrow
+                    newFolderItem.Children.Add(new LibraryTreeItem { Path = null });
+                    
+                    // Add to parent's children collection
+                    parentItem.Children.Add(newFolderItem);
+                    System.Diagnostics.Debug.WriteLine($"Successfully added {folderName} to tree view");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Could not find parent item for {parentPath}, falling back to refresh");
+                    // Fallback to refresh if we can't find the parent
+                    await RefreshItems();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error adding folder to tree view: {ex.Message}");
+                // Fallback to refresh on error
+                await RefreshItems();
+            }
+        }
+
+        private LibraryTreeItem FindLibraryItemByPath(string path)
+        {
+            System.Diagnostics.Debug.WriteLine($"Searching for library item with path: {path}");
+            
+            foreach (var rootItem in RootItems)
+            {
+                var found = FindLibraryItemByPathRecursive(rootItem, path);
+                if (found != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found library item: {found.Name}");
+                    return found;
+                }
+            }
+            
+            System.Diagnostics.Debug.WriteLine($"Could not find library item for path: {path}");
+            return null;
+        }
+
+        private LibraryTreeItem FindLibraryItemByPathRecursive(LibraryTreeItem current, string path)
+        {
+            if (current.Path == path)
+            {
+                return current;
+            }
+            
+            if (current.Children != null)
+            {
+                foreach (var child in current.Children)
+                {
+                    var result = FindLibraryItemByPathRecursive(child, path);
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                }
+            }
+            
+            return null;
+        }
+
+        private async Task RemoveItemFromTreeView(LibraryTreeItem itemToRemove)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Removing item from tree view: {itemToRemove.Name} at {itemToRemove.Path}");
+                
+                // Find the parent item
+                var parentItem = FindParentLibraryItem(itemToRemove);
+                if (parentItem != null && parentItem.Children != null)
+                {
+                    // Remove from parent's children collection
+                    parentItem.Children.Remove(itemToRemove);
+                    System.Diagnostics.Debug.WriteLine($"Successfully removed {itemToRemove.Name} from tree view");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Could not find parent item for {itemToRemove.Name}, falling back to refresh");
+                    // Fallback to refresh if we can't find the parent
+                    await RefreshItems();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error removing item from tree view: {ex.Message}");
+                // Fallback to refresh on error
+                await RefreshItems();
+            }
+        }
+
+        private LibraryTreeItem FindParentLibraryItem(LibraryTreeItem itemToFind)
+        {
+            foreach (var rootItem in RootItems)
+            {
+                var parent = FindParentLibraryItemRecursive(rootItem, itemToFind);
+                if (parent != null)
+                {
+                    return parent;
+                }
+            }
+            return null;
+        }
+
+        private LibraryTreeItem FindParentLibraryItemRecursive(LibraryTreeItem current, LibraryTreeItem itemToFind)
+        {
+            if (current.Children != null)
+            {
+                if (current.Children.Contains(itemToFind))
+                {
+                    return current;
+                }
+
+                foreach (var child in current.Children)
+                {
+                    var result = FindParentLibraryItemRecursive(child, itemToFind);
+                    if (result != null)
+                    {
+                        return result;
+                    }
+                }
+            }
+            return null;
+        }
+
         public async Task AddNewFile(string parentPath, string fileName, string template = "")
         {
             try
             {
-                // Save current expanded states before any changes
-                var expandedStates = new Dictionary<string, bool>();
-                foreach (var item in GetAllTreeViewItems(LibraryTreeView))
-                {
-                    if (item.DataContext is LibraryTreeItem libraryItem && !string.IsNullOrEmpty(libraryItem.Path))
-                    {
-                        expandedStates[libraryItem.Path] = item.IsExpanded;
-                    }
-                }
-
                 // Get unique file name
                 string baseName = Path.GetFileNameWithoutExtension(fileName);
                 string extension = Path.GetExtension(fileName);
@@ -1247,20 +2122,18 @@ namespace Universa.Desktop.Library
                     await Managers.SyncManager.GetInstance().HandleLocalFileChangeAsync(relativePath);
                 }
 
-                // If it's a todo file, notify the tracker
-                if (fileName.EndsWith(".todo", StringComparison.OrdinalIgnoreCase))
+                // If it's an org file, notify any relevant trackers
+                if (fileName.EndsWith(".org", StringComparison.OrdinalIgnoreCase) || fileName.EndsWith(".todo", StringComparison.OrdinalIgnoreCase))
                 {
-                    await ToDoTracker.Instance.ScanTodoFilesAsync(parentPath);
+                    // Legacy support for .todo files
+                    if (fileName.EndsWith(".todo", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await ToDoTracker.Instance.ScanTodoFilesAsync(parentPath);
+                    }
                 }
 
-                // Ensure the parent folder is expanded if it exists
-                if (!string.IsNullOrEmpty(parentPath))
-                {
-                    expandedStates[parentPath] = true;
-                }
-
-                // Refresh with saved states
-                await RefreshItems(true, expandedStates);
+                // Add file to tree without full refresh
+                await AddFileToTreeView(parentPath, fileName, filePath);
 
                 // Open the new file in a tab
                 var mainWindow = Application.Current.MainWindow as Views.MainWindow;
@@ -1301,8 +2174,29 @@ namespace Universa.Desktop.Library
 
                 if (result == MessageBoxResult.Yes)
                 {
-                    // Save current expanded states before deletion
+                    // Save current expanded states before deletion - ensure we preserve parent folder expansion
                     var expandedStates = GetExpandedStates() ?? new Dictionary<string, bool>();
+                    
+                    // Ensure the parent directory of the deleted item remains expanded
+                    var parentDir = Path.GetDirectoryName(item.Path);
+                    if (!string.IsNullOrEmpty(parentDir) && Directory.Exists(parentDir))
+                    {
+                        expandedStates[parentDir] = true;
+                        
+                        // Also ensure all ancestor directories remain expanded
+                        var libraryPath = _configService?.Provider?.LibraryPath;
+                        if (!string.IsNullOrEmpty(libraryPath))
+                        {
+                            var current = parentDir;
+                            while (!string.IsNullOrEmpty(current) && current.StartsWith(libraryPath, StringComparison.OrdinalIgnoreCase) && current != libraryPath)
+                            {
+                                expandedStates[current] = true;
+                                current = Path.GetDirectoryName(current);
+                            }
+                        }
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"Preserved {expandedStates.Count} expanded states before deletion");
 
                     // Get list of files to be deleted (for closing tabs)
                     var filesToDelete = new List<string>();
@@ -1323,6 +2217,77 @@ namespace Universa.Desktop.Library
                     else
                     {
                         filesToDelete.Add(item.Path);
+                        
+                        // Check if this is a versioned file and delete its version history
+                        if (Universa.Desktop.LibraryManager.Instance.IsVersionedFile(item.Path))
+                        {
+                            try
+                            {
+                                var relativePath = Universa.Desktop.LibraryManager.Instance.GetRelativePath(item.Path);
+                                var historyPath = Path.Combine(Configuration.Instance.LibraryPath, ".versions");
+                                
+                                System.Diagnostics.Debug.WriteLine($"Deleting version files for: {item.Name}");
+                                System.Diagnostics.Debug.WriteLine($"Relative path: {relativePath}");
+                                System.Diagnostics.Debug.WriteLine($"History path: {historyPath}");
+                                
+                                if (Directory.Exists(historyPath))
+                                {
+                                    // Find all version files for this file using multiple search patterns
+                                    var versionFiles = new List<string>();
+                                    
+                                    // Search pattern 1: exact relative path with timestamp
+                                    var pattern1Files = Directory.GetFiles(historyPath, $"{relativePath}.*", SearchOption.AllDirectories);
+                                    versionFiles.AddRange(pattern1Files);
+                                    
+                                    // Search pattern 2: filename-based search (in case path structure differs)
+                                    var fileName = Path.GetFileName(item.Path);
+                                    var pattern2Files = Directory.GetFiles(historyPath, $"{fileName}.*", SearchOption.AllDirectories);
+                                    versionFiles.AddRange(pattern2Files);
+                                    
+                                    // Search pattern 3: Look for any files containing the relative path
+                                    var allVersionFiles = Directory.GetFiles(historyPath, "*.*", SearchOption.AllDirectories);
+                                    var pattern3Files = allVersionFiles.Where(f => 
+                                        Path.GetFileName(f).StartsWith(relativePath.Replace(Path.DirectorySeparatorChar, '_')) ||
+                                        Path.GetFileName(f).StartsWith(relativePath.Replace(Path.DirectorySeparatorChar, '.')) ||
+                                        f.Contains(relativePath.Replace(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) ||
+                                        f.Contains(relativePath)
+                                    );
+                                    versionFiles.AddRange(pattern3Files);
+                                    
+                                    // Remove duplicates and delete
+                                    var uniqueVersionFiles = versionFiles.Distinct().ToList();
+                                    
+                                    System.Diagnostics.Debug.WriteLine($"Found {uniqueVersionFiles.Count} version files to delete:");
+                                    foreach (var versionFile in uniqueVersionFiles)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine($"  - {versionFile}");
+                                        if (File.Exists(versionFile))
+                                        {
+                                            File.Delete(versionFile);
+                                            System.Diagnostics.Debug.WriteLine($"    Deleted: {versionFile}");
+                                        }
+                                    }
+                                    
+                                    System.Diagnostics.Debug.WriteLine($"Successfully deleted {uniqueVersionFiles.Count} version files for {item.Name}");
+                                }
+                                else
+                                {
+                                    System.Diagnostics.Debug.WriteLine($"History path does not exist: {historyPath}");
+                                }
+                            }
+                            catch (Exception versionEx)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Error deleting version files: {versionEx.Message}");
+                                System.Diagnostics.Debug.WriteLine($"Stack trace: {versionEx.StackTrace}");
+                                // Don't prevent the main file deletion if version cleanup fails
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"File {item.Name} is not tracked as a versioned file");
+                        }
+                        
+                        // Delete the main file
                         File.Delete(item.Path);
                     }
 
@@ -1350,8 +2315,8 @@ namespace Universa.Desktop.Library
                         await ToDoTracker.Instance.ScanTodoFilesAsync(Path.GetDirectoryName(item.Path));
                     }
 
-                    // Refresh with saved states
-                    await RefreshItems(true, expandedStates);
+                    // Remove item from tree without full refresh
+                    await RemoveItemFromTreeView(item);
                 }
             }
             catch (Exception ex)
@@ -1404,8 +2369,44 @@ namespace Universa.Desktop.Library
         private Dictionary<string, bool> GetExpandedStates()
         {
             var states = new Dictionary<string, bool>();
-            CollectExpandedStates(RootItems, states);
+            System.Diagnostics.Debug.WriteLine("Collecting expanded states...");
+            
+            // Force update layout to ensure all containers are generated
+            LibraryTreeView.UpdateLayout();
+            
+            // Use a more direct approach to collect expanded states
+            CollectExpandedStatesFromTreeView(LibraryTreeView.Items, states);
+            
+            System.Diagnostics.Debug.WriteLine($"Collected {states.Count} expanded states");
+            foreach (var kvp in states)
+            {
+                System.Diagnostics.Debug.WriteLine($"  {kvp.Key}: {kvp.Value}");
+            }
+            
             return states;
+        }
+
+        private void CollectExpandedStatesFromTreeView(ItemCollection items, Dictionary<string, bool> states)
+        {
+            if (items == null) return;
+            
+            for (int i = 0; i < items.Count; i++)
+            {
+                var container = LibraryTreeView.ItemContainerGenerator.ContainerFromIndex(i) as TreeViewItem;
+                if (container?.DataContext is LibraryTreeItem libraryItem && 
+                    libraryItem.Type == Models.LibraryItemType.Directory && 
+                    !string.IsNullOrEmpty(libraryItem.Path))
+                {
+                    states[libraryItem.Path] = container.IsExpanded;
+                    System.Diagnostics.Debug.WriteLine($"Collected state: {libraryItem.Path} = {container.IsExpanded}");
+                    
+                    // Recursively collect from children if expanded
+                    if (container.IsExpanded && container.Items != null)
+                    {
+                        CollectExpandedStatesFromTreeView(container.Items, states);
+                    }
+                }
+            }
         }
 
         private void CollectExpandedStates(ObservableCollection<LibraryTreeItem> items, Dictionary<string, bool> states)
@@ -1536,9 +2537,6 @@ namespace Universa.Desktop.Library
                         return;
                     }
 
-                    // Store expanded states before refresh
-                    var expandedStates = GetExpandedStates();
-
                     // Get the MainWindow instance
                     var mainWindow = Application.Current.MainWindow as Views.MainWindow;
                     if (mainWindow == null) return;
@@ -1558,10 +2556,35 @@ namespace Universa.Desktop.Library
                         }
                     }
 
+                    // For directory renames, we need to store and update expanded states
+                    Dictionary<string, bool> expandedStates = null;
+                    if (selectedItem.Type == Models.LibraryItemType.Directory)
+                    {
+                        expandedStates = GetExpandedStates();
+                    }
+
                     // Perform the rename operation
                     if (selectedItem.Type == Models.LibraryItemType.Directory)
                     {
                         Directory.Move(oldPath, newPath);
+                        
+                        // Update path mappings in expanded states
+                        if (expandedStates != null)
+                        {
+                            var updatedStates = new Dictionary<string, bool>();
+                            foreach (var kvp in expandedStates)
+                            {
+                                string updatedPath = kvp.Key;
+                                // Update paths that start with the old directory path
+                                if (kvp.Key.StartsWith(oldPath, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    updatedPath = newPath + kvp.Key.Substring(oldPath.Length);
+                                }
+                                updatedStates[updatedPath] = kvp.Value;
+                            }
+                            expandedStates = updatedStates;
+                        }
+                        
                         // Sync the renamed directory and its contents
                         await Managers.SyncManager.GetInstance().SynchronizeAsync();
                     }
@@ -1584,8 +2607,21 @@ namespace Universa.Desktop.Library
                         await ToDoTracker.Instance.ScanTodoFilesAsync(Path.GetDirectoryName(oldPath));
                     }
 
-                    // Refresh with saved states
-                    await RefreshItems(true, expandedStates);
+                    // Instead of full refresh, do surgical update
+                    if (selectedItem.Type == Models.LibraryItemType.File)
+                    {
+                        // For files, just update the name and path in the existing tree item
+                        selectedItem.Name = newName;
+                        selectedItem.Path = newPath;
+                        
+                        // Update the UI by triggering property change notification
+                        OnPropertyChanged(nameof(RootItems));
+                    }
+                    else
+                    {
+                        // For directories, we need to refresh but preserve expanded states
+                        await RefreshItems(true, expandedStates);
+                    }
                 }
                 catch (Exception ex)
                 {

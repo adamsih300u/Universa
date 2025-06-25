@@ -40,7 +40,9 @@
                     Width="400"
                     VerticalAlignment="Center"
                     Margin="10,0"
-                    ValueChanged="ProgressSlider_ValueChanged"/>
+                    ValueChanged="ProgressSlider_ValueChanged"
+                    Thumb.DragStarted="ProgressSlider_DragStarted"
+                    Thumb.DragCompleted="ProgressSlider_DragCompleted"/>
 
             <!-- Volume Control -->
             <Slider x:Name="VolumeSlider"

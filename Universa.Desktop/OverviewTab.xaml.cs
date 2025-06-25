@@ -26,6 +26,8 @@ namespace Universa.Desktop
 {
     public partial class OverviewTab : UserControl, INotifyPropertyChanged, IFileTab
     {
+        public int LastKnownCursorPosition { get; private set; } = 0;
+        
         private ObservableCollection<Project> _projects;
         private ObservableCollection<ToDo> _todos;
         private ICollectionView _projectsView;

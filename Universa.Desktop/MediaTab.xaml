@@ -20,7 +20,38 @@
         <!-- Style for TreeViewItems -->
         <Style x:Key="MediaTreeViewItemStyle" TargetType="TreeViewItem">
             <Setter Property="IsExpanded" Value="False"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
             <EventSetter Event="MouseDoubleClick" Handler="TreeViewItem_MouseDoubleClick"/>
+        </Style>
+        
+        <!-- PERFORMANCE: Themed DataGrid Row Style -->
+        <Style x:Key="OptimizedDataGridRowStyle" TargetType="DataGridRow">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+        </Style>
+        
+        <!-- Themed DataGrid Cell Style -->
+        <Style x:Key="ThemedDataGridCellStyle" TargetType="DataGridCell">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Style.Triggers>
+                <Trigger Property="IsSelected" Value="True">
+                    <Setter Property="Background" Value="{DynamicResource HighlightBrush}"/>
+                    <Setter Property="Foreground" Value="{DynamicResource HighlightTextBrush}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        
+        <!-- Themed DataGrid Column Header Style -->
+        <Style x:Key="ThemedDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader">
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="Background" Value="{DynamicResource BackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="BorderThickness" Value="0,0,1,1"/>
+            <Setter Property="Padding" Value="8,4"/>
         </Style>
     </UserControl.Resources>
     <Grid>
@@ -37,8 +68,9 @@
                   SelectedItemChanged="MediaTabNavigationTree_SelectedItemChanged"
                   VirtualizingPanel.IsVirtualizing="True"
                   VirtualizingPanel.VirtualizationMode="Recycling"
-                  VirtualizingPanel.ScrollUnit="Pixel"
-                  ScrollViewer.IsDeferredScrollingEnabled="True">
+                  VirtualizingPanel.ScrollUnit="Item"
+                  ScrollViewer.IsDeferredScrollingEnabled="True"
+                  ScrollViewer.CanContentScroll="True">
             <TreeView.Template>
                 <ControlTemplate TargetType="TreeView">
                     <Grid>
@@ -47,20 +79,31 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
                         
-                        <!-- Refresh Button -->
-                        <Button Grid.Row="0" 
-                                Command="{Binding RefreshCommand}"
-                                Margin="5"
-                                Padding="8,4"
-                                HorizontalAlignment="Right">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Refresh" Margin="0,0,5,0"/>
-                                <Path Data="M4.5,1.5C5.6,1.5 6.6,1.9 7.4,2.5L8,2L8,5L5,5L6.2,3.8C5.6,3.3 5.1,3 4.5,3C3.1,3 2,4.1 2,5.5C2,6.9 3.1,8 4.5,8C5.3,8 6,7.7 6.5,7.1L7.7,8.3C6.9,9.2 5.8,9.5 4.5,9.5C2.3,9.5 0.5,7.7 0.5,5.5C0.5,3.3 2.3,1.5 4.5,1.5Z" 
-                                      Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
-                                      Width="12" Height="12" 
-                                      Stretch="Uniform"/>
-                            </StackPanel>
-                        </Button>
+                        <!-- Buttons Panel -->
+                        <StackPanel Grid.Row="0" Orientation="Horizontal" HorizontalAlignment="Right" Margin="5">
+                            <!-- Diagnostic Button -->
+                            <Button Command="{Binding DiagnoseCommand}"
+                                    Margin="0,0,5,0"
+                                    Padding="8,4"
+                                    ToolTip="Run Continue Watching Diagnostics">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="🔧" Margin="0,0,3,0"/>
+                                    <TextBlock Text="Debug"/>
+                                </StackPanel>
+                            </Button>
+                            
+                            <!-- Refresh Button -->
+                            <Button Command="{Binding RefreshCommand}"
+                                    Padding="8,4">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="Refresh" Margin="0,0,5,0"/>
+                                    <Path Data="M4.5,1.5C5.6,1.5 6.6,1.9 7.4,2.5L8,2L8,5L5,5L6.2,3.8C5.6,3.3 5.1,3 4.5,3C3.1,3 2,4.1 2,5.5C2,6.9 3.1,8 4.5,8C5.3,8 6,7.7 6.5,7.1L7.7,8.3C6.9,9.2 5.8,9.5 4.5,9.5C2.3,9.5 0.5,7.7 0.5,5.5C0.5,3.3 2.3,1.5 4.5,1.5Z" 
+                                          Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                                          Width="12" Height="12" 
+                                          Stretch="Uniform"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
                         
                         <!-- TreeView Items -->
                         <ScrollViewer Grid.Row="1" 
@@ -74,9 +117,38 @@
             <TreeView.ItemTemplate>
                 <HierarchicalDataTemplate ItemsSource="{Binding Children}">
                     <StackPanel Orientation="Horizontal">
-                        <Image Width="16" Height="16" Margin="0,0,5,0"
-                               Source="{Binding Type, Converter={StaticResource MediaTypeToIconConverter}}"/>
-                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                        <!-- Different icons for different types -->
+                        <TextBlock Margin="0,0,5,0" VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="📁"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Type}" Value="SpecialCollection">
+                                            <Setter Property="Text" Value="⭐"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Name}" Value="Continue Watching">
+                                            <Setter Property="Text" Value="▶️"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Name}" Value="Next Up">
+                                            <Setter Property="Text" Value="⏭️"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Name}" Value="Latest Movies">
+                                            <Setter Property="Text" Value="🎬"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Name}" Value="Latest TV">
+                                            <Setter Property="Text" Value="📺"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Type}" Value="MovieLibrary">
+                                            <Setter Property="Text" Value="🎭"/>
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Type}" Value="TVLibrary">
+                                            <Setter Property="Text" Value="📻"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}"/>
                     </StackPanel>
                 </HierarchicalDataTemplate>
             </TreeView.ItemTemplate>
@@ -95,7 +167,9 @@
         <Grid Grid.Column="2">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <!-- Filter Box -->
@@ -121,68 +195,126 @@
                 </TextBox.Style>
             </TextBox>
 
-            <!-- Content List -->
-            <ListView x:Name="MediaTabContentListView"
-                      Grid.Row="1"
+            <!-- Load More Button -->
+            <Button Grid.Row="1" 
+                    Margin="5"
+                    Padding="8,4"
+                    HorizontalAlignment="Center"
+                    Command="{Binding LoadMoreCommand}"
+                    Visibility="{Binding CanLoadMore, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <TextBlock Text="Load More Items"/>
+            </Button>
+
+            <!-- PERFORMANCE IMPROVEMENT: Replace ListView with DataGrid for better virtualization -->
+            <DataGrid x:Name="MediaTabContentDataGrid"
+                      Grid.Row="2"
                       ItemsSource="{Binding ContentItems}"
                       MouseDoubleClick="MediaTabContentListView_MouseDoubleClick"
                       SelectionChanged="MediaTabContentListView_SelectionChanged"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      CanUserReorderColumns="True"
+                      CanUserResizeColumns="True"
+                      CanUserSortColumns="True"
+                      HeadersVisibility="Column"
+                      GridLinesVisibility="None"
+                      RowStyle="{StaticResource OptimizedDataGridRowStyle}"
+                      CellStyle="{StaticResource ThemedDataGridCellStyle}"
+                      ColumnHeaderStyle="{StaticResource ThemedDataGridColumnHeaderStyle}"
+                      Background="{DynamicResource BackgroundBrush}"
+                      Foreground="{DynamicResource TextBrush}"
+                      EnableRowVirtualization="True"
+                      EnableColumnVirtualization="True"
                       VirtualizingPanel.IsVirtualizing="True"
                       VirtualizingPanel.VirtualizationMode="Recycling"
-                      VirtualizingPanel.ScrollUnit="Pixel"
-                      ScrollViewer.IsDeferredScrollingEnabled="True">
-                <ListView.View>
-                    <GridView>
-                        <GridViewColumn Header="Episode" Width="70">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding EpisodeNumber}"
-                                             Visibility="{Binding Type, Converter={StaticResource MediaTypeToEpisodeVisibilityConverter}}"/>
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                        <GridViewColumn Header="Name" Width="300">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <StackPanel Orientation="Horizontal">
-                                        <Image Width="24" Height="24" Margin="0,0,5,0"
-                                               Source="{Binding Type, Converter={StaticResource MediaTypeToIconConverter}}"/>
-                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
-                                    </StackPanel>
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                        <GridViewColumn Header="Type" Width="100">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Type}" />
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                        <GridViewColumn Header="Duration" Width="100">
-                            <GridViewColumn.CellTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Duration, Converter={StaticResource DurationConverter}}" />
-                                </DataTemplate>
-                            </GridViewColumn.CellTemplate>
-                        </GridViewColumn>
-                    </GridView>
-                </ListView.View>
+                      VirtualizingPanel.ScrollUnit="Item"
+                      ScrollViewer.IsDeferredScrollingEnabled="True"
+                      ScrollViewer.CanContentScroll="True">
                 
-                <!-- Loading and Error States -->
-                <ListView.Style>
-                    <Style TargetType="ListView">
+                <DataGrid.Columns>
+                    <!-- Episode Column - Themed -->
+                    <DataGridTextColumn Header="Episode" 
+                                        Width="70" 
+                                        Binding="{Binding EpisodeNumber}"
+                                        IsReadOnly="True">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                <Setter Property="HorizontalAlignment" Value="Center"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    
+                    <!-- Series Column - Themed -->
+                    <DataGridTextColumn Header="Series" 
+                                        Width="200" 
+                                        Binding="{Binding SeriesName}"
+                                        IsReadOnly="True">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                <Setter Property="ToolTip" Value="{Binding SeriesName}"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    
+                    <!-- Name Column - Themed -->
+                    <DataGridTextColumn Header="Episode Title" 
+                                        Width="300" 
+                                        Binding="{Binding Name}"
+                                        IsReadOnly="True">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                <Setter Property="ToolTip" Value="{Binding Name}"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    
+                    <!-- Type Column - Themed -->
+                    <DataGridTextColumn Header="Type" 
+                                        Width="100" 
+                                        Binding="{Binding Type}"
+                                        IsReadOnly="True">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                <Setter Property="HorizontalAlignment" Value="Center"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                    
+                    <!-- Duration Column - Themed -->
+                    <DataGridTextColumn Header="Duration" 
+                                        Width="100" 
+                                        Binding="{Binding Duration, Converter={StaticResource DurationConverter}}"
+                                        IsReadOnly="True">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+                                <Setter Property="HorizontalAlignment" Value="Center"/>
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
+                </DataGrid.Columns>
+                
+                <!-- Loading State -->
+                <DataGrid.Style>
+                    <Style TargetType="DataGrid">
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding CurrentLoadingState}" Value="LoadingContent">
                                 <Setter Property="IsEnabled" Value="False"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </ListView.Style>
-            </ListView>
+                </DataGrid.Style>
+            </DataGrid>
 
             <!-- Loading Indicator -->
-            <Grid Grid.Row="1" Panel.ZIndex="1">
+            <Grid Grid.Row="2" Panel.ZIndex="1">
                 <Grid.Style>
                     <Style TargetType="Grid">
                         <Setter Property="Visibility" Value="Collapsed"/>
@@ -194,13 +326,17 @@
                     </Style>
                 </Grid.Style>
                 <Rectangle Fill="{DynamicResource BackgroundBrush}" Opacity="0.7"/>
-                <ProgressBar Width="200" Height="20" IsIndeterminate="True"/>
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ProgressBar Width="200" Height="20" IsIndeterminate="True"/>
+                    <TextBlock Text="Loading content..." 
+                               Margin="0,10,0,0" 
+                               HorizontalAlignment="Center"
+                               Foreground="{DynamicResource TextBrush}"/>
+                </StackPanel>
             </Grid>
 
             <!-- Error Message -->
-            <Border Grid.Row="1" 
-                    Background="#FFEBEE"
-                    BorderBrush="#FFE0E0"
+            <Border Grid.Row="2" 
                     BorderThickness="1"
                     Padding="10"
                     Margin="5"
@@ -208,6 +344,8 @@
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Visibility" Value="Collapsed"/>
+                        <Setter Property="Background" Value="{DynamicResource BackgroundBrush}"/>
+                        <Setter Property="BorderBrush" Value="Red"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding CurrentLoadingState}" Value="Error">
                                 <Setter Property="Visibility" Value="Visible"/>
@@ -216,7 +354,7 @@
                     </Style>
                 </Border.Style>
                 <TextBlock Text="{Binding ErrorMessage}"
-                           Foreground="#B71C1C"
+                           Foreground="Red"
                            TextWrapping="Wrap"/>
             </Border>
         </Grid>

@@ -1,0 +1,132 @@
+<UserControl x:Class="Universa.Desktop.Tabs.OrgModeTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:local="clr-namespace:Universa.Desktop.Converters"
+             xmlns:tabs="clr-namespace:Universa.Desktop.Tabs"
+             xmlns:models="clr-namespace:Universa.Desktop.Models"
+             xmlns:avalonedit="http://icsharpcode.net/sharpdevelop/avalonedit"
+             xmlns:controls="clr-namespace:Universa.Desktop.Controls"
+             mc:Ignorable="d" 
+             d:DesignHeight="600" d:DesignWidth="1000">
+    <UserControl.Resources>
+        <!-- Converters -->
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <local:StringToVisibilityConverter x:Key="StringToVisibilityConverter"/>
+        
+        <!-- Styles for better org-mode appearance -->
+        <Style x:Key="OrgEditorStyle" TargetType="avalonedit:TextEditor">
+            <Setter Property="FontFamily" Value="Consolas, Courier New, monospace"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Background" Value="{DynamicResource BackgroundBrush}"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="LineNumbersForeground" Value="{DynamicResource MutedTextBrush}"/>
+            <Setter Property="ShowLineNumbers" Value="True"/>
+            <Setter Property="WordWrap" Value="True"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="10"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <StackPanel Grid.Row="0" 
+                    Orientation="Horizontal" 
+                    Margin="5"
+                    Background="{DynamicResource HeaderBackgroundBrush}">
+            
+            <TextBlock Text="📝 Org-Mode Editor" 
+                       FontWeight="Bold" 
+                       VerticalAlignment="Center" 
+                       Margin="5,0,15,0"
+                       Foreground="{DynamicResource AccentBrush}"/>
+
+
+            
+            <Button Content="🔍 Expand All" 
+                    Click="ExpandAll_Click" 
+                    Margin="2,0"
+                    Padding="8,4"
+                    ToolTip="Expand all folded sections (Ctrl+Shift+])"/>
+                    
+            <Button Content="📁 Collapse All" 
+                    Click="CollapseAll_Click" 
+                    Margin="2,0"
+                    Padding="8,4"
+                    ToolTip="Collapse all sections (Ctrl+Shift+[)"/>
+                    
+            <Separator Margin="5,0"/>
+            
+            <Button Content="🗃️ Refile" 
+                    Click="RefileItem_Click" 
+                    Margin="2,0"
+                    Padding="8,4"
+                    ToolTip="Refile current item (Ctrl+R)"/>
+        </StackPanel>
+
+        <!-- Main Content - Source Editor Only -->
+        <avalonedit:TextEditor x:Name="SourceEditor"
+                              Grid.Row="1"
+                              Document="{Binding SourceDocument}"
+                              Style="{StaticResource OrgEditorStyle}">
+            <avalonedit:TextEditor.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="✂️ Cut" Command="Cut" InputGestureText="Ctrl+X"/>
+                    <MenuItem Header="📋 Copy" Command="Copy" InputGestureText="Ctrl+C"/>
+                    <MenuItem Header="📄 Paste" Command="Paste" InputGestureText="Ctrl+V"/>
+                    <Separator/>
+                    <MenuItem Header="🔄 Cycle TODO State" Click="StateButton_Click" InputGestureText="Ctrl+Shift++"/>
+                    <MenuItem Header="⬆️ Promote Item" Click="Promote_Click" InputGestureText="Ctrl+Shift+↑"/>
+                    <MenuItem Header="⬇️ Demote Item" Click="Demote_Click" InputGestureText="Ctrl+Shift+↓"/>
+                    <Separator/>
+                                         <MenuItem Header="🗃️ Refile Item..." Click="RefileItem_Click" InputGestureText="Ctrl+R, Ctrl+W"/>
+                    <MenuItem Header="🏷️ Add Tag..." Click="AddTag_Click"/>
+                    <MenuItem Header="📅 Set Scheduled..." Click="SetScheduled_Click"/>
+                    <MenuItem Header="⏰ Set Deadline..." Click="SetDeadline_Click"/>
+                    <MenuItem Header="🔗 Add Link..." Click="AddLink_Click"/>
+                    <Separator/>
+                    <MenuItem Header="➕ Add Item" Click="AddItem_Click"/>
+                    <MenuItem Header="➕ Add Child" Click="AddChild_Click"/>
+                    <MenuItem Header="🗑️ Delete Item" Click="DeleteItem_Click"/>
+                </ContextMenu>
+            </avalonedit:TextEditor.ContextMenu>
+        </avalonedit:TextEditor>
+
+        <!-- Status Bar -->
+        <StatusBar Grid.Row="2" 
+                   Background="{DynamicResource HeaderBackgroundBrush}"
+                   BorderBrush="{DynamicResource BorderBrush}"
+                   BorderThickness="0,1,0,0">
+            <StatusBarItem>
+                <TextBlock Text="{Binding Title}" FontWeight="Bold"/>
+            </StatusBarItem>
+            <Separator/>
+            <StatusBarItem>
+                <TextBlock Text="📝 Source Mode"/>
+            </StatusBarItem>
+            <StatusBarItem>
+                <TextBlock Text="💡 Tip: Position cursor on any heading and press Ctrl+R to refile" 
+                           FontSize="10" 
+                           Foreground="{DynamicResource MutedTextBrush}"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock>
+                    <TextBlock.Text>
+                        <MultiBinding StringFormat="{}Modified: {0}">
+                            <Binding Path="IsModified"/>
+                        </MultiBinding>
+                    </TextBlock.Text>
+                </TextBlock>
+            </StatusBarItem>
+        </StatusBar>
+    </Grid>
+</UserControl> 

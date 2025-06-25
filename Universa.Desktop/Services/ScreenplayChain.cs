@@ -329,10 +329,16 @@ CRITICAL INSTRUCTIONS:
    - Include the triple backticks exactly as shown
    - The original text must be an exact match of what appears in the content
    - Do not include any other text between or inside the code blocks
-3. When providing guidance:
+3. **REVISION FOCUS**: When providing screenplay revisions, be concise:
+   - Provide the revision blocks with minimal explanation
+   - Only add commentary if the user specifically asks for reasoning or analysis
+   - Focus on the format and content changes themselves, not lengthy explanations
+   - If multiple revisions are needed, provide them cleanly in sequence
+   - Let the revised screenplay text speak for itself
+4. When providing guidance:
    - For #body section: Be specific about screenplay formatting rules
    - For other sections: Focus on content and clarity, not formatting
-4. Always:
+5. Always:
    - Follow standard screenplay format ONLY in the #body section
    - Keep other sections in regular text format
    - Follow all global screenplay rules

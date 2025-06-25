@@ -53,6 +53,14 @@ namespace Universa.Desktop
             {
                 ProgressSlider.Value = VideoPlayer.Position.TotalSeconds;
                 UpdateTimeDisplay();
+                
+                // Sync position with main window MediaControlBar
+                if (Application.Current.MainWindow is IMediaWindow mediaWindow)
+                {
+                    mediaWindow.MediaPlayerManager?.UpdateVideoPlaybackState(
+                        VideoPlayer.Position, 
+                        VideoPlayer.NaturalDuration.TimeSpan);
+                }
             }
         }
 
@@ -129,6 +137,33 @@ namespace Universa.Desktop
             if (_isDraggingSlider && VideoPlayer.NaturalDuration.HasTimeSpan)
             {
                 VideoPlayer.Position = TimeSpan.FromSeconds(e.NewValue);
+                UpdateTimeDisplay();
+                
+                // Sync position with main window
+                if (Application.Current.MainWindow is IMediaWindow mediaWindow)
+                {
+                    mediaWindow.MediaPlayerManager?.UpdateVideoPlaybackState(
+                        VideoPlayer.Position, 
+                        VideoPlayer.NaturalDuration.TimeSpan);
+                }
+            }
+        }
+
+        private void ProgressSlider_DragStarted(object sender, System.Windows.Controls.Primitives.DragStartedEventArgs e)
+        {
+            _isDraggingSlider = true;
+            System.Diagnostics.Debug.WriteLine("ProgressSlider drag started");
+        }
+
+        private void ProgressSlider_DragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+        {
+            _isDraggingSlider = false;
+            System.Diagnostics.Debug.WriteLine($"ProgressSlider drag completed at {ProgressSlider.Value} seconds");
+            
+            // Ensure the position is set when drag completes
+            if (VideoPlayer.NaturalDuration.HasTimeSpan)
+            {
+                VideoPlayer.Position = TimeSpan.FromSeconds(ProgressSlider.Value);
                 UpdateTimeDisplay();
             }
         }

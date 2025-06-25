@@ -172,6 +172,34 @@ namespace Universa.Desktop.Views
             _viewModel.SavePassword("JellyfinPassword", JellyfinPasswordBox.Password);
             _viewModel.SavePassword("AudiobookshelfPassword", AudiobookshelfPasswordBox.Password);
         }
+
+        // TODO Tags management event handlers
+        private void AddTodoTag_Click(object sender, RoutedEventArgs e)
+        {
+            var newTag = NewTagTextBox.Text?.Trim();
+            if (!string.IsNullOrEmpty(newTag) && !_viewModel.TodoTags.Contains(newTag))
+            {
+                _viewModel.TodoTags.Add(newTag);
+                NewTagTextBox.Text = string.Empty;
+            }
+        }
+
+        private void RemoveTodoTag_Click(object sender, RoutedEventArgs e)
+        {
+            if (TodoTagsListBox.SelectedItem is string selectedTag)
+            {
+                _viewModel.TodoTags.Remove(selectedTag);
+            }
+        }
+
+        private void NewTagTextBox_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.Enter)
+            {
+                AddTodoTag_Click(sender, e);
+                e.Handled = true;
+            }
+        }
     }
 
     public static class WpfHelper

@@ -1,0 +1,61 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Universa Project Structure and Conventions
+
+## Project Overview
+The Universa project consists of three main components:
+- **Desktop App**: [Universa.Desktop/](mdc:Universa.Desktop) - WPF application
+
+## WPF Architecture (Universa.Desktop)
+Follows MVVM pattern with dependency injection using Microsoft.Extensions.DependencyInjection
+
+### Folder Structure
+- `ViewModels/` - *ViewModel classes, keep under 600 lines each
+- `Views/` - *View classes and UserControls
+- `Models/` - *Model classes and data structures
+- `Services/` - *Service implementations for business logic
+- `Core/` - Core functionality and base classes
+- `Interfaces/` - Interface definitions
+- `Commands/` - Command implementations
+- `Data/` - Data access and repositories
+- `Helpers/` - Utility functions and helper classes
+- `Converters/` - Value converters for data binding
+- `Managers/` - Manager classes for complex operations
+- `Windows/` - Window classes
+- `Themes/` - Theme and styling resources
+- `Styles/` - Style definitions
+- `Resources/` - Resource files
+- `Dialogs/` - Dialog windows and controls
+- `Controls/` - Custom controls
+- `Behaviors/` - Behavior classes
+- `Extensions/` - Extension methods
+- `TTS/` - Text-to-speech functionality
+- `Cache/` - Caching implementations
+- `Adorners/` - WPF adorner classes
+
+### Naming Conventions
+- ViewModels: `*ViewModel` (e.g., `MainViewModel`)
+- Views: `*View` (e.g., `MainView`)
+- Models: `*Model` (e.g., `DocumentModel`)
+- Services: `*Service` (e.g., `FileService`)
+
+### Dependency Injection
+- Preferred lifetime: Scoped
+- Fallback lifetime: Transient
+- Register services in startup/configuration
+
+## Key Files to Monitor
+- [MarkdownTab.xaml.cs](mdc:Universa.Desktop/MarkdownTab.xaml.cs) - **URGENT**: 2400+ lines, needs immediate refactoring
+- [TextHighlighter.cs](mdc:Universa.Desktop/Helpers/TextHighlighter.cs) - 356 lines, approaching limit
+- Monitor other large files in the project
+
+## Code Quality Standards
+- Maximum 600 lines per file
+- Single Responsibility Principle
+- Proper separation of concerns
+- Use dependency injection for services
+- Follow MVVM pattern for UI code
+

@@ -1,0 +1,91 @@
+#+TITLE: Sample Agenda Demo
+#+CREATED: 2024-01-15
+
+* PROJECT Work Planning [#A] :work:project:
+  DEADLINE: <2024-01-30 Tue>
+  :PROPERTIES:
+  :CATEGORY: Development
+  :BUDGET: $10000
+  :MANAGER: John Smith
+  :STATUS: In Progress
+  :END:
+  
+  This is a sample project to demonstrate org-mode calendar features.
+
+** TODO Morning standup meeting [#B] :meeting:
+   SCHEDULED: <2024-01-15 Mon 09:00>
+   
+   Daily team synchronization meeting.
+
+** TODO Review pull requests [#A] :code-review:
+   SCHEDULED: <2024-01-15 Mon 14:00>
+   DEADLINE: <2024-01-16 Tue>
+   
+   Review and approve pending pull requests.
+
+** TODO Client presentation [#A] :presentation:client:
+   SCHEDULED: <2024-01-17 Wed 15:00>
+   DEADLINE: <2024-01-17 Wed>
+   
+   Present the quarterly progress to the client.
+
+** TODO Update documentation [#C] :documentation:
+   DEADLINE: <2024-01-20 Sat>
+   
+   Update API documentation and user guides.
+
+* TODO Personal dentist appointment [#B] :personal:health:
+  SCHEDULED: <2024-01-16 Tue 10:00>
+  
+  Regular dental checkup and cleaning.
+
+* TODO Grocery shopping [#C] :personal:errands:
+  SCHEDULED: <2024-01-16 Tue 18:00>
+  
+  Weekly grocery shopping for the house.
+
+* TODO Conference call with vendors [#A] :business:
+  SCHEDULED: <2024-01-18 Thu 11:00>
+  DEADLINE: <2024-01-18 Thu>
+  
+  Discuss Q1 vendor contracts and pricing.
+
+* DONE Completed task example [#B] :example:
+  CLOSED: [2024-01-14 Sun 16:30]
+  SCHEDULED: <2024-01-14 Sun>
+  
+  This shows what a completed task looks like.
+
+* TODO Overdue task example [#A] :urgent:
+  DEADLINE: <2024-01-10 Wed>
+  
+  This task is overdue and should appear in red in the agenda view.
+
+* TODO Future planning session [#B] :planning:
+  SCHEDULED: <2024-01-25 Thu 14:00>
+  
+  Plan activities for February and March.
+
+* SOMEDAY Learn new programming language [#C] :learning:
+  
+  Maybe explore Rust or Go when time permits.
+
+* PROJECT Home renovation [#B] :personal:home:
+  DEADLINE: <2024-03-15 Fri>
+  :PROPERTIES:
+  :CATEGORY: Personal
+  :BUDGET: $5000
+  :STATUS: Planning
+  :END:
+  
+  Major home renovation project.
+
+** TODO Get quotes from contractors [#A] :planning:
+   DEADLINE: <2024-01-22 Mon>
+   
+   Collect at least 3 quotes for comparison.
+
+** TODO Apply for permits [#B] :bureaucracy:
+   DEADLINE: <2024-02-01 Thu>
+   
+   Submit renovation permits to city hall. 

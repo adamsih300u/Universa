@@ -20,6 +20,9 @@ using Universa.Desktop.Views;
 using System.Runtime.CompilerServices;
 using Universa.Desktop.Core.Configuration;
 using Microsoft.Win32;
+using System.Windows.Forms;
+using System.Globalization;
+using System.Text.Json;
 
 namespace Universa.Desktop.ViewModels
 {
@@ -75,6 +78,29 @@ namespace Universa.Desktop.ViewModels
             TestJellyfinCommand = new RelayCommand(_ => TestJellyfin());
             TestAudiobookshelfCommand = new RelayCommand(_ => TestAudiobookshelf());
 
+            // Org-Mode Commands
+            AddAgendaFileCommand = new RelayCommand(_ => AddAgendaFile());
+            RemoveAgendaFileCommand = new RelayCommand<string>(RemoveAgendaFile);
+            AddAgendaDirectoryCommand = new RelayCommand(_ => AddAgendaDirectory());
+            RemoveAgendaDirectoryCommand = new RelayCommand<string>(RemoveAgendaDirectory);
+            AddTodoStateCommand = new RelayCommand(_ => AddTodoState());
+            RemoveTodoStateCommand = new RelayCommand<string>(RemoveTodoState);
+            AddDoneStateCommand = new RelayCommand(_ => AddDoneState());
+            RemoveDoneStateCommand = new RelayCommand<string>(RemoveDoneState);
+            AddNoActionStateCommand = new RelayCommand(_ => AddNoActionState());
+            RemoveNoActionStateCommand = new RelayCommand<string>(RemoveNoActionState);
+            ResetOrgStatesCommand = new RelayCommand(_ => ResetOrgStates());
+            ResetStateColorCommand = new RelayCommand<string>(ResetStateColor);
+            ResetAllStateColorsCommand = new RelayCommand(_ => ResetAllStateColors());
+            ResetNoActionStateCommand = new RelayCommand<string>(ResetNoActionState);
+            OpenColorPickerCommand = new RelayCommand<StateColorItem>(OpenColorPicker);
+
+            // Quick Refile Target Commands
+            AddRefileTargetCommand = new RelayCommand(_ => AddRefileTarget());
+            EditRefileTargetCommand = new RelayCommand(_ => EditRefileTarget());
+            RemoveRefileTargetCommand = new RelayCommand(_ => RemoveRefileTarget());
+            ResetRefileTargetsCommand = new RelayCommand(_ => ResetRefileTargets());
+
             // Load initial settings
             LoadSettings();
 
@@ -116,6 +142,29 @@ namespace Universa.Desktop.ViewModels
         public ICommand TestSubsonicCommand { get; }
         public ICommand TestJellyfinCommand { get; }
         public ICommand TestAudiobookshelfCommand { get; }
+
+        // Org-Mode Commands
+        public ICommand AddAgendaFileCommand { get; }
+        public ICommand RemoveAgendaFileCommand { get; }
+        public ICommand AddAgendaDirectoryCommand { get; }
+        public ICommand RemoveAgendaDirectoryCommand { get; }
+        public ICommand AddTodoStateCommand { get; }
+        public ICommand RemoveTodoStateCommand { get; }
+        public ICommand AddDoneStateCommand { get; }
+        public ICommand RemoveDoneStateCommand { get; }
+        public ICommand AddNoActionStateCommand { get; }
+        public ICommand RemoveNoActionStateCommand { get; }
+        public ICommand ResetOrgStatesCommand { get; }
+        public ICommand ResetStateColorCommand { get; }
+        public ICommand ResetAllStateColorsCommand { get; }
+        public ICommand ResetNoActionStateCommand { get; }
+        public ICommand OpenColorPickerCommand { get; }
+
+        // Quick Refile Target Commands
+        public ICommand AddRefileTargetCommand { get; }
+        public ICommand EditRefileTargetCommand { get; }
+        public ICommand RemoveRefileTargetCommand { get; }
+        public ICommand ResetRefileTargetsCommand { get; }
         #endregion
 
         #region Properties
@@ -619,6 +668,346 @@ namespace Universa.Desktop.ViewModels
         public string AnthropicApiKey => _config.AnthropicApiKey;
         public string XAIApiKey => _config.XAIApiKey;
 
+        // Org-Mode Settings
+        public bool EnableGlobalAgenda
+        {
+            get => _config.EnableGlobalAgenda;
+            set
+            {
+                if (_config.EnableGlobalAgenda != value)
+                {
+                    _config.EnableGlobalAgenda = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public int AgendaDaysAhead
+        {
+            get => _config.AgendaDaysAhead;
+            set
+            {
+                if (_config.AgendaDaysAhead != value)
+                {
+                    _config.AgendaDaysAhead = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public int AgendaDaysBehind
+        {
+            get => _config.AgendaDaysBehind;
+            set
+            {
+                if (_config.AgendaDaysBehind != value)
+                {
+                    _config.AgendaDaysBehind = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private ObservableCollection<string> _todoTags;
+        public ObservableCollection<string> TodoTags
+        {
+            get
+            {
+                if (_todoTags == null)
+                {
+                    _todoTags = new ObservableCollection<string>(_config.TodoTags);
+                    _todoTags.CollectionChanged += OnTodoTagsCollectionChanged;
+                }
+                return _todoTags;
+            }
+            set
+            {
+                if (_todoTags != value)
+                {
+                    // Unhook from old collection if it exists
+                    if (_todoTags != null)
+                    {
+                        _todoTags.CollectionChanged -= OnTodoTagsCollectionChanged;
+                    }
+
+                    _todoTags = value;
+                    
+                    // Hook to new collection if it exists
+                    if (_todoTags != null)
+                    {
+                        _todoTags.CollectionChanged += OnTodoTagsCollectionChanged;
+                    }
+                    
+                    _config.TodoTags = value?.ToArray() ?? new string[0];
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private void OnTodoTagsCollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            _config.TodoTags = _todoTags.ToArray();
+            OnPropertyChanged(nameof(TodoTags));
+        }
+
+        // Quick Refile Targets
+        private ObservableCollection<KeyValuePair<string, string>> _orgQuickRefileTargets;
+        public ObservableCollection<KeyValuePair<string, string>> OrgQuickRefileTargets
+        {
+            get
+            {
+                if (_orgQuickRefileTargets == null)
+                {
+                    var targets = _config.OrgQuickRefileTargets ?? new Dictionary<string, string>();
+                    _orgQuickRefileTargets = new ObservableCollection<KeyValuePair<string, string>>(targets);
+                    _orgQuickRefileTargets.CollectionChanged += OnOrgQuickRefileTargetsCollectionChanged;
+                }
+                return _orgQuickRefileTargets;
+            }
+            set
+            {
+                if (_orgQuickRefileTargets != value)
+                {
+                    if (_orgQuickRefileTargets != null)
+                    {
+                        _orgQuickRefileTargets.CollectionChanged -= OnOrgQuickRefileTargetsCollectionChanged;
+                    }
+                    _orgQuickRefileTargets = value;
+                    if (_orgQuickRefileTargets != null)
+                    {
+                        _orgQuickRefileTargets.CollectionChanged += OnOrgQuickRefileTargetsCollectionChanged;
+                    }
+                    OnPropertyChanged();
+                    
+                    // Auto-save when collection is replaced
+                    var dictionary = _orgQuickRefileTargets?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value) ?? new Dictionary<string, string>();
+                    _config.OrgQuickRefileTargets = dictionary;
+                }
+            }
+        }
+
+        private void OnOrgQuickRefileTargetsCollectionChanged(object sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+        {
+            // Auto-save when OrgQuickRefileTargets collection changes
+            var dictionary = OrgQuickRefileTargets?.ToDictionary(kvp => kvp.Key, kvp => kvp.Value) ?? new Dictionary<string, string>();
+            _config.OrgQuickRefileTargets = dictionary;
+        }
+
+        private string _newRefileTargetName;
+        public string NewRefileTargetName
+        {
+            get => _newRefileTargetName;
+            set
+            {
+                if (_newRefileTargetName != value)
+                {
+                    _newRefileTargetName = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private string _newRefileTargetPath;
+        public string NewRefileTargetPath
+        {
+            get => _newRefileTargetPath;
+            set
+            {
+                if (_newRefileTargetPath != value)
+                {
+                    _newRefileTargetPath = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private KeyValuePair<string, string>? _selectedRefileTarget;
+        public KeyValuePair<string, string>? SelectedRefileTarget
+        {
+            get => _selectedRefileTarget;
+            set
+            {
+                if (!Equals(_selectedRefileTarget, value))
+                {
+                    _selectedRefileTarget = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool TagCyclingReplacesAll
+        {
+            get => _config.TagCyclingReplacesAll;
+            set
+            {
+                if (_config.TagCyclingReplacesAll != value)
+                {
+                    _config.TagCyclingReplacesAll = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        // Quick Capture Settings
+        public string InboxFilePath
+        {
+            get => _config.InboxFilePath;
+            set
+            {
+                if (_config.InboxFilePath != value)
+                {
+                    _config.InboxFilePath = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool AddTimestampToCapture
+        {
+            get => _config.AddTimestampToCapture;
+            set
+            {
+                if (_config.AddTimestampToCapture != value)
+                {
+                    _config.AddTimestampToCapture = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private ObservableCollection<string> _orgAgendaFiles;
+        public ObservableCollection<string> OrgAgendaFiles
+        {
+            get => _orgAgendaFiles ??= new ObservableCollection<string>(_config.OrgAgendaFiles);
+            set
+            {
+                if (_orgAgendaFiles != value)
+                {
+                    _orgAgendaFiles = value;
+                    _config.OrgAgendaFiles = value.ToArray();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private ObservableCollection<string> _orgAgendaDirectories;
+        public ObservableCollection<string> OrgAgendaDirectories
+        {
+            get => _orgAgendaDirectories ??= new ObservableCollection<string>(_config.OrgAgendaDirectories);
+            set
+            {
+                if (_orgAgendaDirectories != value)
+                {
+                    _orgAgendaDirectories = value;
+                    _config.OrgAgendaDirectories = value.ToArray();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private ObservableCollection<string> _orgTodoStates;
+        public ObservableCollection<string> OrgTodoStates
+        {
+            get => _orgTodoStates ??= new ObservableCollection<string>(_config.OrgTodoStates);
+            set
+            {
+                if (_orgTodoStates != value)
+                {
+                    _orgTodoStates = value;
+                    _config.OrgTodoStates = value.ToArray();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private ObservableCollection<string> _orgDoneStates;
+        public ObservableCollection<string> OrgDoneStates
+        {
+            get => _orgDoneStates ??= new ObservableCollection<string>(_config.OrgDoneStates);
+            set
+            {
+                if (_orgDoneStates != value)
+                {
+                    _orgDoneStates = value;
+                    _config.OrgDoneStates = value.ToArray();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private ObservableCollection<string> _orgNoActionStates;
+        public ObservableCollection<string> OrgNoActionStates
+        {
+            get => _orgNoActionStates ??= new ObservableCollection<string>(_config.OrgNoActionStates);
+            set
+            {
+                if (_orgNoActionStates != value)
+                {
+                    _orgNoActionStates = value;
+                    _config.OrgNoActionStates = value.ToArray();
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        // New state text properties for adding states
+        private string _newTodoState;
+        public string NewTodoState
+        {
+            get => _newTodoState;
+            set
+            {
+                if (_newTodoState != value)
+                {
+                    _newTodoState = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private string _newDoneState;
+        public string NewDoneState
+        {
+            get => _newDoneState;
+            set
+            {
+                if (_newDoneState != value)
+                {
+                    _newDoneState = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        private string _newNoActionState;
+        public string NewNoActionState
+        {
+            get => _newNoActionState;
+            set
+            {
+                if (_newNoActionState != value)
+                {
+                    _newNoActionState = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        // State Color Configuration
+        private ObservableCollection<StateColorItem> _stateColorItems;
+        public ObservableCollection<StateColorItem> StateColorItems
+        {
+            get => _stateColorItems ??= LoadStateColorItems();
+            set
+            {
+                if (_stateColorItems != value)
+                {
+                    _stateColorItems = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         #endregion
 
         private void Save()
@@ -979,6 +1368,10 @@ namespace Universa.Desktop.ViewModels
                 }
 
                 OnPropertyChanged(string.Empty);
+                
+                // Refresh state color items
+                _stateColorItems = null;
+                OnPropertyChanged(nameof(StateColorItems));
             }
             catch (Exception ex)
             {
@@ -1364,6 +1757,460 @@ namespace Universa.Desktop.ViewModels
             catch (Exception ex)
             {
                 _dialogService.ShowError($"Audiobookshelf API test failed: {ex.Message}", "Audiobookshelf Test");
+            }
+        }
+
+        #region Org-Mode Command Implementations
+        private void AddAgendaFile()
+        {
+            var dialog = new Microsoft.Win32.OpenFileDialog
+            {
+                Title = "Select Org File",
+                Filter = "Org files (*.org)|*.org|All files (*.*)|*.*",
+                CheckFileExists = true
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                if (!OrgAgendaFiles.Contains(dialog.FileName))
+                {
+                    OrgAgendaFiles.Add(dialog.FileName);
+                    _config.OrgAgendaFiles = OrgAgendaFiles.ToArray();
+                }
+            }
+        }
+
+        private void RemoveAgendaFile(string filePath)
+        {
+            if (!string.IsNullOrEmpty(filePath) && OrgAgendaFiles.Contains(filePath))
+            {
+                OrgAgendaFiles.Remove(filePath);
+                _config.OrgAgendaFiles = OrgAgendaFiles.ToArray();
+            }
+        }
+
+        private void AddAgendaDirectory()
+        {
+            var dialog = new System.Windows.Forms.FolderBrowserDialog
+            {
+                Description = "Select directory containing org files",
+                ShowNewFolderButton = false
+            };
+
+            if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            {
+                if (!OrgAgendaDirectories.Contains(dialog.SelectedPath))
+                {
+                    OrgAgendaDirectories.Add(dialog.SelectedPath);
+                    _config.OrgAgendaDirectories = OrgAgendaDirectories.ToArray();
+                }
+            }
+        }
+
+        private void RemoveAgendaDirectory(string directoryPath)
+        {
+            if (!string.IsNullOrEmpty(directoryPath) && OrgAgendaDirectories.Contains(directoryPath))
+            {
+                OrgAgendaDirectories.Remove(directoryPath);
+                _config.OrgAgendaDirectories = OrgAgendaDirectories.ToArray();
+            }
+        }
+
+        private void AddTodoState()
+        {
+            if (!string.IsNullOrWhiteSpace(NewTodoState))
+            {
+                var stateName = NewTodoState.Trim().ToUpper();
+                if (!OrgTodoStates.Contains(stateName))
+                {
+                    OrgTodoStates.Add(stateName);
+                    _config.OrgTodoStates = OrgTodoStates.ToArray();
+                    NewTodoState = string.Empty;
+                }
+            }
+        }
+
+        private void RemoveTodoState(string state)
+        {
+            if (!string.IsNullOrEmpty(state) && OrgTodoStates.Contains(state))
+            {
+                OrgTodoStates.Remove(state);
+                _config.OrgTodoStates = OrgTodoStates.ToArray();
+            }
+        }
+
+        private void AddDoneState()
+        {
+            if (!string.IsNullOrWhiteSpace(NewDoneState))
+            {
+                var stateName = NewDoneState.Trim().ToUpper();
+                if (!OrgDoneStates.Contains(stateName))
+                {
+                    OrgDoneStates.Add(stateName);
+                    _config.OrgDoneStates = OrgDoneStates.ToArray();
+                    NewDoneState = string.Empty;
+                }
+            }
+        }
+
+        private void RemoveDoneState(string state)
+        {
+            if (!string.IsNullOrEmpty(state) && OrgDoneStates.Contains(state))
+            {
+                OrgDoneStates.Remove(state);
+                _config.OrgDoneStates = OrgDoneStates.ToArray();
+            }
+        }
+
+        private void AddNoActionState()
+        {
+            if (!string.IsNullOrWhiteSpace(NewNoActionState))
+            {
+                var stateName = NewNoActionState.Trim().ToUpper();
+                if (!OrgNoActionStates.Contains(stateName))
+                {
+                    OrgNoActionStates.Add(stateName);
+                    _config.OrgNoActionStates = OrgNoActionStates.ToArray();
+                    NewNoActionState = string.Empty;
+                }
+            }
+        }
+
+        private void RemoveNoActionState(string state)
+        {
+            if (!string.IsNullOrEmpty(state) && OrgNoActionStates.Contains(state))
+            {
+                OrgNoActionStates.Remove(state);
+                _config.OrgNoActionStates = OrgNoActionStates.ToArray();
+            }
+        }
+
+        private void ResetOrgStates()
+        {
+            var result = System.Windows.MessageBox.Show(
+                "This will reset all TODO states to their defaults. Are you sure?",
+                "Reset TODO States",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                var defaultConfig = new OrgStateConfiguration();
+                
+                OrgTodoStates.Clear();
+                foreach (var state in defaultConfig.TodoStates.Select(s => s.Name))
+                {
+                    OrgTodoStates.Add(state);
+                }
+
+                OrgDoneStates.Clear();
+                foreach (var state in defaultConfig.DoneStates.Select(s => s.Name))
+                {
+                    OrgDoneStates.Add(state);
+                }
+
+                OrgNoActionStates.Clear();
+                foreach (var state in defaultConfig.NoActionStates.Select(s => s.Name))
+                {
+                    OrgNoActionStates.Add(state);
+                }
+
+                _config.OrgTodoStates = OrgTodoStates.ToArray();
+                _config.OrgDoneStates = OrgDoneStates.ToArray();
+                _config.OrgNoActionStates = OrgNoActionStates.ToArray();
+            }
+        }
+
+        private ObservableCollection<StateColorItem> LoadStateColorItems()
+        {
+            var items = new ObservableCollection<StateColorItem>();
+            var colors = _config.OrgStateColors;
+            
+            // Get all configured states
+            var allStates = new List<string>();
+            allStates.AddRange(_config.OrgTodoStates);
+            allStates.AddRange(_config.OrgDoneStates);
+            allStates.AddRange(_config.OrgNoActionStates);
+            
+            // Create color items for all states
+            foreach (var stateName in allStates.Distinct())
+            {
+                var colorHex = colors.ContainsKey(stateName) ? colors[stateName] : "#888888";
+                items.Add(new StateColorItem(stateName, colorHex));
+            }
+            
+            return items;
+        }
+
+        private void ResetStateColor(string stateName)
+        {
+            if (string.IsNullOrEmpty(stateName)) return;
+            
+            var defaultColors = _config.GetDefaultStateColors();
+            var defaultColor = defaultColors.ContainsKey(stateName) ? defaultColors[stateName] : "#888888";
+            
+            // Update the configuration
+            _config.SetStateColor(stateName, defaultColor);
+            
+            // Update the UI item
+            var item = StateColorItems.FirstOrDefault(i => i.StateName == stateName);
+            if (item != null)
+            {
+                item.ColorHex = defaultColor;
+            }
+        }
+
+        private void ResetAllStateColors()
+        {
+            var result = System.Windows.MessageBox.Show(
+                "This will reset all TODO state colors to their defaults. Are you sure?",
+                "Reset State Colors",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Question);
+
+            if (result == MessageBoxResult.Yes)
+            {
+                var defaultColors = _config.GetDefaultStateColors();
+                
+                // Reset all colors in configuration
+                _config.OrgStateColors = new Dictionary<string, string>(defaultColors);
+                
+                // Update UI items
+                foreach (var item in StateColorItems)
+                {
+                    var defaultColor = defaultColors.ContainsKey(item.StateName) 
+                        ? defaultColors[item.StateName] 
+                        : "#888888";
+                    item.ColorHex = defaultColor;
+                }
+            }
+        }
+
+        private void ResetNoActionState(string state)
+        {
+            if (!string.IsNullOrEmpty(state) && OrgNoActionStates.Contains(state))
+            {
+                OrgNoActionStates.Remove(state);
+                _config.OrgNoActionStates = OrgNoActionStates.ToArray();
+            }
+        }
+
+        private void OpenColorPicker(StateColorItem stateColorItem)
+        {
+            if (stateColorItem == null) return;
+
+            // Create and configure the color dialog
+            var colorDialog = new System.Windows.Forms.ColorDialog
+            {
+                AllowFullOpen = true,
+                FullOpen = true,
+                AnyColor = true,
+                SolidColorOnly = false
+            };
+
+            // Set the current color if valid
+            try
+            {
+                if (!string.IsNullOrEmpty(stateColorItem.ColorHex))
+                {
+                    var currentColor = (Color)ColorConverter.ConvertFromString(stateColorItem.ColorHex);
+                    colorDialog.Color = System.Drawing.Color.FromArgb(currentColor.A, currentColor.R, currentColor.G, currentColor.B);
+                }
+            }
+            catch
+            {
+                // If current color is invalid, start with white
+                colorDialog.Color = System.Drawing.Color.White;
+            }
+
+            // Show the dialog
+            if (colorDialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            {
+                // Convert the selected color to hex
+                var selectedColor = colorDialog.Color;
+                var hexColor = $"#{selectedColor.R:X2}{selectedColor.G:X2}{selectedColor.B:X2}";
+                
+                // Update the state color item
+                stateColorItem.ColorHex = hexColor;
+                
+                // Save to configuration
+                var stateColors = _config.OrgStateColors;
+                stateColors[stateColorItem.StateName] = hexColor;
+                _config.OrgStateColors = stateColors;
+            }
+        }
+        #endregion
+
+        // Quick Refile Target Commands
+        private void AddRefileTarget()
+        {
+            try
+            {
+                // Show input dialog for name
+                var nameDialog = new Dialogs.InputDialog("Add Quick Refile Target", "Enter target name (e.g., INBOX, PROJECTS):");
+                nameDialog.Owner = System.Windows.Application.Current.MainWindow;
+                
+                if (nameDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(nameDialog.InputText))
+                {
+                    var name = nameDialog.InputText.Trim().ToUpperInvariant();
+                    
+                    // Check if name already exists
+                    if (OrgQuickRefileTargets.Any(kvp => kvp.Key.Equals(name, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _dialogService.ShowError($"A refile target with name '{name}' already exists.", "Duplicate Name");
+                        return;
+                    }
+                    
+                    // Show input dialog for path with better sizing and examples
+                    var pathPrompt = "Enter target path (relative to library folder):\n\n" +
+                                   "Examples:\n" +
+                                   "• inbox.org\n" +
+                                   "• projects.org::*Projects\n" +
+                                   "• someday.org::*Someday Maybe\n\n" +
+                                   "Format: filename.org or filename.org::*Heading";
+                    
+                    var pathDialog = new Dialogs.InputDialog("Add Quick Refile Target", pathPrompt);
+                    pathDialog.Owner = System.Windows.Application.Current.MainWindow;
+                    pathDialog.Height = 300; // Make dialog taller for long prompt
+                    pathDialog.Width = 500;  // Make dialog wider
+                    
+                    if (pathDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(pathDialog.InputText))
+                    {
+                        var path = pathDialog.InputText.Trim();
+                        
+                        // Validate path format
+                        if (!path.EndsWith(".org") && !path.Contains("::"))
+                        {
+                            if (_dialogService.ShowConfirmation($"Path '{path}' doesn't look like an org file. Continue anyway?", "Confirm Path"))
+                            {
+                                // Continue with the path as entered
+                            }
+                            else
+                            {
+                                return; // User cancelled
+                            }
+                        }
+                        
+                        // Add to collection
+                        OrgQuickRefileTargets.Add(new KeyValuePair<string, string>(name, path));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Error adding refile target: {ex.Message}", "Error");
+            }
+        }
+
+        private void EditRefileTarget()
+        {
+            try
+            {
+                if (!SelectedRefileTarget.HasValue)
+                {
+                    _dialogService.ShowMessage("Please select a refile target from the list to edit.", "No Selection");
+                    return;
+                }
+
+                var selected = SelectedRefileTarget.Value;
+                
+                // Show input dialog for name with current value
+                var nameDialog = new Dialogs.InputDialog("Edit Quick Refile Target", $"Enter target name:\n\nCurrent: {selected.Key}");
+                nameDialog.Owner = System.Windows.Application.Current.MainWindow;
+                
+                if (nameDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(nameDialog.InputText))
+                {
+                    var newName = nameDialog.InputText.Trim().ToUpperInvariant();
+                    
+                    // Check if name already exists (unless it's the same as current)
+                    if (!newName.Equals(selected.Key, StringComparison.OrdinalIgnoreCase) && 
+                        OrgQuickRefileTargets.Any(kvp => kvp.Key.Equals(newName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _dialogService.ShowError($"A refile target with name '{newName}' already exists.", "Duplicate Name");
+                        return;
+                    }
+                    
+                    // Show input dialog for path with current value
+                    var pathPrompt = $"Enter target path (relative to library folder):\n\n" +
+                                   $"Current: {selected.Value}\n\n" +
+                                   "Examples:\n" +
+                                   "• inbox.org\n" +
+                                   "• projects.org::*Projects\n" +
+                                   "• someday.org::*Someday Maybe\n\n" +
+                                   "Format: filename.org or filename.org::*Heading";
+                    
+                    var pathDialog = new Dialogs.InputDialog("Edit Quick Refile Target", pathPrompt);
+                    pathDialog.Owner = System.Windows.Application.Current.MainWindow;
+                    pathDialog.Height = 300; // Make dialog taller for long prompt
+                    pathDialog.Width = 500;  // Make dialog wider
+                    
+                    if (pathDialog.ShowDialog() == true && !string.IsNullOrWhiteSpace(pathDialog.InputText))
+                    {
+                        var newPath = pathDialog.InputText.Trim();
+                        
+                        // Remove old entry and add new one
+                        var index = OrgQuickRefileTargets.IndexOf(selected);
+                        if (index >= 0)
+                        {
+                            OrgQuickRefileTargets.RemoveAt(index);
+                            OrgQuickRefileTargets.Insert(index, new KeyValuePair<string, string>(newName, newPath));
+                            SelectedRefileTarget = new KeyValuePair<string, string>(newName, newPath);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Error editing refile target: {ex.Message}", "Error");
+            }
+        }
+
+        private void RemoveRefileTarget()
+        {
+            try
+            {
+                if (!SelectedRefileTarget.HasValue)
+                {
+                    _dialogService.ShowMessage("Please select a refile target from the list to remove.", "No Selection");
+                    return;
+                }
+
+                var selected = SelectedRefileTarget.Value;
+                
+                if (_dialogService.ShowConfirmation($"Are you sure you want to remove the refile target '{selected.Key}'?", "Confirm Removal"))
+                {
+                    OrgQuickRefileTargets.Remove(selected);
+                    SelectedRefileTarget = null;
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Error removing refile target: {ex.Message}", "Error");
+            }
+        }
+
+        private void ResetRefileTargets()
+        {
+            try
+            {
+                if (_dialogService.ShowConfirmation("Are you sure you want to reset all quick refile targets to defaults?", "Confirm Reset"))
+                {
+                    // Clear existing targets
+                    OrgQuickRefileTargets.Clear();
+                    
+                    // Add default targets
+                    var defaults = _config.GetDefaultQuickRefileTargets();
+                    foreach (var kvp in defaults)
+                    {
+                        OrgQuickRefileTargets.Add(new KeyValuePair<string, string>(kvp.Key, kvp.Value));
+                    }
+                    
+                    _dialogService.ShowMessage("Quick refile targets have been reset to defaults.", "Reset Complete");
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Error resetting refile targets: {ex.Message}", "Error");
             }
         }
     }

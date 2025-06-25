@@ -22,7 +22,8 @@ namespace Universa.Desktop.Models
         Artist = 17,
         Playlist = 18,
         Folder = 19,
-        Overview = 20,     // For the Overview tab
-        Inbox = 21        // For the Inbox feature
+        Overview = 20,     // For the Overview tab (deprecated)
+        Inbox = 21,       // For the Inbox feature
+        GlobalAgenda = 22 // For the Global Agenda tab
     }
 } 

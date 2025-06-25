@@ -748,6 +748,201 @@ namespace Universa.Desktop.Core.Configuration
         }
         #endregion
 
+        #region Org-Mode Settings
+        public bool EnableGlobalAgenda
+        {
+            get => _configManager.Get<bool>(ConfigurationKeys.OrgMode.EnableGlobalAgenda, false);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.EnableGlobalAgenda, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public int AgendaDaysAhead
+        {
+            get => _configManager.Get<int>(ConfigurationKeys.OrgMode.AgendaDaysAhead, 7);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.AgendaDaysAhead, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public int AgendaDaysBehind
+        {
+            get => _configManager.Get<int>(ConfigurationKeys.OrgMode.AgendaDaysBehind, 30);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.AgendaDaysBehind, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string[] TodoTags
+        {
+            get => _configManager.Get<string[]>(ConfigurationKeys.OrgMode.TodoTags) ?? GetDefaultTodoTags();
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.TodoTags, value);
+                OnPropertyChanged();
+            }
+        }
+
+        private string[] GetDefaultTodoTags()
+        {
+            return new[] { "work", "personal", "urgent", "project", "meeting", "home" };
+        }
+
+        public bool TagCyclingReplacesAll
+        {
+            get => _configManager.Get<bool>(ConfigurationKeys.OrgMode.TagCyclingReplacesAll, false);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.TagCyclingReplacesAll, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string[] OrgAgendaFiles
+        {
+            get => _configManager.Get<string[]>(ConfigurationKeys.OrgMode.AgendaFiles) ?? Array.Empty<string>();
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.AgendaFiles, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string[] OrgAgendaDirectories
+        {
+            get => _configManager.Get<string[]>(ConfigurationKeys.OrgMode.AgendaDirectories) ?? Array.Empty<string>();
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.AgendaDirectories, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string[] OrgTodoStates
+        {
+            get => _configManager.Get<string[]>(ConfigurationKeys.OrgMode.TodoStates) ?? new[] { "TODO", "NEXT", "STARTED", "PROJECT" };
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.TodoStates, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string[] OrgDoneStates
+        {
+            get => _configManager.Get<string[]>(ConfigurationKeys.OrgMode.DoneStates) ?? new[] { "DONE", "CANCELLED" };
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.DoneStates, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string[] OrgNoActionStates
+        {
+            get => _configManager.Get<string[]>(ConfigurationKeys.OrgMode.NoActionStates) ?? new[] { "DELEGATED", "SOMEDAY", "WAITING", "DEFERRED" };
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.NoActionStates, value);
+                OnPropertyChanged();
+            }
+        }
+
+        // TODO State Colors
+        public Dictionary<string, string> OrgStateColors
+        {
+            get => _configManager.Get<Dictionary<string, string>>(ConfigurationKeys.OrgMode.StateColors) ?? GetDefaultStateColors();
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.StateColors, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public Dictionary<string, string> GetDefaultStateColors()
+        {
+            return new Dictionary<string, string>
+            {
+                // TODO States
+                { "TODO", "#FF8C00" },       // Dark Orange
+                { "NEXT", "#1E90FF" },       // Dodger Blue  
+                { "STARTED", "#DAA520" },    // Goldenrod
+                { "PROJECT", "#9932CC" },    // Dark Violet
+                
+                // Done States
+                { "DONE", "#228B22" },       // Forest Green
+                { "CANCELLED", "#696969" },  // Dim Gray
+                
+                // No Action States
+                { "DELEGATED", "#9370DB" },  // Medium Purple
+                { "SOMEDAY", "#708090" },    // Slate Gray
+                { "WAITING", "#DC143C" },    // Crimson
+                { "DEFERRED", "#9370DB" },   // Medium Purple
+            };
+        }
+
+        public string GetStateColor(string stateName)
+        {
+            var colors = OrgStateColors;
+            return colors.ContainsKey(stateName) ? colors[stateName] : "#888888"; // Default gray
+        }
+
+        public void SetStateColor(string stateName, string color)
+        {
+            var colors = OrgStateColors;
+            colors[stateName] = color;
+            OrgStateColors = colors;
+        }
+
+        public Dictionary<string, string> OrgQuickRefileTargets
+        {
+            get => _configManager.Get<Dictionary<string, string>>(ConfigurationKeys.OrgMode.QuickRefileTargets) ?? GetDefaultQuickRefileTargets();
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.QuickRefileTargets, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public Dictionary<string, string> GetDefaultQuickRefileTargets()
+        {
+            return new Dictionary<string, string>
+            {
+                { "INBOX", "inbox.org" },
+                { "TASKS", "tasks.org" },
+                { "PROJECTS", "projects.org::*Projects" },
+                { "SOMEDAY", "someday.org" },
+                { "REFERENCE", "reference.org" }
+            };
+        }
+
+        public string InboxFilePath
+        {
+            get => _configManager.Get<string>(ConfigurationKeys.OrgMode.InboxFilePath);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.InboxFilePath, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public bool AddTimestampToCapture
+        {
+            get => _configManager.Get<bool>(ConfigurationKeys.OrgMode.AddTimestampToCapture, true);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.OrgMode.AddTimestampToCapture, value);
+                OnPropertyChanged();
+            }
+        }
+        #endregion
+
         public double LastVolume
         {
             get => _configManager.Get<double>(ConfigurationKeys.Media.LastVolume, 1.0);

@@ -11,6 +11,8 @@ using System.Windows.Media;
 using Microsoft.Win32;
 using Universa.Desktop.Services.Export;
 using Universa.Desktop.Interfaces;
+using Universa.Desktop.Core;
+using Universa.Desktop.Services;
 using System.Globalization;
 
 namespace Universa.Desktop.Views
@@ -79,15 +81,30 @@ namespace Universa.Desktop.Views
             }
 
             // Set default metadata values
-            if (_currentTab is MarkdownTab markdownTab)
+            if (_currentTab is Views.MarkdownTabAvalon markdownTab)
             {
-                // Get metadata from frontmatter first
-                foreach (var key in markdownTab.GetFrontmatterKeys())
+                // Get frontmatter processor from service locator
+                var frontmatterProcessor = ServiceLocator.Instance.GetService<IFrontmatterProcessor>();
+                if (frontmatterProcessor != null && !string.IsNullOrEmpty(markdownTab.FilePath) && File.Exists(markdownTab.FilePath))
                 {
-                    string value = markdownTab.GetFrontmatterValue(key);
-                    if (!string.IsNullOrEmpty(value))
+                    try
                     {
-                        _metadata[key] = value;
+                        // Read file content and extract frontmatter
+                        string fileContent = File.ReadAllText(markdownTab.FilePath);
+                        var frontmatter = frontmatterProcessor.GetFrontmatterFromContent(fileContent);
+                        
+                        // Get metadata from frontmatter
+                        foreach (var kvp in frontmatter)
+                        {
+                            if (!string.IsNullOrEmpty(kvp.Value))
+                            {
+                                _metadata[kvp.Key] = kvp.Value;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error reading frontmatter: {ex.Message}");
                     }
                 }
                 
@@ -316,10 +333,10 @@ namespace Universa.Desktop.Views
                     }
                     
                     // Add font information from the current tab
-                    if (_currentTab is MarkdownTab markdownTab)
+                    if (_currentTab is Views.MarkdownTabAvalon markdownTab)
                     {
-                        _metadata["fontFamily"] = markdownTab.Editor.FontFamily.Source;
-                        _metadata["fontSize"] = markdownTab.Editor.FontSize.ToString();
+                        _metadata["fontFamily"] = markdownTab.MarkdownEditor.FontFamily.Source;
+                        _metadata["fontSize"] = markdownTab.MarkdownEditor.FontSize.ToString();
                     }
                 }
                 

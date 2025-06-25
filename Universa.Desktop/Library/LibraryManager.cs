@@ -42,12 +42,31 @@ namespace Universa.Desktop.Library
         {
             try
             {
+                // Validate configuration before attempting versioned operations
+                var config = Configuration.Instance;
+                if (config == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("Error: Configuration.Instance is null in Library.LibraryManager, performing simple file move.");
+                    File.Move(sourcePath, destinationPath);
+                    RefreshItems();
+                    return;
+                }
+                
+                var libraryPath = config.LibraryPath;
+                if (string.IsNullOrEmpty(libraryPath))
+                {
+                    System.Diagnostics.Debug.WriteLine("Warning: LibraryPath not configured in Library.LibraryManager, performing simple file move.");
+                    File.Move(sourcePath, destinationPath);
+                    RefreshItems();
+                    return;
+                }
+                
                 // Save current version before moving if it's a versioned file
                 if (Universa.Desktop.LibraryManager.Instance.IsVersionedFile(sourcePath))
                 {
                     var sourceRelativePath = Universa.Desktop.LibraryManager.Instance.GetRelativePath(sourcePath);
                     var destRelativePath = Universa.Desktop.LibraryManager.Instance.GetRelativePath(destinationPath);
-                    var historyPath = Path.Combine(Configuration.Instance.LibraryPath, ".versions");
+                    var historyPath = Path.Combine(libraryPath, ".versions");
                     var historyFiles = Directory.GetFiles(historyPath, $"{sourceRelativePath}.*", SearchOption.AllDirectories);
 
                     // Move the main file first

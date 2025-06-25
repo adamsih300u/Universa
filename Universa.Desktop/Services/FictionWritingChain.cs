@@ -312,6 +312,7 @@ namespace Universa.Desktop.Services
 === RESPONSE FORMAT ===
 When suggesting specific text changes, you MUST use EXACTLY this format:
 
+For REVISIONS (replacing existing text):
 ```
 Original text:
 [paste the exact text to be replaced]
@@ -322,22 +323,40 @@ Changed to:
 [your new version of the text]
 ```
 
+For INSERTIONS (adding new text after existing text):
+```
+Insert after:
+[paste the exact anchor text to insert after]
+```
+
+```
+New text:
+[the new content to insert]
+```
+
 CRITICAL INSTRUCTIONS:
 1. If the user asks about a specific section (rules, outline, style, or story content), focus your response on that section
 2. When suggesting changes:
-   - Use the exact labels 'Original text:' and 'Changed to:'
-   - Only use text from the CURRENT STORY CONTENT section for the original text
+   - For REVISIONS: Use 'Original text:' and 'Changed to:' labels
+   - For INSERTIONS: Use 'Insert after:' and 'New text:' labels
+   - Only use text from the CURRENT STORY CONTENT section for original/anchor text
    - Never suggest changes to text from previous messages or conversation history
    - Include the triple backticks exactly as shown
-   - The original text must be an exact match of what appears in the content
+   - The original/anchor text must be an exact match of what appears in the content
    - Do not include any other text between or inside the code blocks
-   - Orignal text should include ALL original text being recommended for revision
+   - Original text should include ALL original text being recommended for revision
    - Revisions should not match original text exactly, there must be something different
-3. When providing guidance:
+   - Insertions should specify exactly WHERE the new content should be placed
+3. **REVISION FOCUS**: When providing revisions or insertions, be concise:
+   - Provide the revision blocks with minimal explanation
+   - Only add commentary if the user specifically asks for reasoning
+   - Focus on the changes themselves, not lengthy analysis
+   - If multiple revisions are needed, provide them cleanly in sequence
+4. When providing guidance:
    - Be specific and reference relevant sections
    - Explain how your suggestions align with the rules and outline
    - Demonstrate understanding of the established style
-4. Always:
+5. Always:
    - Match the established writing style
    - Keep the same tone and vocabulary level
    - Maintain consistent narrative perspective

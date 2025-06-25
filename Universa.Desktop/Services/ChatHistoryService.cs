@@ -55,7 +55,9 @@ namespace Universa.Desktop.Services
                         ModelProvider = t.SelectedModel?.Provider.ToString(),
                         InputText = t.InputText,
                         Messages = new List<Models.ChatMessage>(t.Messages),
-                        ChatModeMessages = new List<Models.ChatMessage>(t.ChatModeMessages)
+                        ChatModeMessages = new List<Models.ChatMessage>(t.ChatModeMessages),
+                        ContextModeScrollPosition = t.ContextModeScrollPosition,
+                        ChatModeScrollPosition = t.ChatModeScrollPosition
                     }).ToList()
                 };
                 

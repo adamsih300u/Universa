@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Universa.Desktop.Models;
 using Universa.Desktop.Core.Configuration;
@@ -10,28 +11,40 @@ namespace Universa.Desktop.Services
     {
         private readonly IConfigurationService _configService;
         private readonly ConfigurationProvider _config;
-        private JellyfinClient _client;
+        private readonly HttpClient _httpClient;
+        private JellyfinAuthService _authService;
+        private JellyfinLibraryService _libraryService;
+        private JellyfinStreamService _streamService;
+        private JellyfinCacheService _cacheService;
 
         public JellyfinService(IConfigurationService configService)
         {
             _configService = configService;
             _config = _configService.Provider;
             
+            // Initialize HttpClient with proper configuration
+            _httpClient = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(30)
+            };
+            _httpClient.DefaultRequestHeaders.Accept.Add(
+                new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
+            
             // Subscribe to configuration changes
             _configService.ConfigurationChanged += OnConfigurationChanged;
             
-            // Initialize client
-            InitializeClient();
+            // Initialize services
+            InitializeServices();
             
             // Log current configuration
             System.Diagnostics.Debug.WriteLine($"JellyfinService: Current configuration - URL: {_config.JellyfinUrl}, Username: {_config.JellyfinUsername}");
         }
 
-        private void InitializeClient()
+        private void InitializeServices()
         {
             try
             {
-                System.Diagnostics.Debug.WriteLine("JellyfinService: Initializing client...");
+                System.Diagnostics.Debug.WriteLine("JellyfinService: Initializing services...");
                 System.Diagnostics.Debug.WriteLine($"JellyfinService: URL: {_config.JellyfinUrl}");
                 System.Diagnostics.Debug.WriteLine($"JellyfinService: Username: {_config.JellyfinUsername}");
                 System.Diagnostics.Debug.WriteLine($"JellyfinService: Password length: {(_config.JellyfinPassword?.Length ?? 0)}");
@@ -40,17 +53,31 @@ namespace Universa.Desktop.Services
                     !string.IsNullOrEmpty(_config.JellyfinUsername) &&
                     !string.IsNullOrEmpty(_config.JellyfinPassword))
                 {
-                    _client = new JellyfinClient(
+                    // Initialize cache service first
+                    _cacheService = new JellyfinCacheService();
+                    
+                    // Initialize auth service
+                    _authService = new JellyfinAuthService(
+                        _httpClient,
                         _config.JellyfinUrl,
                         _config.JellyfinUsername,
                         _config.JellyfinPassword
                     );
-                    System.Diagnostics.Debug.WriteLine($"JellyfinService: Client initialized with URL {_config.JellyfinUrl}");
+                    
+                    // Initialize dependent services
+                    _libraryService = new JellyfinLibraryService(_httpClient, _authService, _cacheService);
+                    _streamService = new JellyfinStreamService(_httpClient, _authService);
+                    
+                    System.Diagnostics.Debug.WriteLine($"JellyfinService: Services initialized with URL {_config.JellyfinUrl}");
                 }
                 else
                 {
-                    _client = null;
-                    System.Diagnostics.Debug.WriteLine("JellyfinService: Client not initialized due to missing configuration");
+                    _authService = null;
+                    _libraryService = null;
+                    _streamService = null;
+                    _cacheService = null;
+                    
+                    System.Diagnostics.Debug.WriteLine("JellyfinService: Services not initialized due to missing configuration");
                     if (string.IsNullOrEmpty(_config.JellyfinUrl)) System.Diagnostics.Debug.WriteLine("JellyfinService: Missing URL");
                     if (string.IsNullOrEmpty(_config.JellyfinUsername)) System.Diagnostics.Debug.WriteLine("JellyfinService: Missing Username");
                     if (string.IsNullOrEmpty(_config.JellyfinPassword)) System.Diagnostics.Debug.WriteLine("JellyfinService: Missing Password");
@@ -58,9 +85,12 @@ namespace Universa.Desktop.Services
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"JellyfinService: Error initializing client - {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"JellyfinService: Error initializing services - {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"JellyfinService: Stack trace - {ex.StackTrace}");
-                _client = null;
+                _authService = null;
+                _libraryService = null;
+                _streamService = null;
+                _cacheService = null;
             }
         }
 
@@ -68,12 +98,12 @@ namespace Universa.Desktop.Services
         {
             try
             {
-                // Reinitialize client if Jellyfin settings change
+                // Reinitialize services if Jellyfin settings change
                 if (e.Key.StartsWith("services.jellyfin"))
                 {
                     System.Diagnostics.Debug.WriteLine($"JellyfinService: Configuration changed - {e.Key}");
                     System.Diagnostics.Debug.WriteLine($"JellyfinService: New value - {e.NewValue}");
-                    InitializeClient();
+                    InitializeServices();
                 }
             }
             catch (Exception ex)
@@ -85,53 +115,120 @@ namespace Universa.Desktop.Services
 
         public async Task<bool> Authenticate()
         {
-            if (_client == null)
+            if (_authService == null)
             {
-                System.Diagnostics.Debug.WriteLine("JellyfinService: Authenticate called but client is null, attempting to initialize");
-                InitializeClient();
-                if (_client == null)
+                System.Diagnostics.Debug.WriteLine("JellyfinService: Authenticate called but auth service is null, attempting to initialize");
+                InitializeServices();
+                if (_authService == null)
                 {
-                    System.Diagnostics.Debug.WriteLine("JellyfinService: Failed to initialize client for authentication");
+                    System.Diagnostics.Debug.WriteLine("JellyfinService: Failed to initialize auth service for authentication");
                     return false;
                 }
             }
-            return await _client.Authenticate();
+            return await _authService.AuthenticateAsync();
         }
 
         public async Task<List<MediaItem>> GetLibraries()
         {
-            if (_client == null)
+            if (_libraryService == null)
             {
-                throw new InvalidOperationException("Jellyfin client is not initialized. Please check your configuration.");
+                throw new InvalidOperationException("Jellyfin library service is not initialized. Please check your configuration.");
             }
-            return await _client.GetLibraries();
+            return await _libraryService.GetLibrariesAsync();
         }
 
         public async Task<List<MediaItem>> GetLibraryItems(string libraryId)
         {
-            if (_client == null)
+            if (_libraryService == null)
             {
-                throw new InvalidOperationException("Jellyfin client is not initialized. Please check your configuration.");
+                throw new InvalidOperationException("Jellyfin library service is not initialized. Please check your configuration.");
             }
-            return await _client.GetLibraryItems(libraryId);
+            return await _libraryService.GetLibraryItemsAsync(libraryId);
         }
 
         public async Task<List<MediaItem>> GetItems(string itemParentId)
         {
-            if (_client == null)
+            if (_libraryService == null)
             {
-                throw new InvalidOperationException("Jellyfin client is not initialized. Please check your configuration.");
+                throw new InvalidOperationException("Jellyfin library service is not initialized. Please check your configuration.");
             }
-            return await _client.GetItems(itemParentId);
+            return await _libraryService.GetItemsAsync(itemParentId);
         }
 
         public async Task<List<MediaItem>> GetMediaLibraryAsync()
         {
-            if (_client == null)
+            if (_libraryService == null)
             {
-                throw new InvalidOperationException("Jellyfin client is not initialized. Please check your configuration.");
+                throw new InvalidOperationException("Jellyfin library service is not initialized. Please check your configuration.");
             }
-            return await _client.GetMediaLibraryAsync();
+            return await _libraryService.GetLibrariesAsync();
+        }
+
+        public string GetStreamUrl(string itemId)
+        {
+            if (_streamService == null)
+            {
+                throw new InvalidOperationException("Jellyfin stream service is not initialized. Please check your configuration.");
+            }
+            return _streamService.GetStreamUrl(itemId);
+        }
+
+        public async Task<bool> MarkAsWatchedAsync(string itemId, bool watched)
+        {
+            if (_streamService == null)
+            {
+                throw new InvalidOperationException("Jellyfin stream service is not initialized. Please check your configuration.");
+            }
+            return await _streamService.MarkAsWatchedAsync(itemId, watched);
+        }
+
+        public async Task<List<MediaItem>> GetContinueWatchingAsync(bool isTV)
+        {
+            if (_libraryService == null)
+            {
+                throw new InvalidOperationException("Jellyfin library service is not initialized. Please check your configuration.");
+            }
+            return await _libraryService.GetContinueWatchingAsync(isTV);
+        }
+
+        public async Task<List<MediaItem>> GetRecentlyAddedAsync(bool isTV)
+        {
+            if (_libraryService == null)
+            {
+                throw new InvalidOperationException("Jellyfin library service is not initialized. Please check your configuration.");
+            }
+            return await _libraryService.GetRecentlyAddedAsync(isTV);
+        }
+
+        public async Task<List<MediaItem>> GetNextUpAsync()
+        {
+            if (_libraryService == null)
+            {
+                throw new InvalidOperationException("Jellyfin library service is not initialized. Please check your configuration.");
+            }
+            return await _libraryService.GetNextUpAsync();
+        }
+
+        public async Task<string> DiagnoseContinueWatchingAsync()
+        {
+            if (_libraryService == null)
+            {
+                return "Jellyfin library service is not initialized. Please check your configuration.";
+            }
+            return await _libraryService.DiagnoseContinueWatchingAsync();
+        }
+
+        public async Task ClearCacheAsync()
+        {
+            if (_cacheService != null)
+            {
+                await _cacheService.ClearCacheAsync();
+            }
+        }
+
+        public void Dispose()
+        {
+            _httpClient?.Dispose();
         }
     }
 } 

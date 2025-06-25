@@ -11,6 +11,8 @@ namespace Universa.Desktop.Managers
         {
         }
 
+        public VideoPlayerWindow CurrentVideoWindow => _currentVideoWindow;
+
         public void ShowVideoWindow(Uri videoUri, string title)
         {
             if (_currentVideoWindow != null)

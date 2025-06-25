@@ -41,6 +41,11 @@ namespace Universa.Desktop
                 });
                 services.AddSingleton<IDialogService, DialogService>();
                 
+                // Register markdown-related services as TRANSIENT to prevent cross-tab contamination
+                services.AddTransient<IFrontmatterProcessor, FrontmatterProcessor>();
+                services.AddTransient<IMarkdownSearchService, MarkdownSearchService>();
+                services.AddTransient<IMarkdownTTSService, MarkdownTTSService>();
+                
                 // ToDo services must be transient (not singleton) to handle multiple different ToDo files
                 services.AddTransient<IToDoService>(provider => {
                     var configService = provider.GetRequiredService<IConfigurationService>();
@@ -84,6 +89,9 @@ namespace Universa.Desktop
 
                 // Register additional services through ServiceLocator
                 ServiceLocator.RegisterServices(services);
+                
+                // Register AvalonEdit and enhanced markdown services
+                services.RegisterAllServices();
 
                 // Build the service provider
                 _serviceProvider = services.BuildServiceProvider();

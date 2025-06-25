@@ -1029,6 +1029,38 @@ namespace Universa.Desktop.Managers
             }
         }
 
+        // Add a method to update the timeline slider with position and duration
+        public void UpdateTimelineSlider(TimeSpan position, TimeSpan duration)
+        {
+            try
+            {
+                if (_timelineSlider != null)
+                {
+                    Application.Current.Dispatcher.InvokeAsync(() =>
+                    {
+                        try
+                        {
+                            // Update slider maximum and position if not being dragged
+                            if (_mediaPlayerManager != null && !_mediaPlayerManager.IsDraggingSlider && duration.TotalSeconds > 0)
+                            {
+                                _timelineSlider.Maximum = duration.TotalSeconds;
+                                _timelineSlider.Value = position.TotalSeconds;
+                                Debug.WriteLine($"Timeline slider updated: {position:mm\\:ss} / {duration:mm\\:ss}");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error updating timeline slider on UI thread: {ex.Message}");
+                        }
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in UpdateTimelineSlider: {ex.Message}");
+            }
+        }
+
         public void UpdateShuffleButton(bool isEnabled)
         {
             if (_shuffleButton != null)

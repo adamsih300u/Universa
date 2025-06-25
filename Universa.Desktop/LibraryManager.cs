@@ -33,8 +33,9 @@ namespace Universa.Desktop
             ".eprj",  // Encrypted project file
 
             // Project Management
+            ".org",   // Org-mode files
             ".prj",   // Project file
-            ".todo",  // Todo list
+            ".todo",  // Todo list (legacy)
             ".task"   // Task list
         };
 
@@ -74,7 +75,10 @@ namespace Universa.Desktop
             }
         }
 
-        private string HistoryPath => Path.Combine(Configuration.Instance.LibraryPath, ".versions");
+        private string HistoryPath => 
+            string.IsNullOrEmpty(Configuration.Instance.LibraryPath) 
+                ? null 
+                : Path.Combine(Configuration.Instance.LibraryPath, ".versions");
 
         private LibraryManager()
         {
@@ -136,12 +140,31 @@ namespace Universa.Desktop
         {
             try
             {
+                // Validate library path configuration before attempting versioned file operations
+                if (string.IsNullOrEmpty(Configuration.Instance.LibraryPath))
+                {
+                    System.Diagnostics.Debug.WriteLine("Warning: LibraryPath not configured, performing simple file move without versioning.");
+                    // For non-configured library, just do a simple move
+                    File.Move(sourcePath, destinationPath);
+                    return;
+                }
+                
                 // Save current version before moving if it's a versioned file
                 if (IsVersionedFile(sourcePath))
                 {
                     var sourceRelativePath = GetRelativePath(sourcePath);
                     var destRelativePath = GetRelativePath(destinationPath);
-                    var historyFiles = Directory.GetFiles(HistoryPath, $"{sourceRelativePath}.*", SearchOption.AllDirectories);
+                    
+                    // Check if history path is available before trying to access version files
+                    var historyPath = HistoryPath;
+                    if (string.IsNullOrEmpty(historyPath) || !Directory.Exists(historyPath))
+                    {
+                        // No version history available, just do simple move
+                        File.Move(sourcePath, destinationPath);
+                        return;
+                    }
+                    
+                    var historyFiles = Directory.GetFiles(historyPath, $"{sourceRelativePath}.*", SearchOption.AllDirectories);
 
                     // Move the main file first
                     File.Move(sourcePath, destinationPath);
@@ -151,8 +174,8 @@ namespace Universa.Desktop
                     {
                         var fileName = Path.GetFileName(historyFile);
                         var newHistoryPath = Path.Combine(
-                            HistoryPath,
-                            Path.GetDirectoryName(destRelativePath),
+                            historyPath,
+                            Path.GetDirectoryName(destRelativePath) ?? "",
                             fileName.Replace(sourceRelativePath, destRelativePath)
                         );
 
@@ -325,7 +348,25 @@ namespace Universa.Desktop
 
         public string GetRelativePath(string fullPath)
         {
-            return Path.GetRelativePath(Configuration.Instance.LibraryPath, fullPath)
+            if (string.IsNullOrEmpty(fullPath))
+                throw new ArgumentNullException(nameof(fullPath));
+                
+            var config = Configuration.Instance;
+            if (config == null)
+            {
+                System.Diagnostics.Debug.WriteLine("Error: Configuration.Instance is null in GetRelativePath. Falling back to filename.");
+                return Path.GetFileName(fullPath);
+            }
+                
+            var libraryPath = config.LibraryPath;
+            if (string.IsNullOrEmpty(libraryPath))
+            {
+                System.Diagnostics.Debug.WriteLine("Warning: LibraryPath is not configured. Cannot calculate relative path.");
+                // Fallback to just the filename for safety
+                return Path.GetFileName(fullPath);
+            }
+            
+            return Path.GetRelativePath(libraryPath, fullPath)
                 .Replace('\\', '/');
         }
 

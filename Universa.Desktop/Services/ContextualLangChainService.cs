@@ -26,6 +26,13 @@ namespace Universa.Desktop.Services
             systemPrompt.AppendLine("You are a helpful AI assistant specialized in analyzing and responding to queries about the provided context.");
             systemPrompt.AppendLine("Provide detailed and knowledgeable responses based on the specific content shared with you.");
             
+            // Add current date and time context for temporal awareness
+            systemPrompt.AppendLine("");
+            systemPrompt.AppendLine("=== CURRENT DATE AND TIME ===");
+            systemPrompt.AppendLine($"Current Date/Time: {DateTime.Now:F}");
+            systemPrompt.AppendLine($"Local Time Zone: {TimeZoneInfo.Local.DisplayName}");
+            systemPrompt.AppendLine("");
+            
             if (_isThinkingMode)
             {
                 systemPrompt.AppendLine("You are running in Thinking mode, which means you'll show your reasoning process step by step.");

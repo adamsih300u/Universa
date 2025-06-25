@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using System.Threading.Tasks;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
@@ -464,6 +465,119 @@ namespace Universa.Desktop.Views
             }
         }
 
+        private async Task<bool> ConvertLegacyFileToOrgMode(string legacyPath, string orgPath)
+        {
+            try
+            {
+                var extension = Path.GetExtension(legacyPath).ToLower();
+                var orgContent = new StringBuilder();
+
+                // Add org-mode header
+                orgContent.AppendLine($"#+TITLE: {Path.GetFileNameWithoutExtension(orgPath)}");
+                orgContent.AppendLine($"#+CREATED: {DateTime.Now:yyyy-MM-dd}");
+                orgContent.AppendLine($"#+CONVERTED_FROM: {extension} format");
+                orgContent.AppendLine();
+
+                if (extension == ".todo")
+                {
+                    // Convert TODO file
+                    var content = await File.ReadAllTextAsync(legacyPath);
+                    var todos = System.Text.Json.JsonSerializer.Deserialize<List<Models.ToDo>>(content);
+                    
+                    orgContent.AppendLine("* Tasks");
+                    orgContent.AppendLine();
+                    
+                    foreach (var todo in todos ?? new List<Models.ToDo>())
+                    {
+                        var state = todo.IsCompleted ? "DONE" : "TODO";
+                        var priority = !string.IsNullOrEmpty(todo.Priority) ? $" [#{todo.Priority}]" : "";
+                        var tags = todo.Tags?.Any() == true ? $" :{string.Join(":", todo.Tags)}:" : "";
+                        
+                        orgContent.AppendLine($"** {state}{priority} {todo.Title}{tags}");
+                        
+                        if (todo.StartDate.HasValue)
+                            orgContent.AppendLine($"   SCHEDULED: <{todo.StartDate.Value:yyyy-MM-dd ddd}>");
+                        if (todo.DueDate.HasValue)
+                            orgContent.AppendLine($"   DEADLINE: <{todo.DueDate.Value:yyyy-MM-dd ddd}>");
+                        if (todo.IsCompleted && todo.CompletedDate.HasValue)
+                            orgContent.AppendLine($"   CLOSED: [{todo.CompletedDate.Value:yyyy-MM-dd ddd HH:mm}]");
+                        
+                        if (!string.IsNullOrEmpty(todo.Description))
+                        {
+                            orgContent.AppendLine();
+                            orgContent.AppendLine($"   {todo.Description}");
+                        }
+                        
+                        orgContent.AppendLine();
+                    }
+                }
+                else if (extension == ".project")
+                {
+                    // Convert Project file
+                    var content = await File.ReadAllTextAsync(legacyPath);
+                    var project = System.Text.Json.JsonSerializer.Deserialize<Models.Project>(content);
+                    
+                    if (project != null)
+                    {
+                        var state = project.Status == Models.ProjectStatus.Completed ? "DONE" : "TODO";
+                        orgContent.AppendLine($"* {state} {project.Title}");
+                        
+                        if (project.DueDate.HasValue)
+                            orgContent.AppendLine($"  DEADLINE: <{project.DueDate.Value:yyyy-MM-dd ddd}>");
+                        if (project.StartDate.HasValue)
+                            orgContent.AppendLine($"  SCHEDULED: <{project.StartDate.Value:yyyy-MM-dd ddd}>");
+                        
+                        orgContent.AppendLine("  :PROPERTIES:");
+                        orgContent.AppendLine($"  :CATEGORY: {project.Category ?? "Project"}");
+                        orgContent.AppendLine($"  :STATUS: {project.Status}");
+                        orgContent.AppendLine($"  :CREATED: {project.CreatedDate:yyyy-MM-dd}");
+                        orgContent.AppendLine("  :END:");
+                        orgContent.AppendLine();
+                        
+                        if (!string.IsNullOrEmpty(project.Goal))
+                        {
+                            orgContent.AppendLine($"  {project.Goal}");
+                            orgContent.AppendLine();
+                        }
+                        
+                        if (project.Tasks?.Any() == true)
+                        {
+                            orgContent.AppendLine("** Tasks");
+                            foreach (var task in project.Tasks)
+                            {
+                                var taskState = task.IsCompleted ? "DONE" : "TODO";
+                                orgContent.AppendLine($"*** {taskState} {task.Title}");
+                                if (!string.IsNullOrEmpty(task.Description))
+                                {
+                                    orgContent.AppendLine($"    {task.Description}");
+                                }
+                                orgContent.AppendLine();
+                            }
+                        }
+                    }
+                }
+
+                await File.WriteAllTextAsync(orgPath, orgContent.ToString());
+                
+                // Optionally move legacy file to .bak
+                var backupPath = legacyPath + ".bak";
+                if (File.Exists(backupPath))
+                    File.Delete(backupPath);
+                File.Move(legacyPath, backupPath);
+                
+                MessageBox.Show($"Successfully converted to {Path.GetFileName(orgPath)}\nOriginal file backed up as {Path.GetFileName(backupPath)}", 
+                    "Conversion Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                
+                return true;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error converting file: {ex.Message}", "Conversion Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                return false;
+            }
+        }
+
         #region Menu Item Click Handlers
         private void OpenFolder_Click(object sender, RoutedEventArgs e)
         {
@@ -516,9 +630,9 @@ namespace Universa.Desktop.Views
 
         private void ExportFile_Click(object sender, RoutedEventArgs e)
         {
-            // Check if there's a tab selected and it's a MarkdownTab
+            // Check if there's a tab selected and it's a MarkdownTabAvalon
             if (MainTabControl.SelectedItem is TabItem tabItem && 
-                tabItem.Content is MarkdownTab markdownTab)
+                tabItem.Content is Views.MarkdownTabAvalon markdownTab)
             {
                 // Create and show the export window
                 var exportWindow = new ExportWindow(markdownTab);
@@ -593,6 +707,11 @@ namespace Universa.Desktop.Views
             OpenOverviewTab();
         }
 
+        private void OpenGlobalAgendaTab_Click(object sender, RoutedEventArgs e)
+        {
+            OpenGlobalAgendaTab();
+        }
+
         public void OpenOverviewTab()
         {
             // Check if overview tab is already open
@@ -612,6 +731,31 @@ namespace Universa.Desktop.Views
                 Header = "Overview",
                 Content = overviewTab,
                 Tag = "overview"
+            };
+
+            MainTabControl.Items.Add(newTab);
+            MainTabControl.SelectedItem = newTab;
+        }
+
+        public void OpenGlobalAgendaTab()
+        {
+            // Check if global agenda tab is already open
+            foreach (TabItem existingTab in MainTabControl.Items)
+            {
+                if (existingTab.Content is Tabs.GlobalAgendaTab)
+                {
+                    MainTabControl.SelectedItem = existingTab;
+                    return;
+                }
+            }
+
+            // Create new global agenda tab
+            var globalAgendaTab = new Tabs.GlobalAgendaTab(_configService);
+            var newTab = new TabItem
+            {
+                Header = "🗓️ Global Agenda",
+                Content = globalAgendaTab,
+                Tag = "globalagenda"
             };
 
             MainTabControl.Items.Add(newTab);
@@ -643,7 +787,7 @@ namespace Universa.Desktop.Views
         }
         #endregion
 
-        public override void OpenFileInEditor(string filePath)
+        public override async void OpenFileInEditor(string filePath)
         {
             if (string.IsNullOrEmpty(filePath))
                 return;
@@ -669,14 +813,57 @@ namespace Universa.Desktop.Views
             UserControl editor;
             switch (extension)
             {
-                case ".md":
-                    editor = new MarkdownTab(filePath);
+                            case ".md":
+                var frontmatterProcessor = ServiceLocator.Instance.GetService<IFrontmatterProcessor>();
+                var searchService = ServiceLocator.Instance.GetService<IMarkdownSearchService>();
+                var chapterNavigationService = ServiceLocator.Instance.GetService<IChapterNavigationService>();
+                var fontService = ServiceLocator.Instance.GetService<IMarkdownFontService>();
+                var fileService = ServiceLocator.Instance.GetService<IMarkdownFileService>();
+                var uiEventHandler = ServiceLocator.Instance.GetService<IMarkdownUIEventHandler>();
+                var statusManager = ServiceLocator.Instance.GetService<IMarkdownStatusManager>();
+                var editorSetupService = ServiceLocator.Instance.GetService<IMarkdownEditorSetupService>();
+                
+                // Use new AvalonEdit-based MarkdownTab (TTS removed for simplicity)
+                editor = new Views.MarkdownTabAvalon(filePath, frontmatterProcessor, searchService, 
+                    chapterNavigationService, fontService, fileService, 
+                    uiEventHandler, statusManager, editorSetupService);
+                break;
+                case ".org":
+                    editor = new Tabs.OrgModeTab(filePath);
                     break;
                 case ".todo":
-                    editor = new ToDoTab(filePath, ServiceLocator.Instance.GetService<IToDoViewModel>(), ServiceLocator.Instance.GetService<IServiceProvider>());
-                    break;
                 case ".project":
-                    editor = new ProjectTab(filePath);
+                    // Legacy file types - suggest migration to org-mode
+                    var result = MessageBox.Show(
+                        $"This is a legacy {extension.Substring(1).ToUpper()} file format. Would you like to convert it to the new Org-Mode format (.org)?",
+                        "Legacy File Format",
+                        MessageBoxButton.YesNoCancel,
+                        MessageBoxImage.Question);
+                    
+                    if (result == MessageBoxResult.Yes)
+                    {
+                        // Convert to org-mode
+                        var orgPath = Path.ChangeExtension(filePath, ".org");
+                        if (await ConvertLegacyFileToOrgMode(filePath, orgPath))
+                        {
+                            editor = new Tabs.OrgModeTab(orgPath);
+                            title = Path.GetFileName(orgPath);
+                        }
+                        else
+                        {
+                            editor = new EditorTab(filePath);
+                        }
+                    }
+                    else if (result == MessageBoxResult.No)
+                    {
+                        // Open as plain text
+                        editor = new EditorTab(filePath);
+                    }
+                    else
+                    {
+                        // Cancel - don't open file
+                        return;
+                    }
                     break;
                 case ".overview":
                     editor = new OverviewTab();
@@ -1189,7 +1376,7 @@ namespace Universa.Desktop.Views
                 {
                     var tagStr = tab.Tag.ToString();
                     // For file tabs, store the file path
-                    if (File.Exists(tagStr) || tagStr == "music" || tagStr == "overview")
+                    if (File.Exists(tagStr) || tagStr == "music" || tagStr == "overview" || tagStr == "globalagenda")
                     {
                         openTabs.Add(tagStr);
                         if (tab == MainTabControl.SelectedItem)
@@ -1212,6 +1399,14 @@ namespace Universa.Desktop.Views
                     if (tab == MainTabControl.SelectedItem)
                     {
                         activeTab = "overview";
+                    }
+                }
+                else if (tab.Content is Tabs.GlobalAgendaTab)
+                {
+                    openTabs.Add("globalagenda");
+                    if (tab == MainTabControl.SelectedItem)
+                    {
+                        activeTab = "globalagenda";
                     }
                 }
                 else if (tab.Content is ProjectTab projectTab && projectTab.FilePath != null)
@@ -1251,12 +1446,16 @@ namespace Universa.Desktop.Views
                         OpenOverviewTab();
                         newTab = MainTabControl.Items[MainTabControl.Items.Count - 1] as TabItem;
                         break;
+                    case "globalagenda":
+                        OpenGlobalAgendaTab();
+                        newTab = MainTabControl.Items[MainTabControl.Items.Count - 1] as TabItem;
+                        break;
                     default:
                         // Assume it's a file path
                         if (File.Exists(tab))
                         {
                             var extension = Path.GetExtension(tab).ToLower();
-                            if (extension == ".project" || extension == ".md" || extension == ".todo")
+                            if (extension == ".org" || extension == ".md" || extension == ".project" || extension == ".todo")
                             {
                                 OpenFileInEditor(tab);
                                 newTab = MainTabControl.Items[MainTabControl.Items.Count - 1] as TabItem;
@@ -1364,6 +1563,29 @@ namespace Universa.Desktop.Views
                 OpenInboxTab();
                 e.Handled = true;
             }
+            // Debug command to test enhanced text search (Ctrl+Shift+T)
+            else if (e.Key == Key.T && (Keyboard.Modifiers & ModifierKeys.Control) == ModifierKeys.Control && (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+            {
+                RunTextSearchTests();
+                e.Handled = true;
+            }
+        }
+
+        private void RunTextSearchTests()
+        {
+            try
+            {
+                Debug.WriteLine("=== Running Enhanced Text Search Tests ===");
+                Tests.EnhancedTextSearchServiceTests.RunAllTests();
+                MessageBox.Show("Enhanced Text Search tests completed successfully! Check the debug output for details.", 
+                    "Test Results", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Test failed: {ex.Message}");
+                MessageBox.Show($"Enhanced Text Search tests failed: {ex.Message}", 
+                    "Test Results", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         public void OpenInboxTab()
@@ -1409,6 +1631,50 @@ namespace Universa.Desktop.Views
             catch (Exception ex)
             {
                 Debug.WriteLine($"MainWindow_Closing: Error saving chat history: {ex.Message}");
+            }
+        }
+
+        public void RefreshOpenFileTab(string filePath)
+        {
+            if (string.IsNullOrEmpty(filePath))
+                return;
+
+            var tab = FindTab(filePath);
+            if (tab?.Content is IFileTab fileTab)
+            {
+                System.Diagnostics.Debug.WriteLine($"RefreshOpenFileTab: Found tab for {filePath}, tab type: {fileTab.GetType().Name}");
+                
+                // Check if it's an OrgModeTab and log the current item count
+                if (fileTab is Tabs.OrgModeTab orgTab)
+                {
+                    System.Diagnostics.Debug.WriteLine($"RefreshOpenFileTab: Before reload - OrgModeTab has {orgTab.Items.Count} items");
+                }
+                
+                // Force reload the file content
+                fileTab.Reload();
+                
+                // Reset modified state since we're reloading from disk
+                fileTab.IsModified = false;
+                
+                // Check item count after reload
+                if (fileTab is Tabs.OrgModeTab orgTabAfter)
+                {
+                    System.Diagnostics.Debug.WriteLine($"RefreshOpenFileTab: After reload - OrgModeTab has {orgTabAfter.Items.Count} items");
+                }
+                
+                System.Diagnostics.Debug.WriteLine($"RefreshOpenFileTab: Completed refresh for {filePath}");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"RefreshOpenFileTab: No tab found for {filePath} or tab is not IFileTab");
+            }
+        }
+
+        public void RefreshOpenFileTabs(IEnumerable<string> filePaths)
+        {
+            foreach (var filePath in filePaths)
+            {
+                RefreshOpenFileTab(filePath);
             }
         }
     }

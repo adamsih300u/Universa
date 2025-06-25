@@ -80,6 +80,7 @@ namespace Universa.Desktop.Library
                     LibraryItemType.Category => "📂",
                     LibraryItemType.Overview => "📊",
                     LibraryItemType.Inbox => "📥",
+                    LibraryItemType.GlobalAgenda => "🗓️",
                     _ => "📄"
                 };
             }

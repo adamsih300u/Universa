@@ -45,10 +45,22 @@ namespace Universa.Desktop.Models
         /// </summary>
         public List<Models.ChatMessage> ChatModeMessages { get; set; }
         
+        /// <summary>
+        /// Saved scroll position for context mode messages
+        /// </summary>
+        public double ContextModeScrollPosition { get; set; }
+        
+        /// <summary>
+        /// Saved scroll position for chat mode messages
+        /// </summary>
+        public double ChatModeScrollPosition { get; set; }
+        
         public ChatTabData()
         {
             Messages = new List<Models.ChatMessage>();
             ChatModeMessages = new List<Models.ChatMessage>();
+            ContextModeScrollPosition = 0.0;
+            ChatModeScrollPosition = 0.0;
         }
     }
     

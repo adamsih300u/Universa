@@ -123,10 +123,13 @@
                 <TreeView.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="New Folder" Click="NewFolder_Click"/>
+                        <MenuItem Header="New Org File" Click="NewOrgFile_Click"/>
                         <MenuItem Header="New ToDo" Click="NewToDo_Click"/>
                         <MenuItem Header="New Project" Click="NewProject_Click"/>
                         <MenuItem Header="New Note" Click="NewNote_Click"/>
                         <MenuItem Header="New Manuscript" Click="NewManuscript_Click"/>
+                        <MenuItem Header="New Outline" Click="NewOutline_Click"/>
+                        <MenuItem Header="New Non-Fiction" Click="NewNonFiction_Click"/>
                         <Separator/>
                         <MenuItem Header="Rename" Click="Rename_Click">
                             <MenuItem.Icon>

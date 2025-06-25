@@ -30,14 +30,14 @@ namespace Universa.Desktop
 {
     public partial class MediaTab : UserControl
     {
-        private readonly MediaTabViewModel _viewModel;
+        private readonly OptimizedMediaTabViewModel _viewModel;
         private DateTime _lastClickTime = DateTime.MinValue;
         private const double DOUBLE_CLICK_THRESHOLD = 500; // milliseconds
 
         public MediaTab(JellyfinService jellyfinService)
         {
             InitializeComponent();
-            _viewModel = new MediaTabViewModel(jellyfinService);
+            _viewModel = new OptimizedMediaTabViewModel(jellyfinService);
             DataContext = _viewModel;
         }
 
@@ -70,25 +70,44 @@ namespace Universa.Desktop
 
         private void MediaTabContentListView_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
-            if (MediaTabContentListView.SelectedItem is MediaItem selectedItem)
+            // Handle both ListView (legacy) and DataGrid (optimized)
+            MediaItem selectedItem = null;
+            
+            if (sender is ListView listView)
             {
-                if (selectedItem.Type == MediaItemType.Movie || 
-                    selectedItem.Type == MediaItemType.Episode)
-                {
-                    _viewModel.PlayItemCommand.Execute(selectedItem);
-                }
+                selectedItem = listView.SelectedItem as MediaItem;
+            }
+            else if (sender is DataGrid dataGrid)
+            {
+                selectedItem = dataGrid.SelectedItem as MediaItem;
+            }
+
+            if (selectedItem != null && 
+                (selectedItem.Type == MediaItemType.Movie || selectedItem.Type == MediaItemType.Episode))
+            {
+                _viewModel.PlayItemCommand.Execute(selectedItem);
             }
         }
 
         private void MediaTabContentListView_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (MediaTabContentListView.SelectedItem is MediaItem selectedItem)
+            // Handle both ListView (legacy) and DataGrid (optimized)
+            MediaItem selectedItem = null;
+            
+            if (sender is ListView listView)
             {
-                if (selectedItem.Type != MediaItemType.Movie && 
-                    selectedItem.Type != MediaItemType.Episode)
-                {
-                    _viewModel.NavigateToItemCommand.Execute(selectedItem);
-                }
+                selectedItem = listView.SelectedItem as MediaItem;
+            }
+            else if (sender is DataGrid dataGrid)
+            {
+                selectedItem = dataGrid.SelectedItem as MediaItem;
+            }
+
+            if (selectedItem != null && 
+                selectedItem.Type != MediaItemType.Movie && 
+                selectedItem.Type != MediaItemType.Episode)
+            {
+                _viewModel.NavigateToItemCommand.Execute(selectedItem);
             }
         }
     }

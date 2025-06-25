@@ -28,6 +28,10 @@ namespace Universa.Desktop.ViewModels
         private string _associatedFilePath;
         private bool _contextRequiresRefresh = false;
         
+        // Scroll position tracking
+        private double _contextModeScrollPosition = 0.0;
+        private double _chatModeScrollPosition = 0.0;
+        
         public string Name
         {
             get => _name;
@@ -186,6 +190,53 @@ namespace Universa.Desktop.ViewModels
             }
         }
         
+        /// <summary>
+        /// Scroll position for context mode messages
+        /// </summary>
+        public double ContextModeScrollPosition
+        {
+            get => _contextModeScrollPosition;
+            set
+            {
+                if (Math.Abs(_contextModeScrollPosition - value) > 0.1) // Small tolerance for floating point
+                {
+                    _contextModeScrollPosition = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Scroll position for chat mode messages
+        /// </summary>
+        public double ChatModeScrollPosition
+        {
+            get => _chatModeScrollPosition;
+            set
+            {
+                if (Math.Abs(_chatModeScrollPosition - value) > 0.1) // Small tolerance for floating point
+                {
+                    _chatModeScrollPosition = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+        
+        /// <summary>
+        /// Gets the current scroll position based on the current mode
+        /// </summary>
+        public double CurrentScrollPosition
+        {
+            get => IsContextMode ? ContextModeScrollPosition : ChatModeScrollPosition;
+            set
+            {
+                if (IsContextMode)
+                    ContextModeScrollPosition = value;
+                else
+                    ChatModeScrollPosition = value;
+            }
+        }
+        
         public ChatTabViewModel(string name = "New Chat")
         {
             Name = name;
@@ -204,7 +255,7 @@ namespace Universa.Desktop.ViewModels
                 {
                     editorTab.ContentChanged += Editor_ContentChanged;
                 }
-                else if (editor is MarkdownTab markdownTab)
+                else if (editor is Views.MarkdownTabAvalon markdownTab)
                 {
                     markdownTab.PropertyChanged += (s, e) => {
                         if (e.PropertyName == "IsModified" && markdownTab.IsModified)
@@ -230,7 +281,7 @@ namespace Universa.Desktop.ViewModels
                 {
                     editorTab.ContentChanged -= Editor_ContentChanged;
                 }
-                else if (editor is MarkdownTab markdownTab)
+                else if (editor is Views.MarkdownTabAvalon markdownTab)
                 {
                     // We can't directly unsubscribe anonymous handlers, but PropertyChanged is a multicast delegate
                     // so this isn't a serious memory leak in practice
@@ -263,7 +314,7 @@ namespace Universa.Desktop.ViewModels
                 {
                     return editorTab.GetContent();
                 }
-                else if (_associatedEditor is MarkdownTab markdownTab) 
+                else if (_associatedEditor is Views.MarkdownTabAvalon markdownTab) 
                 {
                     // Get the current text from the editor (for unsaved changes)
                     string editorContent = markdownTab.GetContent();

@@ -15,7 +15,7 @@ namespace Universa.Desktop.Services
         private static GeneralChatService _instance;
         private static readonly object _lock = new object();
 
-        private GeneralChatService(string apiKey, string model = "gpt-4", Models.AIProvider provider = Models.AIProvider.OpenAI, bool isThinkingMode = false)
+        public GeneralChatService(string apiKey, string model = "gpt-4", Models.AIProvider provider = Models.AIProvider.OpenAI, bool isThinkingMode = false)
             : base(apiKey, model, provider, isThinkingMode)
         {
             _currentContent = string.Empty;
@@ -43,6 +43,13 @@ namespace Universa.Desktop.Services
         {
             var systemPrompt = new StringBuilder();
             systemPrompt.AppendLine("You are an AI assistant specialized in helping users with their tasks.");
+            
+            // Add current date and time context for temporal awareness
+            systemPrompt.AppendLine("");
+            systemPrompt.AppendLine("=== CURRENT DATE AND TIME ===");
+            systemPrompt.AppendLine($"Current Date/Time: {DateTime.Now:F}");
+            systemPrompt.AppendLine($"Local Time Zone: {TimeZoneInfo.Local.DisplayName}");
+            systemPrompt.AppendLine("");
             
             if (_isThinkingMode)
             {

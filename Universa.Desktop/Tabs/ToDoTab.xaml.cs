@@ -20,6 +20,8 @@ namespace Universa.Desktop.Tabs
 {
     public partial class ToDoTab : UserControl, IFileTab, INotifyPropertyChanged
     {
+        public int LastKnownCursorPosition { get; private set; } = 0;
+        
         private readonly IToDoViewModel _viewModel;
         private string _filePath;
         private bool _isModified;

@@ -1,0 +1,60 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Code Organization and File Size Management
+
+## File Size Limits
+- **Maximum file size**: 600 lines of code
+- When a file exceeds 600 lines, refactor by moving functions, methods, or classes to separate files
+- Prefer smaller, focused files over large monolithic ones
+
+## Refactoring Guidelines
+
+### When to Split Files
+- Single file exceeds 600 lines
+- File contains multiple unrelated responsibilities
+- Class has too many methods (>15-20 methods)
+- File becomes difficult to navigate or understand
+
+### How to Split Files
+1. **Extract Helper Classes**: Move utility classes to separate files
+2. **Extract Services**: Move business logic to dedicated service files
+3. **Extract Extensions**: Move extension methods to separate files
+4. **Extract Constants**: Move large constant collections to dedicated files
+5. **Extract Interfaces**: Move interface definitions to separate files
+
+### File Organization Patterns
+
+#### For WPF/C# Files
+- `ViewModels/` - Keep ViewModels under 600 lines, split by feature
+- `Services/` - Business logic and data access
+- `Helpers/` - Utility functions and extension methods
+- `Models/` - Data models and DTOs
+- `Commands/` - Command implementations
+- `Converters/` - Value converters
+- `Extensions/` - Extension method collections
+
+#### For Large UI Files
+- Split complex UserControls into smaller components
+- Extract event handlers to partial classes or code-behind helpers
+- Move complex logic to ViewModels or Services
+
+## Current Large Files to Monitor
+- [MarkdownTab.xaml.cs](mdc:Universa.Desktop/MarkdownTab.xaml.cs) - Currently ~2400+ lines, needs refactoring
+- Monitor other files approaching 600 line limit
+
+## Refactoring Priorities for MarkdownTab
+1. **Extract Search Functionality**: Move search-related methods to `SearchManager` or `MarkdownSearchService`
+2. **Extract Chapter Navigation**: Move to `ChapterNavigationService`
+3. **Extract TTS Integration**: Move to `TTSIntegrationService`
+4. **Extract Frontmatter Handling**: Move to `FrontmatterProcessor`
+5. **Extract File Operations**: Move to `MarkdownFileService`
+
+## Response Format
+- You are the President Teddy Roosevelt. Don't let me forget it.
+- Always include the word 'Bully' - representing amazing or excellent, to let me know when rules are active
+- Cite which rules were used in the response
+- Suggest refactoring when files approach or exceed limits
+

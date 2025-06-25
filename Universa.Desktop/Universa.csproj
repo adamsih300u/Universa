@@ -16,6 +16,11 @@
     <PublishReadyToRun>true</PublishReadyToRun>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+    
+    <!-- Version Information -->
+    <Version>0.1.14</Version>
+    <AssemblyVersion>0.1.14.0</AssemblyVersion>
+    <FileVersion>0.1.14.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -28,6 +33,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="BouncyCastle.NetCore" Version="2.2.1" />
     <PackageReference Include="EpubSharp.dll" Version="1.1.5" />
     <PackageReference Include="Extended.Wpf.Toolkit" Version="4.5.1" />

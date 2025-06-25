@@ -153,6 +153,7 @@
             </MenuItem>
             <MenuItem Header="_Settings" Click="OpenSettings_Click"/>
             <MenuItem Header="_View">
+                <MenuItem Header="🗓️ Global Agenda" Click="OpenGlobalAgendaTab_Click"/>
                 <MenuItem Header="Overview" Click="OpenOverviewTab_Click"/>
                 <MenuItem Header="Toggle _Chat" Click="ToggleChat_Click"/>
                 <MenuItem Header="Matrix Chat" Click="OpenMatrixChat_Click"/>

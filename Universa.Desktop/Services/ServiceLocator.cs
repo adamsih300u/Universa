@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using Universa.Desktop.Core.Configuration;
+using Universa.Desktop.Interfaces;
 using Universa.Desktop.Managers;
 
 namespace Universa.Desktop.Services
@@ -26,6 +27,14 @@ namespace Universa.Desktop.Services
             services.AddSingleton<JellyfinService>();
             services.AddSingleton<AudiobookshelfService>();
             services.AddSingleton<IMusicDataService, MusicDataService>();
+            services.AddTransient<IChapterNavigationService, ChapterNavigationService>();
+            services.AddTransient<IMarkdownFontService, MarkdownFontService>();
+            services.AddTransient<IMarkdownFileService, MarkdownFileService>();
+            services.AddTransient<IMarkdownUIEventHandler, MarkdownUIEventHandler>();
+            services.AddTransient<IMarkdownEditorSetupService, MarkdownEditorSetupService>();
+            
+            // Register VideoWindowManager
+            services.AddSingleton<VideoWindowManager>();
             
             // Register MediaPlayerManager with a factory method that resolves IMediaWindow
             services.AddSingleton<MediaPlayerManager>(provider => {

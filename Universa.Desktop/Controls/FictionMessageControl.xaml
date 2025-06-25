@@ -1,0 +1,272 @@
+<UserControl x:Class="Universa.Desktop.Controls.FictionMessageControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             xmlns:converters="clr-namespace:Universa.Desktop.Converters"
+             mc:Ignorable="d" 
+             d:DesignHeight="450" d:DesignWidth="800">
+    <UserControl.Resources>
+        <converters:FictionTextBlockConverter x:Key="FictionTextBlockConverter"/>
+        <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+        <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter"/>
+        
+        <!-- Style for regular text blocks -->
+        <Style x:Key="RegularTextStyle" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="IsTabStop" Value="True"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource HighlightBrush}"/>
+            <Setter Property="SelectionTextBrush" Value="{DynamicResource TextBrush}"/>
+            <Setter Property="ContextMenu">
+                <Setter.Value>
+                    <ContextMenu>
+                        <MenuItem Command="ApplicationCommands.Copy" />
+                        <MenuItem Command="ApplicationCommands.SelectAll" />
+                    </ContextMenu>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Style for code block containers -->
+        <Style x:Key="CodeBlockContainerStyle" TargetType="Border">
+            <Setter Property="Background" Value="{DynamicResource CodeBlockBackgroundBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource CodeBlockBorderBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="12"/>
+            <Setter Property="Margin" Value="0,4,0,8"/>
+        </Style>
+        
+        <!-- Style for original text display -->
+        <Style x:Key="OriginalTextStyle" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FontFamily" Value="Consolas, Courier New, monospace"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource CodeBlockForegroundBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="IsTabStop" Value="True"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource HighlightBrush}"/>
+            <Setter Property="SelectionTextBrush" Value="{DynamicResource CodeBlockForegroundBrush}"/>
+            <Setter Property="ContextMenu">
+                <Setter.Value>
+                    <ContextMenu>
+                        <MenuItem Command="ApplicationCommands.Copy" />
+                        <MenuItem Command="ApplicationCommands.SelectAll" />
+                    </ContextMenu>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Style for find button -->
+        <Style x:Key="FindButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="Padding" Value="8,4"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource WindowBackgroundBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource WindowBackgroundBrush}"/>
+                                <Setter Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Style for changed text display -->
+        <Style x:Key="ChangedTextStyle" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FontFamily" Value="Consolas, Courier New, monospace"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Foreground" Value="{DynamicResource CodeBlockForegroundBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="IsTabStop" Value="True"/>
+            <Setter Property="Focusable" Value="True"/>
+            <Setter Property="SelectionBrush" Value="{DynamicResource HighlightBrush}"/>
+            <Setter Property="SelectionTextBrush" Value="{DynamicResource CodeBlockForegroundBrush}"/>
+            <Setter Property="ContextMenu">
+                <Setter.Value>
+                    <ContextMenu>
+                        <MenuItem Command="ApplicationCommands.Copy" />
+                        <MenuItem Command="ApplicationCommands.SelectAll" />
+                    </ContextMenu>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Style for apply changes button -->
+        <Style x:Key="ApplyChangesButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Foreground" Value="{DynamicResource WindowBackgroundBrush}"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource HighlightBrush}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource HighlightBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource HighlightBrush}"/>
+                                <Setter Property="BorderBrush" Value="{DynamicResource HighlightBrush}"/>
+                                <Setter Property="Opacity" Value="0.8"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                                <Setter Property="Cursor" Value="Arrow"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+    
+    <ItemsControl ItemsSource="{Binding Content, Converter={StaticResource FictionTextBlockConverter}}">
+        <ItemsControl.ItemTemplate>
+            <DataTemplate>
+                <StackPanel>
+                     <!-- Regular text block -->
+                     <TextBox Text="{Binding Text}" 
+                              Style="{StaticResource RegularTextStyle}"
+                              Visibility="{Binding IsCodeBlock, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                     
+                     <!-- Revision block (Original text -> Changed to) -->
+                     <Border Style="{StaticResource CodeBlockContainerStyle}"
+                             Visibility="{Binding IsCodeBlock, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <!-- Content for Revisions (not insertions) -->
+                            <StackPanel Visibility="{Binding IsInsertion, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                <!-- Original text label -->
+                                <TextBlock Text="Original text:" 
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource CodeBlockLanguageBrush}"
+                                           Margin="0,0,0,4"/>
+                                
+                                <!-- Original text display -->
+                                <TextBox Text="{Binding OriginalText}"
+                                         Style="{StaticResource OriginalTextStyle}"
+                                         Margin="0,0,0,8"/>
+                                
+                                <!-- Find button for original text -->
+                                <Button Content="Find in Editor"
+                                        Style="{StaticResource FindButtonStyle}"
+                                        Click="OriginalTextButton_Click"
+                                        Tag="{Binding OriginalText}"
+                                        ToolTip="Click to navigate to this text in the editor"
+                                        Margin="0,0,0,8"/>
+                                
+                                <!-- Changed to label -->
+                                <TextBlock Text="Changed to:" 
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource CodeBlockLanguageBrush}"
+                                           Margin="0,8,0,4"/>
+                                
+                                <!-- Changed text display -->
+                                <TextBox Text="{Binding ChangedText}"
+                                         Style="{StaticResource ChangedTextStyle}"
+                                         Margin="0,0,0,8"/>
+                                
+                                <!-- Apply button for revisions -->
+                                <Button Content="Apply Changes"
+                                        Style="{StaticResource ApplyChangesButtonStyle}"
+                                        Click="ApplyChangesButton_Click"
+                                        Tag="{Binding}"
+                                        ToolTip="Click to replace the original text with this revision in the editor"/>
+                            </StackPanel>
+                            
+                            <!-- Content for Insertions -->
+                            <StackPanel Visibility="{Binding IsInsertion, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                <!-- Insert after label -->
+                                <TextBlock Text="Insert after:" 
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource CodeBlockLanguageBrush}"
+                                           Margin="0,0,0,4"/>
+                                
+                                <!-- Anchor text display -->
+                                <TextBox Text="{Binding AnchorText}"
+                                         Style="{StaticResource OriginalTextStyle}"
+                                         Margin="0,0,0,8"/>
+                                
+                                <!-- Find button for anchor text -->
+                                <Button Content="Find in Editor"
+                                        Style="{StaticResource FindButtonStyle}"
+                                        Click="AnchorTextButton_Click"
+                                        Tag="{Binding AnchorText}"
+                                        ToolTip="Click to navigate to the anchor text in the editor"
+                                        Margin="0,0,0,8"/>
+                                
+                                <!-- New text label -->
+                                <TextBlock Text="New text:" 
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource CodeBlockLanguageBrush}"
+                                           Margin="0,8,0,4"/>
+                                
+                                <!-- New text display -->
+                                <TextBox Text="{Binding NewText}"
+                                         Style="{StaticResource ChangedTextStyle}"
+                                         Margin="0,0,0,8"/>
+                                
+                                <!-- Apply button for insertions -->
+                                <Button Content="Apply Insertion"
+                                        Style="{StaticResource ApplyChangesButtonStyle}"
+                                        Click="ApplyInsertionButton_Click"
+                                        Tag="{Binding}"
+                                        ToolTip="Click to insert the new text after the anchor text in the editor"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</UserControl> 

@@ -8,6 +8,12 @@ namespace Universa.Desktop.Interfaces
         string FilePath { get; set; }
         string Title { get; set; }
         bool IsModified { get; set; }
+        
+        /// <summary>
+        /// Gets the last known cursor position for AI context awareness
+        /// </summary>
+        int LastKnownCursorPosition { get; }
+        
         Task<bool> Save();
         Task<bool> SaveAs(string newPath = null);
         void Reload();

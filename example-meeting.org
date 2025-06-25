@@ -1,0 +1,94 @@
+#+TITLE: Weekly Team Meeting
+#+DATE: 2024-01-15
+
+* TODO Agenda Items
+This is where we discuss the main topics for today's meeting.
+We have several important items to cover.
+
+** NEXT Project Status Updates
+Each team member will provide updates on their current projects.
+Please prepare a brief summary of progress and any blockers.
+
+*** John's Backend Work
+Working on the API optimization project.
+- Completed database indexing improvements
+- Currently working on caching layer
+- Need help with Redis configuration
+
+*** Sarah's Frontend Updates  
+Making good progress on the new dashboard.
+- Finished wireframes and mockups
+- Started implementation of core components
+- Planning to demo next week
+
+** WAITING Budget Approval
+We're still waiting for the Q2 budget approval from finance.
+This affects our hiring plans for the next quarter.
+
+Need to follow up with:
+- Finance department
+- HR for headcount planning
+- Legal for contractor agreements
+
+** TODO Technical Architecture Review
+We need to review the proposed architecture changes.
+This is a critical decision that will affect our development velocity.
+
+*** Database Migration Strategy
+Current plan involves:
+1. Create parallel database instance
+2. Implement data synchronization
+3. Gradual traffic migration
+4. Sunset old database
+
+*** API Versioning Approach
+Discussion points:
+- Semantic versioning vs date-based
+- Backward compatibility requirements
+- Deprecation timeline
+- Client migration support
+
+* Meeting Notes
+These are the detailed notes from our discussion.
+
+** Action Items
+Important tasks that came out of the meeting.
+
+*** TODO Set up Redis cluster [#A]
+DEADLINE: <2024-01-22 Mon>
+- Research hosting options
+- Get quotes from vendors
+- Present recommendation to team
+
+*** TODO Schedule architecture review session [#B]
+SCHEDULED: <2024-01-18 Thu 14:00>
+- Book conference room
+- Invite all stakeholders
+- Prepare presentation slides
+
+*** NEXT Follow up on budget approval [#C]
+- Email finance department tomorrow
+- CC: manager and team lead
+- Request specific timeline
+
+** Decisions Made
+Record of all decisions made during the meeting.
+
+- Approved the database migration timeline
+- Decided to postpone the mobile app features
+- Agreed on weekly check-ins for the next month
+
+** Parking Lot
+Items that came up but were tabled for later discussion.
+
+- Office space planning for new hires
+- Conference attendance budget
+- Team building event planning
+
+* Next Meeting
+SCHEDULED: <2024-01-22 Mon 10:00>
+
+Agenda for next week:
+- Review progress on action items  
+- Discuss Q2 planning
+- Architecture review outcomes 

@@ -14,7 +14,6 @@ namespace Universa.Desktop.Controls
     {
         private MediaPlayerManager _mediaPlayerManager;
         private bool _isDraggingTimelineSlider;
-        private DispatcherTimer _updateTimer;
         private Universa.Desktop.Models.Track _currentTrack;
         private DateTime _lastPlayPauseClickTime = DateTime.MinValue;
         private const int DEBOUNCE_INTERVAL_MS = 500; // Debounce interval in milliseconds
@@ -22,16 +21,8 @@ namespace Universa.Desktop.Controls
         public MediaControlBar()
         {
             InitializeComponent();
-            InitializeTimer();
             // Hide the control bar by default
             this.Visibility = Visibility.Collapsed;
-        }
-
-        private void InitializeTimer()
-        {
-            _updateTimer = new DispatcherTimer();
-            _updateTimer.Interval = TimeSpan.FromMilliseconds(250);
-            _updateTimer.Tick += UpdateTimer_Tick;
         }
 
         public void Initialize(MediaPlayerManager mediaPlayerManager)
@@ -79,7 +70,7 @@ namespace Universa.Desktop.Controls
             if (_mediaPlayerManager != null && _mediaPlayerManager.CurrentTrack != null)
             {
                 this.Visibility = Visibility.Visible;
-                NowPlayingText.Text = $"{_mediaPlayerManager.CurrentTrack.Artist} - {_mediaPlayerManager.CurrentTrack.Title}";
+                UpdateNowPlayingText(_mediaPlayerManager.CurrentTrack);
                 UpdatePlayPauseButtonState();
             }
             else
@@ -107,73 +98,63 @@ namespace Universa.Desktop.Controls
                 this.Visibility = Visibility.Collapsed;
                 NowPlayingText.Text = string.Empty;
                 TimelineSlider.Value = 0;
+                TimelineSlider.Maximum = 0; 
                 TimeInfo.Text = "00:00 / 00:00";
+                _currentTrack = null; // Ensure _currentTrack is also reset
                 return;
             }
 
-            // Only show the control bar if media is playing or paused
-            if (_mediaPlayerManager != null && (_mediaPlayerManager.IsPlaying || _mediaPlayerManager.IsPaused))
+            // Store the current track
+            _currentTrack = track;
+
+            // Always show the control bar when we have a track (video or audio)
+            this.Visibility = Visibility.Visible;
+            UpdateNowPlayingText(track);
+
+            TimeSpan durationToUse = track.Duration;
+            if (durationToUse > TimeSpan.Zero)
             {
-                this.Visibility = Visibility.Visible;
-                NowPlayingText.Text = $"{track.Artist} - {track.Title}";
+                TimelineSlider.Maximum = durationToUse.TotalSeconds;
+                TimeInfo.Text = $"00:00 / {durationToUse:mm\\:ss}";
             }
             else
             {
-                this.Visibility = Visibility.Collapsed;
-                NowPlayingText.Text = string.Empty;
+                // Fallback if track.Duration is zero, try manager's duration
+                var managerDuration = _mediaPlayerManager?.Duration ?? TimeSpan.Zero;
+                if (managerDuration > TimeSpan.Zero) {
+                     TimelineSlider.Maximum = managerDuration.TotalSeconds;
+                     TimeInfo.Text = $"00:00 / {managerDuration:mm\\:ss}";
+                } else {
+                     TimelineSlider.Maximum = 0; 
+                     TimeInfo.Text = "00:00 / --:--";
+                }
             }
+            TimelineSlider.Value = 0; // Reset position for new track
         }
 
-        private void MediaPlayerManager_PositionChanged(object sender, TimeSpan e)
+        private void MediaPlayerManager_PositionChanged(object sender, TimeSpan currentPosition)
         {
             if (!_isDraggingTimelineSlider && _mediaPlayerManager != null)
             {
-                TimelineSlider.Value = e.TotalSeconds;
-                UpdateTimeDisplay(e, _mediaPlayerManager.Duration);
-            }
-        }
+                var currentManagerDuration = _mediaPlayerManager.Duration;
 
-        private void UpdateTimer_Tick(object sender, EventArgs e)
-        {
-            if (_mediaPlayerManager == null) return;
-
-            try
-            {
-                var position = _mediaPlayerManager.CurrentPosition;
-                var duration = _mediaPlayerManager.Duration;
-
-                // Update time display
-                TimeInfo.Text = $"{position:mm\\:ss} / {duration:mm\\:ss}";
-
-                // Update timeline slider
-                if (duration > TimeSpan.Zero && !_isDraggingTimelineSlider)
+                // Ensure slider maximum is up-to-date with the manager's duration
+                if (TimelineSlider.Maximum != currentManagerDuration.TotalSeconds && currentManagerDuration > TimeSpan.Zero)
                 {
-                    TimelineSlider.Maximum = duration.TotalSeconds;
-                    TimelineSlider.Value = position.TotalSeconds;
+                    TimelineSlider.Maximum = currentManagerDuration.TotalSeconds;
                 }
                 
-                // Ensure play/pause button state is correct
-                UpdatePlayPauseButtonState();
-                
-                // If we have a current track but the MediaPlayerManager doesn't, update the display
-                if (_currentTrack != null && _mediaPlayerManager.CurrentTrack == null)
+                // Update slider value
+                if (TimelineSlider.Maximum > 0)
                 {
-                    _currentTrack = null;
-                    NowPlayingText.Text = string.Empty;
-                    TimelineSlider.Value = 0;
-                    TimeInfo.Text = "00:00 / 00:00";
-                    this.Visibility = Visibility.Collapsed;
+                     TimelineSlider.Value = currentPosition.TotalSeconds;
                 }
-                // If the current track has changed, update the display
-                else if (_mediaPlayerManager.CurrentTrack != null && 
-                        (_currentTrack == null || _currentTrack.Id != _mediaPlayerManager.CurrentTrack.Id))
+                else
                 {
-                    MediaPlayerManager_TrackChanged(this, _mediaPlayerManager.CurrentTrack);
+                    TimelineSlider.Value = 0; 
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error in UpdateTimer_Tick: {ex.Message}");
+
+                UpdateTimeDisplay(currentPosition, currentManagerDuration); 
             }
         }
 
@@ -207,12 +188,6 @@ namespace Universa.Desktop.Controls
                 
                 // Update button state based on the current playing state
                 UpdatePlayPauseButtonState();
-                
-                // If we're playing, make sure the timer is running
-                if (_mediaPlayerManager.IsPlaying && !_updateTimer.IsEnabled)
-                {
-                    _updateTimer.Start();
-                }
                 
                 Debug.WriteLine($"PlayPauseButton_Click: After toggle, IsPlaying state: {_mediaPlayerManager.IsPlaying}");
             }
@@ -333,7 +308,6 @@ namespace Universa.Desktop.Controls
             {
                 _mediaPlayerManager.PlayMedia(track);
                 PlayPauseButton.Content = "⏸";
-                _updateTimer.Start();
                 this.Visibility = Visibility.Visible;
             }
         }
@@ -344,7 +318,6 @@ namespace Universa.Desktop.Controls
             {
                 _mediaPlayerManager.Play();
                 PlayPauseButton.Content = "⏸";
-                _updateTimer.Start();
                 this.Visibility = Visibility.Visible;
             }
         }
@@ -367,7 +340,6 @@ namespace Universa.Desktop.Controls
 
                 _mediaPlayerManager.PlayMedia(track);
                 PlayPauseButton.Content = "⏸";
-                _updateTimer.Start();
                 this.Visibility = Visibility.Visible;
             }
         }
@@ -413,6 +385,37 @@ namespace Universa.Desktop.Controls
                 {
                     Debug.WriteLine($"Error in UpdatePlayPauseButtonState: {ex.Message}");
                 }
+            }
+        }
+
+        private void UpdateNowPlayingText(Universa.Desktop.Models.Track track)
+        {
+            if (track == null)
+            {
+                NowPlayingText.Text = string.Empty;
+                return;
+            }
+
+            // Format differently for TV episodes vs music/movies
+            if (track.IsVideo && !string.IsNullOrEmpty(track.Series))
+            {
+                // For TV episodes: "Series Name - Episode Title"
+                var displayText = $"{track.Series} - {track.Title}";
+                if (!string.IsNullOrEmpty(track.Season))
+                {
+                    displayText = $"{track.Series} ({track.Season}) - {track.Title}";
+                }
+                NowPlayingText.Text = displayText;
+            }
+            else if (!string.IsNullOrEmpty(track.Artist))
+            {
+                // For music: "Artist - Title"
+                NowPlayingText.Text = $"{track.Artist} - {track.Title}";
+            }
+            else
+            {
+                // Fallback: just the title
+                NowPlayingText.Text = track.Title;
             }
         }
     }

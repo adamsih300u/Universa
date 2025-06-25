@@ -67,6 +67,13 @@
             <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
             <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
             <Setter Property="FontWeight" Value="Normal" />
+            <Setter Property="ItemsPanel">
+                <Setter.Value>
+                    <ItemsPanelTemplate>
+                        <VirtualizingStackPanel IsVirtualizing="True" VirtualizationMode="Recycling" />
+                    </ItemsPanelTemplate>
+                </Setter.Value>
+            </Setter>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="{x:Type TreeViewItem}">
@@ -170,7 +177,6 @@
             <TreeView x:Name="NavigationTree" 
                     Grid.Row="1" 
                     ItemsSource="{Binding RootItems}" 
-                    ItemTemplate="{StaticResource TreeItemTemplate}" 
                     ItemContainerStyle="{StaticResource TreeItemContainerStyle}"
                     Background="{DynamicResource WindowBackgroundBrush}"
                     BorderBrush="{DynamicResource BorderBrush}"
@@ -186,7 +192,7 @@
                 <TreeView.Resources>
                     <HierarchicalDataTemplate DataType="{x:Type viewModels:MusicTreeItem}" ItemsSource="{Binding Children}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Width="16" Height="16" Margin="0,0,5,0" VerticalAlignment="Center">
+                            <TextBlock Width="16" Height="16" Margin="0,0,5,0" VerticalAlignment="Center" Foreground="{DynamicResource TextBrush}">
                                 <TextBlock.Style>
                                     <Style TargetType="TextBlock">
                                         <Style.Triggers>

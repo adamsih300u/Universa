@@ -316,6 +316,489 @@
                 </ScrollViewer>
             </TabItem>
 
+            <TabItem Header="Org-Mode">
+                <ScrollViewer>
+                    <StackPanel Margin="10">
+                        <GroupBox Header="Global Agenda" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <CheckBox Content="Enable Global Agenda" IsChecked="{Binding EnableGlobalAgenda}" Margin="0,5"/>
+                                
+                                <DockPanel Margin="0,5">
+                                    <TextBlock Text="Days Ahead:" VerticalAlignment="Center"/>
+                                    <TextBox Text="{Binding AgendaDaysAhead}" Margin="5,0" Width="60"/>
+                                    <TextBlock Text="(Number of days to show in upcoming section)" 
+                                              FontStyle="Italic" 
+                                              Foreground="Gray" 
+                                              Margin="5,0" 
+                                              VerticalAlignment="Center"/>
+                                </DockPanel>
+                                
+                                <DockPanel Margin="0,5">
+                                    <TextBlock Text="Days Behind:" VerticalAlignment="Center"/>
+                                    <TextBox Text="{Binding AgendaDaysBehind}" Margin="5,0" Width="60"/>
+                                    <TextBlock Text="(Number of days back to show overdue items)" 
+                                              FontStyle="Italic" 
+                                              Foreground="Gray" 
+                                              Margin="5,0" 
+                                              VerticalAlignment="Center"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <GroupBox Header="TODO Tags" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Quick Tags (for cycling with Ctrl+Shift+T):" Margin="0,0,0,5"/>
+                                <ListBox x:Name="TodoTagsListBox" ItemsSource="{Binding TodoTags}" Height="100" Margin="0,0,0,5"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBox x:Name="NewTagTextBox" Width="120" Margin="0,0,5,0" KeyDown="NewTagTextBox_KeyDown"/>
+                                    <Button Content="Add Tag" Click="AddTodoTag_Click" Margin="0,0,5,0"/>
+                                    <Button Content="Remove Selected" Click="RemoveTodoTag_Click"/>
+                                </StackPanel>
+                                <CheckBox Content="Tag cycling replaces ALL tags (not just configured ones)" 
+                                         IsChecked="{Binding TagCyclingReplacesAll}"
+                                         Margin="0,10,0,0"
+                                         ToolTip="When checked, cycling tags will replace any existing manual tags. When unchecked, manual tags are preserved and only configured tags are cycled."/>
+                                <TextBlock Text="Press Ctrl+Shift+T in org-mode editor to cycle through these tags" 
+                                          FontStyle="Italic" 
+                                          Foreground="Gray" 
+                                          Margin="0,5,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Agenda Files" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Specific Files:" Margin="0,0,0,5"/>
+                                <ListBox x:Name="AgendaFilesListBox" 
+                                         ItemsSource="{Binding OrgAgendaFiles}" 
+                                         Height="100"
+                                         Margin="0,0,0,5">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <Button Content="Remove" 
+                                                        Command="{Binding DataContext.RemoveAgendaFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        DockPanel.Dock="Right"
+                                                        Margin="5,0,0,0"
+                                                        Padding="5,2"/>
+                                                <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <Button Content="Add File..." Command="{Binding AddAgendaFileCommand}" Margin="0,5"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Agenda Directories" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Directories (scans all .org files):" Margin="0,0,0,5"/>
+                                <ListBox x:Name="AgendaDirectoriesListBox" 
+                                         ItemsSource="{Binding OrgAgendaDirectories}" 
+                                         Height="100"
+                                         Margin="0,0,0,5">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <Button Content="Remove" 
+                                                        Command="{Binding DataContext.RemoveAgendaDirectoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        DockPanel.Dock="Right"
+                                                        Margin="5,0,0,0"
+                                                        Padding="5,2"/>
+                                                <TextBlock Text="{Binding}" VerticalAlignment="Center"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <Button Content="Add Directory..." Command="{Binding AddAgendaDirectoryCommand}" Margin="0,5"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="TODO States" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Action Required States:" Margin="0,0,0,5" FontWeight="Bold"/>
+                                <ListBox x:Name="TodoStatesListBox" 
+                                         ItemsSource="{Binding OrgTodoStates}" 
+                                         Height="80"
+                                         Margin="0,0,0,5">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <Button Content="Remove" 
+                                                        Command="{Binding DataContext.RemoveTodoStateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        DockPanel.Dock="Right"
+                                                        Margin="5,0,0,0"
+                                                        Padding="5,2"/>
+                                                <TextBlock Text="{Binding}" VerticalAlignment="Center" Foreground="#FF8C00"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <DockPanel Margin="0,5">
+                                    <Button Content="Add" Command="{Binding AddTodoStateCommand}" DockPanel.Dock="Right" Margin="5,0,0,0"/>
+                                    <TextBox x:Name="NewTodoStateTextBox" Text="{Binding NewTodoState, UpdateSourceTrigger=PropertyChanged}"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="No-Action States" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="States that don't require action:" Margin="0,0,0,5" FontWeight="Bold"/>
+                                <ListBox x:Name="NoActionStatesListBox" 
+                                         ItemsSource="{Binding OrgNoActionStates}" 
+                                         Height="80"
+                                         Margin="0,0,0,5">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <Button Content="Remove" 
+                                                        Command="{Binding DataContext.RemoveNoActionStateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        DockPanel.Dock="Right"
+                                                        Margin="5,0,0,0"
+                                                        Padding="5,2"/>
+                                                <TextBlock Text="{Binding}" VerticalAlignment="Center" Foreground="#9370DB"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <DockPanel Margin="0,5">
+                                    <Button Content="Add" Command="{Binding AddNoActionStateCommand}" DockPanel.Dock="Right" Margin="5,0,0,0"/>
+                                    <TextBox x:Name="NewNoActionStateTextBox" Text="{Binding NewNoActionState, UpdateSourceTrigger=PropertyChanged}"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Done States" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Completed states:" Margin="0,0,0,5" FontWeight="Bold"/>
+                                <ListBox x:Name="DoneStatesListBox" 
+                                         ItemsSource="{Binding OrgDoneStates}" 
+                                         Height="80"
+                                         Margin="0,0,0,5">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <DockPanel>
+                                                <Button Content="Remove" 
+                                                        Command="{Binding DataContext.RemoveDoneStateCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        DockPanel.Dock="Right"
+                                                        Margin="5,0,0,0"
+                                                        Padding="5,2"/>
+                                                <TextBlock Text="{Binding}" VerticalAlignment="Center" Foreground="#228B22"/>
+                                            </DockPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <DockPanel Margin="0,5">
+                                    <Button Content="Add" Command="{Binding AddDoneStateCommand}" DockPanel.Dock="Right" Margin="5,0,0,0"/>
+                                    <TextBox x:Name="NewDoneStateTextBox" Text="{Binding NewDoneState, UpdateSourceTrigger=PropertyChanged}"/>
+                                </DockPanel>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="State Cycling" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="When clicking a TODO button, states will cycle in this order:" 
+                                          Margin="0,0,0,10" 
+                                          TextWrapping="Wrap"/>
+                                <TextBlock Text="Action Required → No Action → Done → Action Required..." 
+                                          FontStyle="Italic" 
+                                          Foreground="Gray"/>
+                                <Button Content="Reset to Defaults" Command="{Binding ResetOrgStatesCommand}" Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="TODO State Colors" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Customize the colors for each TODO state:" 
+                                          Margin="0,0,0,10" 
+                                          TextWrapping="Wrap"/>
+                                <TextBlock Text="These colors will be shown in both the editor and Global Agenda." 
+                                          FontStyle="Italic" 
+                                          Foreground="Gray"
+                                          Margin="0,0,0,10"/>
+                                
+                                <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding StateColorItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid Margin="0,2">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="100"/>
+                                                        <ColumnDefinition Width="120"/>
+                                                        <ColumnDefinition Width="120"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    
+                                                    <!-- State Name -->
+                                                    <TextBlock Text="{Binding StateName}" 
+                                                              VerticalAlignment="Center"
+                                                              FontWeight="Bold"
+                                                              Grid.Column="0"/>
+                                                    
+                                                    <!-- Clickable Color Picker -->
+                                                    <Button Grid.Column="1"
+                                                           Width="80"
+                                                           Height="25"
+                                                           BorderBrush="Gray"
+                                                           BorderThickness="1"
+                                                           Margin="5,0"
+                                                           Command="{Binding DataContext.OpenColorPickerCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           CommandParameter="{Binding}"
+                                                           ToolTip="Click to choose color">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="{Binding ColorBrush}"
+                                                                       BorderBrush="{TemplateBinding BorderBrush}"
+                                                                       BorderThickness="{TemplateBinding BorderThickness}"
+                                                                       CornerRadius="3">
+                                                                    <Border.Style>
+                                                                        <Style TargetType="Border">
+                                                                            <Style.Triggers>
+                                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                                    <Setter Property="BorderBrush" Value="DarkGray"/>
+                                                                                    <Setter Property="BorderThickness" Value="2"/>
+                                                                                </Trigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Border.Style>
+                                                                    <!-- No text content - just show the color -->
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                    </Button>
+                                                    
+                                                    <!-- Hex Code Display (Read-only) -->
+                                                    <TextBox Grid.Column="2"
+                                                            Text="{Binding ColorHex, UpdateSourceTrigger=PropertyChanged}"
+                                                            FontFamily="Consolas"
+                                                            Margin="5,0"
+                                                            ToolTip="Hex color code (editable)"/>
+                                                    
+                                                    <!-- Reset Button -->
+                                                    <Button Grid.Column="3"
+                                                           Content="Reset"
+                                                           Command="{Binding DataContext.ResetStateColorCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                           CommandParameter="{Binding StateName}"
+                                                           Padding="5,2"
+                                                           Margin="5,0"
+                                                           ToolTip="Reset to default color"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                                
+                                <Button Content="Reset All Colors to Defaults" 
+                                       Command="{Binding ResetAllStateColorsCommand}" 
+                                       Margin="0,10,0,0"
+                                       HorizontalAlignment="Left"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Quick Refile Targets" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Configure quick refile targets for fast organization:" 
+                                          Margin="0,0,0,10" 
+                                          TextWrapping="Wrap"/>
+                                <TextBlock Text="Format: 'name=file.org' or 'name=file.org::*Heading' (e.g., INBOX=inbox.org, PROJECTS=projects.org::*Projects)" 
+                                          FontStyle="Italic" 
+                                          Foreground="Gray"
+                                          Margin="0,0,0,10"/>
+                                
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <ListBox Grid.Column="0" 
+                                             ItemsSource="{Binding OrgQuickRefileTargets}" 
+                                             Height="120"
+                                             SelectionMode="Single"
+                                             x:Name="RefileTargetsListBox">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="80"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Key}" FontWeight="Bold" Grid.Column="0"/>
+                                                    <TextBlock Text="{Binding Value}" Grid.Column="1" Margin="10,0,0,0"/>
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                    
+                                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                                        <Button Content="Add" Command="{Binding AddRefileTargetCommand}" Margin="0,2"/>
+                                        <Button Content="Edit" Command="{Binding EditRefileTargetCommand}" Margin="0,2"/>
+                                        <Button Content="Remove" Command="{Binding RemoveRefileTargetCommand}" Margin="0,2"/>
+                                        <Button Content="Reset" Command="{Binding ResetRefileTargetsCommand}" Margin="0,2"/>
+                                    </StackPanel>
+                                </Grid>
+                                
+                                <TextBlock Text="💡 Tip: Access these targets with Ctrl+R when positioned on any heading" 
+                                          FontSize="10" 
+                                          FontStyle="Italic"
+                                          Foreground="#4A90E2"
+                                          Margin="0,10,0,0"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Keyboard Shortcuts" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Available keyboard shortcuts for Org-Mode editor:" 
+                                          Margin="0,0,0,10" 
+                                          FontWeight="Bold"/>
+                                
+                                <!-- Folding shortcuts -->
+                                <TextBlock Text="📁 Folding / Outline Navigation:" 
+                                          Margin="0,5,0,5" 
+                                          FontWeight="SemiBold"
+                                          Foreground="#4A90E2"/>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+Shift+[" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Collapse all sections" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+Shift+]" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Expand all sections" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+[" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Collapse current section" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+]" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Expand current section" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Tab (on headers)" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Toggle section folding" Grid.Column="1"/>
+                                </Grid>
+
+                                <!-- List shortcuts -->
+                                <TextBlock Text="📝 List Management:" 
+                                          Margin="0,15,0,5" 
+                                          FontWeight="SemiBold"
+                                          Foreground="#7B68EE"/>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Tab (on lists)" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Indent list item" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Shift+Tab (on lists)" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Outdent list item" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Enter (on lists)" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Create new list item" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+Shift+C" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Toggle checkbox: [ ] ↔ [X] ↔ [-]" Grid.Column="1"/>
+                                </Grid>
+
+                                <!-- TODO State Management -->
+                                <TextBlock Text="📋 TODO State Management:" 
+                                          Margin="0,15,0,5" 
+                                          FontWeight="SemiBold"
+                                          Foreground="#32CD32"/>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+Shift++" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Cycle TODO state on current headline" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+R / Ctrl+W" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Refile current heading to another location" Grid.Column="1"/>
+                                </Grid>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+Shift+T" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Cycle through configured TODO tags" Grid.Column="1"/>
+                                </Grid>
+
+                                <!-- File shortcuts -->
+                                <TextBlock Text="💾 File Operations:" 
+                                          Margin="0,15,0,5" 
+                                          FontWeight="SemiBold"
+                                          Foreground="#FF6B6B"/>
+                                <Grid Margin="10,0,0,5">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="200"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Ctrl+S" FontFamily="Consolas" FontWeight="Bold"/>
+                                    <TextBlock Text="Save file" Grid.Column="1"/>
+                                </Grid>
+
+                                <TextBlock Text="📚 Text Format Examples:" 
+                                          Margin="0,15,0,5" 
+                                          FontWeight="SemiBold"
+                                          Foreground="#FF8C00"/>
+                                <TextBlock Text="*bold*, /italic/, =code=, ~verbatim~, _underlined_, +strikethrough+" 
+                                          Margin="10,0,0,5" 
+                                          FontFamily="Consolas"
+                                          FontStyle="Italic"
+                                          Foreground="Gray"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
             <TabItem Header="Weather">
                 <ScrollViewer>
                     <StackPanel Margin="10">

@@ -7,6 +7,7 @@ using System.ComponentModel;
 using Universa.Desktop.ViewModels;
 using Universa.Desktop.Converters;
 using System.Windows.Documents;
+using System.Windows.Threading;
 
 namespace Universa.Desktop.Views
 {
@@ -23,11 +24,8 @@ namespace Universa.Desktop.Views
                 // Initialize DataContext after component initialization
                 this.DataContext = new ChatSidebarViewModel();
                 
-                // Set the ScrollViewer in the ViewModel
-                if (ViewModel != null)
-                {
-                    ViewModel.ChatScrollViewer = MessagesScrollViewer;
-                }
+                // Add loaded event handler to ensure ScrollViewer is properly initialized
+                this.Loaded += ChatSidebar_Loaded;
             }
             catch (Exception ex)
             {
@@ -35,37 +33,51 @@ namespace Universa.Desktop.Views
                 MessageBox.Show($"Error initializing chat: {ex.Message}", "Initialization Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+        
+        private void ChatSidebar_Loaded(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Set the ScrollViewer in the ViewModel after the control is fully loaded
+                if (ViewModel != null && MessagesScrollViewer != null)
+                {
+                    ViewModel.ChatScrollViewer = MessagesScrollViewer;
+                    System.Diagnostics.Debug.WriteLine("ChatSidebar loaded and ScrollViewer assigned to ViewModel");
+                    
+                    // Trigger a delayed scroll restoration in case tabs were loaded before the UI was ready
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+                    {
+                        // This ensures scroll position is restored even if it was attempted before UI was ready
+                        if (ViewModel.SelectedTab != null && ViewModel.SelectedTab.CurrentScrollPosition > 0)
+                        {
+                            System.Diagnostics.Debug.WriteLine("Attempting scroll restoration after ChatSidebar loaded");
+                            ViewModel.ChatScrollViewer?.ScrollToVerticalOffset(ViewModel.SelectedTab.CurrentScrollPosition);
+                        }
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in ChatSidebar_Loaded: {ex.Message}");
+            }
+        }
 
         private void InputTextBox_PreviewKeyDown(object sender, KeyEventArgs e)
         {
-            Debug.WriteLine($"Key pressed: {e.Key}, Modifiers: {Keyboard.Modifiers}");
-            
             if (e.Key == Key.Enter)
             {
                 if (Keyboard.Modifiers == ModifierKeys.Shift)
                 {
-                    Debug.WriteLine("Shift+Enter detected");
+                    // Insert newline for Shift+Enter
                     var textBox = sender as TextBox;
                     if (textBox != null)
                     {
                         try
                         {
-                            Debug.WriteLine($"Current text length: {textBox.Text?.Length ?? 0}");
-                            Debug.WriteLine($"Caret index: {textBox.CaretIndex}");
-                            Debug.WriteLine($"AcceptsReturn: {textBox.AcceptsReturn}");
-                            Debug.WriteLine($"IsReadOnly: {textBox.IsReadOnly}");
-                            Debug.WriteLine($"Current text: '{textBox.Text}'");
-                            
-                            // Direct approach to inserting newline
                             int caretIndex = textBox.CaretIndex;
                             textBox.SelectedText = Environment.NewLine;
                             textBox.CaretIndex = caretIndex + Environment.NewLine.Length;
                             e.Handled = true;
-                            
-                            Debug.WriteLine("Newline inserted successfully");
-                            Debug.WriteLine($"New text length: {textBox.Text?.Length ?? 0}");
-                            Debug.WriteLine($"New caret index: {textBox.CaretIndex}");
-                            Debug.WriteLine($"New text: '{textBox.Text}'");
                         }
                         catch (Exception ex)
                         {
@@ -75,7 +87,7 @@ namespace Universa.Desktop.Views
                 }
                 else if (Keyboard.Modifiers == ModifierKeys.None)
                 {
-                    Debug.WriteLine("Regular Enter detected - sending message");
+                    // Send message for regular Enter
                     e.Handled = true;
                     var viewModel = DataContext as ChatSidebarViewModel;
                     if (viewModel?.SendCommand?.CanExecute(null) == true)

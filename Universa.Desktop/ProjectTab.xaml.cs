@@ -26,6 +26,8 @@ namespace Universa.Desktop
 {
     public partial class ProjectTab : UserControl, INotifyPropertyChanged, IFileTab
     {
+        public int LastKnownCursorPosition { get; private set; } = 0;
+        
         private Project _project;
         private string _filePath;
         private bool _isModified;

@@ -1,0 +1,234 @@
+<Window x:Class="Universa.Desktop.Dialogs.ManuscriptGenerationDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Generate Manuscript" 
+        Height="450" 
+        Width="500"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        Background="{DynamicResource WindowBackgroundBrush}">
+    
+    <Window.Resources>
+        <!-- CheckBox styling for reliability -->
+        <Style TargetType="CheckBox">
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,3,0,3"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Width="16" Height="16" 
+                                    BorderBrush="{DynamicResource TextBrush}" 
+                                    BorderThickness="1" 
+                                    Background="Transparent" 
+                                    Margin="0,0,5,0">
+                                <Path x:Name="CheckMark" 
+                                      Data="M 0 3 L 3 6 L 8 1" 
+                                      Stroke="{DynamicResource TextBrush}" 
+                                      StrokeThickness="2"
+                                      Visibility="Collapsed"/>
+                            </Border>
+                            <ContentPresenter Grid.Column="1" 
+                                              VerticalAlignment="Center"
+                                              TextBlock.Foreground="{DynamicResource TextBrush}"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- RadioButton styling -->
+        <Style TargetType="RadioButton">
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,3,0,3"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+        
+        <!-- GroupBox styling -->
+        <Style TargetType="GroupBox">
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+            <Setter Property="Padding" Value="10"/>
+        </Style>
+    </Window.Resources>
+    
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="Generate Complete Manuscript" 
+                       FontSize="18" 
+                       FontWeight="Bold"
+                       Foreground="{DynamicResource TextBrush}"/>
+            <TextBlock Text="Choose your AI model and generation settings"
+                       FontSize="12"
+                       Foreground="{DynamicResource TextBrush}"
+                       Margin="0,5,0,0"/>
+        </StackPanel>
+        
+        <!-- Settings -->
+        <ScrollViewer Grid.Row="1" 
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                
+                <!-- AI Model Selection -->
+                <GroupBox Margin="0,0,0,15"
+                          Foreground="{DynamicResource TextBrush}"
+                          Padding="0,10,0,0">
+                    <GroupBox.Header>
+                        <TextBlock Text="AI Model Selection" 
+                                   FontWeight="Bold"
+                                   Margin="5,0,0,0"/>
+                    </GroupBox.Header>
+                    <StackPanel Margin="10">
+                        
+                        <!-- Use Current Settings -->
+                        <RadioButton x:Name="UseCurrentSettingsRadio" 
+                                     Content="Use Current Chat Settings"
+                                     IsChecked="True"
+                                     GroupName="ModelSelection"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     Background="Transparent"
+                                     Margin="0,0,0,10"/>
+                        
+                        <!-- Custom Model Selection -->
+                        <RadioButton x:Name="UseCustomModelRadio" 
+                                     Content="Choose Specific Model for Generation"
+                                     GroupName="ModelSelection"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     Background="Transparent"
+                                     Margin="0,0,0,10"/>
+                        
+                        <!-- Provider Selection -->
+                        <StackPanel Margin="20,0,0,0" 
+                                    IsEnabled="{Binding IsChecked, ElementName=UseCustomModelRadio}">
+                            <TextBlock Text="AI Provider:" 
+                                       Foreground="{DynamicResource TextBrush}"
+                                       Margin="0,0,0,5"/>
+                            <ComboBox x:Name="ProviderComboBox" 
+                                      Background="{DynamicResource TextBoxBackgroundBrush}"
+                                      Foreground="{DynamicResource TextBrush}"
+                                      BorderBrush="{DynamicResource BorderBrush}"
+                                      Margin="0,0,0,10">
+                                <!-- Providers will be populated dynamically based on enabled/available models -->
+                            </ComboBox>
+                            
+                            <TextBlock Text="Model:" 
+                                       Foreground="{DynamicResource TextBrush}"
+                                       Margin="0,0,0,5"/>
+                            <ComboBox x:Name="ModelComboBox"
+                                      Background="{DynamicResource TextBoxBackgroundBrush}"
+                                      Foreground="{DynamicResource TextBrush}"
+                                      BorderBrush="{DynamicResource BorderBrush}"
+                                      IsEditable="False"/>
+                        </StackPanel>
+                    </StackPanel>
+                </GroupBox>
+                
+                <!-- Generation Options -->
+                <GroupBox Margin="0,0,0,15"
+                          Foreground="{DynamicResource TextBrush}"
+                          Padding="0,10,0,0">
+                    <GroupBox.Header>
+                        <TextBlock Text="Generation Options" 
+                                   FontWeight="Bold"
+                                   Margin="5,0,0,0"/>
+                    </GroupBox.Header>
+                    <StackPanel Margin="10">
+                        
+                        <CheckBox x:Name="GenerateSequentiallyCheckBox" 
+                                  Content="Generate chapters sequentially (recommended)"
+                                  IsChecked="True"/>
+                        
+                        <StackPanel Orientation="Horizontal" Margin="0,5,0,5">
+                            <TextBlock Text="Delay between chapters:" 
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       Margin="0,0,10,0"/>
+                            <TextBox x:Name="DelayTextBox" 
+                                     Text="1000"
+                                     Width="60"
+                                     Background="{DynamicResource TextBoxBackgroundBrush}"
+                                     Foreground="{DynamicResource TextBrush}"
+                                     BorderBrush="{DynamicResource BorderBrush}"/>
+                            <TextBlock Text="ms" 
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextBrush}"
+                                       Margin="5,0,0,0"/>
+                        </StackPanel>
+                        
+                        <CheckBox x:Name="ShowProgressCheckBox" 
+                                  Content="Show progress dialog during generation"
+                                  IsChecked="True"/>
+                        
+                        <CheckBox x:Name="AutoSaveCheckBox" 
+                                  Content="Auto-save document after generation"
+                                  IsChecked="False"/>
+                    </StackPanel>
+                </GroupBox>
+                
+                <!-- Outline Information -->
+                <GroupBox Foreground="{DynamicResource TextBrush}"
+                          Padding="0,10,0,0">
+                    <GroupBox.Header>
+                        <TextBlock Text="Outline Information" 
+                                   FontWeight="Bold"
+                                   Margin="5,0,0,0"/>
+                    </GroupBox.Header>
+                    <StackPanel Margin="10">
+                        <TextBlock x:Name="OutlinePathText" 
+                                   Text="Outline file: Not found"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   Margin="0,0,0,5"/>
+                        <TextBlock x:Name="ChapterCountText" 
+                                   Text="Chapters to generate: 0"
+                                   Foreground="{DynamicResource TextBrush}"
+                                   Margin="0,0,0,5"/>
+                        <TextBlock x:Name="EstimatedTimeText" 
+                                   Text="Estimated time: Unknown"
+                                   Foreground="{DynamicResource TextBrush}"/>
+                    </StackPanel>
+                </GroupBox>
+                
+            </StackPanel>
+        </ScrollViewer>
+        
+        <!-- Buttons -->
+        <StackPanel Grid.Row="3" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Right"
+                    Margin="0,20,0,0">
+            <Button x:Name="CancelButton" 
+                    Content="Cancel" 
+                    Width="80" 
+                    Height="30"
+                    Margin="0,0,10,0"
+                    Click="CancelButton_Click"/>
+            <Button x:Name="GenerateButton" 
+                    Content="Generate Manuscript" 
+                    Width="140" 
+                    Height="30"
+                    Background="{DynamicResource AccentBrush}"
+                    Foreground="White"
+                    FontWeight="Bold"
+                    Click="GenerateButton_Click"/>
+        </StackPanel>
+    </Grid>
+</Window> 

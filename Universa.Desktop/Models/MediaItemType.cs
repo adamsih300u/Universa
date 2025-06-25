@@ -17,6 +17,7 @@ namespace Universa.Desktop.Models
         Playlist,
         Service,
         Folder,
-        Song
+        Song,
+        SpecialCollection
     }
 } 

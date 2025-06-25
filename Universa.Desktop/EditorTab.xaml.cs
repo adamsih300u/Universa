@@ -29,6 +29,8 @@ namespace Universa.Desktop
     {
         private string _filePath;
         private bool _isModified;
+        
+        public int LastKnownCursorPosition { get; private set; } = 0;
         private CancellationTokenSource _ttsCancellationSource;
         private string _tempAudioFile;
         private int _currentSearchIndex = -1;

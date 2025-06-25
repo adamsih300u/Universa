@@ -421,8 +421,10 @@ Please provide specific and helpful suggestions.";
                     });
                 }
                 
-                // Send the request to OpenRouter
-                return await openRouterService.SendChatMessage(messages, _model);
+                // Use streaming by default
+                return await openRouterService.StreamChatMessage(messages, _model, 
+                    content => OnContentUpdated?.Invoke(content), 
+                    cancellationToken);
             }
             catch (Exception ex)
             {
@@ -431,6 +433,9 @@ Please provide specific and helpful suggestions.";
                 throw;
             }
         }
+
+        // Add event for content updates
+        public event Action<string> OnContentUpdated;
 
         public virtual void ClearMemory()
         {

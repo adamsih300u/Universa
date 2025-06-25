@@ -314,34 +314,131 @@ namespace Universa.Desktop.Services
         {
             try
             {
-                Debug.WriteLine("Refreshing music data...");
+                Debug.WriteLine("Refreshing music data (with diffing logic)...");
                 
-                // Store previous counts to determine if data actually changed
-                int previousArtistCount = _artists.Count;
-                int previousAlbumCount = _albums.Count;
-                int previousPlaylistCount = _playlists.Count;
+                // Store current data for comparison (create copies to avoid modifying during iteration issues if needed)
+                var currentArtists = _artists.ToDictionary(a => a.Id);
+                var currentAlbums = _albums.ToDictionary(a => a.Id);
+                var currentPlaylists = _playlists.ToDictionary(p => p.Id);
+
+                // Fetch new data from Subsonic
+                var newArtistItems = await _subsonicService.GetArtists();
+                var newAlbumItems = await _subsonicService.GetAllAlbums();
+                var newPlaylistItems = await _subsonicService.GetPlaylists();
+
+                var newlyFetchedArtists = ConvertMusicItemsToArtists(newArtistItems);
+                var newlyFetchedAlbums = ConvertMusicItemsToAlbums(newAlbumItems);
+                var newlyFetchedPlaylists = ConvertMusicItemsToPlaylists(newPlaylistItems);
+
+                bool hasChanges = false;
+
+                // --- Diff and update Artists ---
+                var updatedArtistList = new List<Artist>();
+                foreach (var newArtist in newlyFetchedArtists)
+                {
+                    if (currentArtists.TryGetValue(newArtist.Id, out var existingArtist))
+                    {
+                        // Artist exists, check for updates
+                        if (existingArtist.Name != newArtist.Name || existingArtist.ImageUrl != newArtist.ImageUrl)
+                        {
+                            existingArtist.Name = newArtist.Name;
+                            existingArtist.ImageUrl = newArtist.ImageUrl;
+                            hasChanges = true;
+                        }
+                        updatedArtistList.Add(existingArtist); // Add existing (possibly updated) to new list
+                        currentArtists.Remove(newArtist.Id); // Remove from temp dict to track deletions
+                    }
+                    else
+                    {
+                        // New artist
+                        updatedArtistList.Add(newArtist);
+                        hasChanges = true;
+                    }
+                }
+                // Any artists left in currentArtists were deleted from server
+                if (currentArtists.Count > 0) hasChanges = true;
+                _artists = updatedArtistList; // Replace with the new list
+
+                // --- Diff and update Albums ---
+                var updatedAlbumList = new List<Album>();
+                foreach (var newAlbum in newlyFetchedAlbums)
+                {
+                    if (currentAlbums.TryGetValue(newAlbum.Id, out var existingAlbum))
+                    {
+                        // Album exists, check for updates
+                        if (existingAlbum.Title != newAlbum.Title || 
+                            existingAlbum.Artist != newAlbum.Artist || 
+                            existingAlbum.ArtistId != newAlbum.ArtistId || 
+                            existingAlbum.ArtistName != newAlbum.ArtistName || 
+                            existingAlbum.ImageUrl != newAlbum.ImageUrl || 
+                            existingAlbum.Year != newAlbum.Year)
+                        {
+                            existingAlbum.Title = newAlbum.Title;
+                            existingAlbum.Artist = newAlbum.Artist;
+                            existingAlbum.ArtistId = newAlbum.ArtistId;
+                            existingAlbum.ArtistName = newAlbum.ArtistName;
+                            existingAlbum.ImageUrl = newAlbum.ImageUrl;
+                            existingAlbum.Year = newAlbum.Year;
+                            hasChanges = true;
+                        }
+                        updatedAlbumList.Add(existingAlbum);
+                        currentAlbums.Remove(newAlbum.Id);
+                    }
+                    else
+                    {
+                        // New album
+                        updatedAlbumList.Add(newAlbum);
+                        hasChanges = true;
+                    }
+                }
+                if (currentAlbums.Count > 0) hasChanges = true;
+                _albums = updatedAlbumList;
+
+                // --- Diff and update Playlists ---
+                var updatedPlaylistList = new List<Playlist>();
+                foreach (var newPlaylist in newlyFetchedPlaylists)
+                {
+                    if (currentPlaylists.TryGetValue(newPlaylist.Id, out var existingPlaylist))
+                    {
+                        // Playlist exists, check for updates
+                        if (existingPlaylist.Name != newPlaylist.Name || 
+                            existingPlaylist.Description != newPlaylist.Description || 
+                            existingPlaylist.ImageUrl != newPlaylist.ImageUrl)
+                        {
+                            existingPlaylist.Name = newPlaylist.Name;
+                            existingPlaylist.Description = newPlaylist.Description;
+                            existingPlaylist.ImageUrl = newPlaylist.ImageUrl;
+                            hasChanges = true;
+                        }
+                        updatedPlaylistList.Add(existingPlaylist);
+                        currentPlaylists.Remove(newPlaylist.Id);
+                    }
+                    else
+                    {
+                        // New playlist
+                        updatedPlaylistList.Add(newPlaylist);
+                        hasChanges = true;
+                    }
+                }
+                if (currentPlaylists.Count > 0) hasChanges = true;
+                _playlists = updatedPlaylistList;
                 
-                // Get artists from Subsonic
-                var artistItems = await _subsonicService.GetArtists();
-                _artists = ConvertMusicItemsToArtists(artistItems);
-                
-                // Get albums from Subsonic
-                var albumItems = await _subsonicService.GetAllAlbums();
-                _albums = ConvertMusicItemsToAlbums(albumItems);
-                
-                // Get playlists from Subsonic
-                var playlistItems = await _subsonicService.GetPlaylists();
-                _playlists = ConvertMusicItemsToPlaylists(playlistItems);
-                
-                // Link albums to artists
+                // Link albums to artists (essential after _artists and _albums lists might have changed)
+                // First, clear all existing album lists from artists to rebuild them accurately
+                foreach (var artist in _artists)
+                {
+                    artist.Albums.Clear(); 
+                }
+                // Then, re-populate based on the updated _albums list
                 foreach (var album in _albums)
                 {
                     var artist = _artists.FirstOrDefault(a => a.Id == album.ArtistId || a.Name == album.Artist || a.Name == album.ArtistName);
                     if (artist != null)
                     {
+                        // Check to avoid adding duplicates if an album somehow got linked multiple times before clear
                         if (!artist.Albums.Any(a => a.Id == album.Id))
                         {
-                            artist.Albums.Add(album);
+                           artist.Albums.Add(album);
                         }
                     }
                 }
@@ -349,28 +446,14 @@ namespace Universa.Desktop.Services
                 // Save to cache
                 await SaveToCacheAsync();
                 
-                // Only notify that data has changed if the counts actually changed
-                // or if this is the first time loading data (all previous counts were 0)
-                bool dataChanged = _artists.Count != previousArtistCount || 
-                                  _albums.Count != previousAlbumCount || 
-                                  _playlists.Count != previousPlaylistCount;
-                
-                bool isInitialLoad = previousArtistCount == 0 && previousAlbumCount == 0 && previousPlaylistCount == 0;
-                
-                if (dataChanged && !isInitialLoad)
+                if (hasChanges)
                 {
-                    Debug.WriteLine("Data has changed, notifying listeners");
-                    OnDataChanged();
-                }
-                else if (isInitialLoad)
-                {
-                    Debug.WriteLine("Initial data load complete");
-                    // We still want to notify on initial load, but with a flag indicating it's initial
+                    Debug.WriteLine("Data has changed after diffing, notifying listeners");
                     OnDataChanged();
                 }
                 else
                 {
-                    Debug.WriteLine("Data refresh completed but no changes detected");
+                    Debug.WriteLine("Data refresh (diff) completed but no changes detected");
                 }
                 
                 Debug.WriteLine($"Refreshed music data: {_artists.Count} artists, {_albums.Count} albums, {_playlists.Count} playlists");

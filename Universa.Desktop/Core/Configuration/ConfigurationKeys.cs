@@ -146,5 +146,25 @@ namespace Universa.Desktop.Core.Configuration
             public const string Font = "editor.font";
             public const string FontSize = "editor.fontSize";
         }
+
+        // Org-Mode Settings
+        public static class OrgMode
+        {
+            public const string AgendaFiles = "orgmode.agendaFiles";
+            public const string AgendaDirectories = "orgmode.agendaDirectories";
+            public const string TodoStates = "orgmode.todoStates";
+            public const string DoneStates = "orgmode.doneStates";
+            public const string NoActionStates = "orgmode.noActionStates";
+            public const string CustomStates = "orgmode.customStates";
+            public const string EnableGlobalAgenda = "orgmode.enableGlobalAgenda";
+            public const string AgendaDaysAhead = "orgmode.agendaDaysAhead";
+            public const string AgendaDaysBehind = "orgmode.agendaDaysBehind";
+            public const string TodoTags = "orgmode.todoTags";
+            public const string TagCyclingReplacesAll = "orgmode.tagCyclingReplacesAll";
+            public const string StateColors = "orgmode.stateColors";
+            public const string QuickRefileTargets = "orgmode.quickRefileTargets";
+            public const string InboxFilePath = "orgmode.inboxFilePath";
+            public const string AddTimestampToCapture = "orgmode.addTimestampToCapture";
+        }
     }
 } 

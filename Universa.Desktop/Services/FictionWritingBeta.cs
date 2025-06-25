@@ -8,6 +8,7 @@ using Universa.Desktop.Services;
 using System.Text;
 using System.Threading;
 using System.Diagnostics;
+using Universa.Desktop.Core.Configuration;
 
 namespace Universa.Desktop.Services
 {
@@ -31,6 +32,17 @@ namespace Universa.Desktop.Services
         private string _currentModel;
         private Dictionary<string, string> _frontmatter;
 
+        // Enhanced style guide parsing
+        private readonly StyleGuideParser _styleParser = new StyleGuideParser();
+        private StyleGuideParser.ParsedStyleGuide _parsedStyle;
+        
+        // Enhanced rules parsing
+        private readonly RulesParser _rulesParser = new RulesParser();
+        private RulesParser.ParsedRules _parsedRules;
+        
+        // Enhanced outline parsing and chapter context
+        private readonly OutlineChapterService _outlineChapterService = new OutlineChapterService();
+
         // Properties to access provider and model
         protected AIProvider CurrentProvider => _currentProvider;
         protected string CurrentModel => _currentModel;
@@ -49,6 +61,14 @@ namespace Universa.Desktop.Services
             "story structure",
             "plot analysis",
             "complete story"
+        };
+        
+        // Keywords that indicate full chapter generation requests
+        private static readonly string[] CHAPTER_GENERATION_KEYWORDS = new[]
+        {
+            "generate chapter", "write chapter", "create chapter", "complete chapter",
+            "full chapter", "entire chapter", "whole chapter", "chapter from scratch",
+            "new chapter", "draft chapter", "compose chapter"
         };
 
         // Rough token estimation (conservative estimate)
@@ -84,15 +104,33 @@ namespace Universa.Desktop.Services
         {
             _currentProvider = provider;
             _currentModel = model;
-            if (string.IsNullOrEmpty(libraryPath))
+
+            // Get the universal library path from configuration
+            var configService = ServiceLocator.Instance.GetService<IConfigurationService>();
+            var universalLibraryPath = configService?.Provider?.LibraryPath;
+
+            if (string.IsNullOrEmpty(universalLibraryPath))
             {
-                throw new ArgumentNullException(nameof(libraryPath));
+                // Fallback or error if universal library path isn't found - for now, we can throw or log prominently
+                // Alternatively, could use the passed-in libraryPath as a last resort, but that defeats the purpose of this fix.
+                System.Diagnostics.Debug.WriteLine("CRITICAL ERROR: Universal library path is not configured or accessible. File references may be constrained.");
+                // Forcing an error might be safer to ensure configuration is correct:
+                throw new InvalidOperationException("Universal library path is not configured. Please set it in the application settings.");
             }
-            _fileReferenceService = new FileReferenceService(libraryPath);
+            
+            // Use the universal library path for FileReferenceService
+            _fileReferenceService = new FileReferenceService(universalLibraryPath);
+            System.Diagnostics.Debug.WriteLine($"FileReferenceService initialized with universal library path: {universalLibraryPath}");
+
             _currentFilePath = filePath;
             if (!string.IsNullOrEmpty(filePath))
             {
-                _fileReferenceService.SetCurrentFile(filePath);
+                _fileReferenceService.SetCurrentFile(filePath); // Still set current file for relative path resolution from it
+                System.Diagnostics.Debug.WriteLine($"Current file for FileReferenceService set to: {filePath}");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("Warning: filePath is null or empty in FictionWritingBeta constructor. Relative references from current file might not work as expected initially.");
             }
         }
 
@@ -394,6 +432,23 @@ namespace Universa.Desktop.Services
                 if (!string.IsNullOrEmpty(styleContent))
                 {
                     _styleGuide = styleContent;
+                    
+                    // Parse the style guide for enhanced understanding
+                    try
+                    {
+                        _parsedStyle = _styleParser.Parse(styleContent);
+                        System.Diagnostics.Debug.WriteLine($"Successfully parsed style guide:");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedStyle.Sections.Count} sections");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedStyle.AllRules.Count} total rules");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedStyle.CriticalRules.Count} critical rules");
+                        System.Diagnostics.Debug.WriteLine($"  - Writing sample: {(_parsedStyle.WritingSample?.Length ?? 0)} chars");
+                    }
+                    catch (Exception parseEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error parsing style guide: {parseEx.Message}");
+                        // Continue with unparsed style guide
+                    }
+                    
                     System.Diagnostics.Debug.WriteLine($"Successfully loaded style reference: {styleContent.Length} characters");
                 }
                 else
@@ -434,6 +489,25 @@ namespace Universa.Desktop.Services
                 if (!string.IsNullOrEmpty(rulesContent))
                 {
                     _rules = rulesContent;
+                    
+                    // Parse the rules for enhanced understanding
+                    try
+                    {
+                        _parsedRules = _rulesParser.Parse(rulesContent);
+                        System.Diagnostics.Debug.WriteLine($"Successfully parsed rules:");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.Characters.Count} characters");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.Timeline.Books.Count} books");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.PlotConnections.Count} plot connections");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.CriticalFacts.Count} critical facts");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.Locations.Count} locations");
+                        System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.Organizations.Count} organizations");
+                    }
+                    catch (Exception parseEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error parsing rules: {parseEx.Message}");
+                        // Continue with unparsed rules
+                    }
+                    
                     System.Diagnostics.Debug.WriteLine($"Successfully loaded rules reference: {rulesContent.Length} characters");
                 }
                 else
@@ -474,6 +548,10 @@ namespace Universa.Desktop.Services
                 if (!string.IsNullOrEmpty(outlineContent))
                 {
                     _outline = outlineContent;
+                    
+                    // Parse outline for enhanced chapter context
+                    _outlineChapterService.SetOutline(outlineContent);
+                    
                     System.Diagnostics.Debug.WriteLine($"Successfully loaded outline reference: {outlineContent.Length} characters");
                 }
                 else
@@ -519,7 +597,29 @@ namespace Universa.Desktop.Services
         private string BuildFictionPrompt(string request)
         {
             var prompt = new StringBuilder();
-            prompt.AppendLine("You are an AI assistant specialized in helping users write and edit fiction. You will analyze and respond based on the sections provided below.");
+            prompt.AppendLine("You are a MASTER NOVELIST crafting publication-ready fiction. Your primary goal is creating narrative prose that would appear in a professionally published novel, following the established style guide above all else.");
+            
+            // Add current date and time context for temporal awareness
+            prompt.AppendLine("");
+            prompt.AppendLine("=== CURRENT DATE AND TIME ===");
+            prompt.AppendLine($"Current Date/Time: {DateTime.Now:F}");
+            prompt.AppendLine($"Local Time Zone: {TimeZoneInfo.Local.DisplayName}");
+            
+            // Always use raw style guide - avoid parsing issues that lose context
+            if (!string.IsNullOrEmpty(_styleGuide))
+            {
+                prompt.AppendLine("\n=== STYLE GUIDE ===");
+                prompt.AppendLine("The following is your comprehensive guide to the writing style with clear sections and headers:");
+                prompt.AppendLine(_styleGuide);
+            }
+            else
+            {
+                // Fallback framework description if no style guide available
+                prompt.AppendLine("\nYou have access to these storytelling resources:");
+                prompt.AppendLine("* **CORE RULES**: Facts about your story world");
+                prompt.AppendLine("* **STORY OUTLINE**: Plot structure for reference");
+                prompt.AppendLine("* **CURRENT STORY CONTENT**: Existing narrative to build upon");
+            }
 
             // Add title and author information if available
             if (_frontmatter != null)
@@ -563,78 +663,85 @@ namespace Universa.Desktop.Services
                 }
             }
 
-            // Add global rules if available
+            // Always use raw rules content - avoid parsing issues that strip character names
             if (!string.IsNullOrEmpty(_rules))
             {
-                prompt.AppendLine("\n=== GLOBAL STORY RULES ===");
-                prompt.AppendLine("These rules MUST be followed for ALL suggestions and changes:");
+                prompt.AppendLine("\n=== CORE RULES ===");
+                prompt.AppendLine("These are fundamental rules for the story universe with clear sections and character descriptions:");
                 prompt.AppendLine(_rules);
-                System.Diagnostics.Debug.WriteLine($"Added rules to prompt: {_rules.Length} characters");
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("No rules available to add to prompt");
             }
 
-            // Add story outline if available
+            // Add enhanced outline context if available
             if (!string.IsNullOrEmpty(_outline))
             {
-                prompt.AppendLine("\n=== STORY OUTLINE ===");
-                prompt.AppendLine("This is the planned story structure. All suggestions must align with this outline:");
-                prompt.AppendLine(_outline);
-                System.Diagnostics.Debug.WriteLine($"Added outline to prompt: {_outline.Length} characters");
+                // Use unified chapter detection service for consistent chapter number detection
+                int currentChapter = 1;
+                if (!string.IsNullOrEmpty(_fictionContent))
+                {
+                    currentChapter = ChapterDetectionService.GetCurrentChapterNumber(_fictionContent, _currentCursorPosition);
+                    System.Diagnostics.Debug.WriteLine($"BuildFictionPrompt: Current chapter determined as {currentChapter} (unified detection)");
+                }
+                
+                // Check if this is a chapter generation request
+                bool isChapterGeneration = CHAPTER_GENERATION_KEYWORDS.Any(keyword => 
+                    request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                
+                // Get chapter context and build enhanced prompt
+                var chapterContext = _outlineChapterService.GetChapterContext(currentChapter);
+                var enhancedOutlinePrompt = _outlineChapterService.BuildChapterOutlinePrompt(chapterContext, isChapterGeneration);
+                
+                if (!string.IsNullOrEmpty(enhancedOutlinePrompt))
+                {
+                    prompt.AppendLine(enhancedOutlinePrompt);
+                }
+                else
+                {
+                    // Fallback to original outline presentation
+                    prompt.AppendLine("\n=== STORY OUTLINE (STRUCTURAL GUIDANCE) ===");
+                    prompt.AppendLine("📋 This provides story structure for reference - USE AS CREATIVE GOALS, NOT SOURCE TEXT:");
+                    prompt.AppendLine(_outline);
+                    prompt.AppendLine("\n⚠️ IMPORTANT: Transform outline objectives into completely original narrative prose. Do not expand outline text directly.");
+                }
             }
-            else
+
+            // Style guide is now handled above - no need for duplicate section
+
+            // Add current content (potentially a snippet)
+            // The BuildContextPrompt method is responsible for adding the === CURRENT CONTENT === section with relevant fiction text.
+            // No need to add _fictionContent directly here if BuildContextPrompt handles it before this system message is finalized for the API call.
+            // However, if this BuildFictionPrompt is the *sole* source of the system message that includes current content, it should be here.
+            // Based on ProcessRequest calling UpdateContentAndInitialize (which calls this) and then BuildContextPrompt for user message,
+            // it seems the system message generated here might be more static, with context added per user turn.
+            // For clarity, let's assume the system prompt might be used as a base and could benefit from seeing the full content context if no other mechanism provides it.
+            // Re-adding a general instruction about current content if it's not empty.
+            if (!string.IsNullOrEmpty(_fictionContent))
             {
-                System.Diagnostics.Debug.WriteLine("No outline available to add to prompt");
-            }
-
-            // Add style guide if available
-            if (!string.IsNullOrEmpty(_styleGuide))
-            {
-                prompt.AppendLine(@"
-=== STYLE GUIDE ===
-The text below demonstrates the desired writing style. You must NEVER:
-- Use any characters from this sample, unless already in the current story content or outline
-- Reference any locations or settings, unless already established in the story content or outline
-- Borrow any plot elements or situations, unless already established in the story content or outline
-- Copy any specific descriptions, unless already established in the story content or outline
-- Use any unique phrases or metaphors, unless already established in the story content or outline
-- Include any story elements or content, unless already established in the story content or outline
-
-Instead, ONLY analyze and match these technical aspects:
-1. SENTENCE STRUCTURE:
-   - Length and complexity of sentences
-   - Paragraph structure and flow
-   - Transition techniques
-   - Punctuation patterns
-
-2. LANGUAGE USE:
-   - Vocabulary level and complexity
-   - Verb tense and style
-   - Descriptive approach
-   - Dialog style (if present)
-
-3. NARRATIVE ELEMENTS:
-   - Point of view (1st/3rd person)
-   - Narrative distance
-   - Pacing approach
-   - Show vs. tell balance
-
---- STYLE REFERENCE TEXT ---
-" + _styleGuide);
-                System.Diagnostics.Debug.WriteLine($"Added style guide to prompt: {_styleGuide.Length} characters");
-            }
-            else
-            {
-                System.Diagnostics.Debug.WriteLine("No style guide available to add to prompt");
+                prompt.AppendLine("\n=== CURRENT STORY CONTENT ===");
+                prompt.AppendLine("This is the story text being worked on. Follow the style guide and core rules when working with this content.");
             }
 
             // Add response format instructions
             prompt.AppendLine(@"
+
+=== CRITICAL OUTLINE USAGE INSTRUCTIONS ===
+⚠️ OUTLINE HANDLING: The outline provides STRUCTURAL GUIDANCE only. 
+
+DO NOT:
+- Copy outline bullet points into your prose
+- Expand outline text directly into paragraphs
+- Use outline phrasing as the basis for sentences
+- Treat outline descriptions as content to elaborate
+
+INSTEAD:
+- Use outline points as dramatic moments to CREATE
+- Develop your own original dialogue and descriptions  
+- Create fresh narrative prose that ACHIEVES the outlined goals
+- Invent specific details, conversations, and actions that fulfill the outline's purpose
+
 === RESPONSE FORMAT ===
 When suggesting specific text changes, you MUST use EXACTLY this format:
 
+For REVISIONS (replacing existing text):
 ```
 Original text:
 [paste the exact text to be replaced]
@@ -645,28 +752,34 @@ Changed to:
 [your new version of the text]
 ```
 
-CRITICAL INSTRUCTIONS:
-1. If the user asks about a specific section (rules, outline, style, or story content), focus your response on that section
-2. When suggesting changes:
-   - Use the exact labels 'Original text:' and 'Changed to:'
-   - Only use text from the CURRENT STORY CONTENT section for the original text
-   - Never suggest changes to text from previous messages or conversation history
-   - Include the triple backticks exactly as shown
-   - The original text must be an exact match of what appears in the content
-   - Do not include any other text between or inside the code blocks
-   - Orignal text should include ALL original text being recommended for revision
-   - Revisions should not match original text exactly, there must be something different
-3. When providing guidance:
-   - Be specific and reference relevant sections
-   - Explain how your suggestions align with the rules and outline
-   - Demonstrate understanding of the established style
-4. Always:
-   - Match the established writing style
-   - Keep the same tone and vocabulary level
-   - Maintain consistent narrative perspective
-   - Follow all global story rules
-   - Stay consistent with the story outline
-   - Consider the conversation history for context, but only make changes to the current story content");
+For INSERTIONS (adding new text after existing text):
+```
+Insert after:
+[paste the exact anchor text to insert after]
+```
+
+```
+New text:
+[the new content to insert]
+```
+
+If you are generating new content (e.g., continuing a scene, writing a new paragraph), simply provide the new text directly without the revision or insertion format.
+If providing analysis, suggestions, or answering questions, use clear, concise language. Point to specific parts of the provided materials (Style Guide, Rules, Outline, Story Content) if relevant.
+
+**REVISION FOCUS**: When providing revisions or insertions, be concise:
+- Provide the revision/insertion blocks with minimal explanation
+- Only add commentary if the user specifically asks for reasoning or analysis
+- Focus on the changes themselves, not lengthy explanations
+- If multiple revisions are needed, provide them cleanly in sequence
+- Let the revised text speak for itself
+
+When generating new content:
+- Follow your style guide completely - it contains all writing guidance you need
+- Write original narrative prose, never expand or copy outline text
+- Treat outline points as EVENTS/OCCURRENCES to write about, not content to elaborate
+- Create scenes showing these events happening through original dialogue, actions, and narrative");
+
+            // Removed hardcoded narrative rules - relying on style guide content instead
 
             return prompt.ToString();
         }
@@ -778,8 +891,45 @@ CRITICAL INSTRUCTIONS:
             bool needsFullStory = FULL_STORY_KEYWORDS.Any(keyword => 
                 request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
 
+            // OPTIMIZATION FOR LARGE FILES ON INITIAL/GENERIC REQUEST:
+            // If the request is generic (empty/whitespace) and the file is large, 
+            // provide a smaller, faster-to-generate context snippet around the cursor.
+            // The threshold (e.g., 20000 chars) can be adjusted based on performance testing.
+            if (!needsFullStory && string.IsNullOrWhiteSpace(request) && content.Length > 20000) 
+            {
+                System.Diagnostics.Debug.WriteLine($"Returning lightweight context for large file on generic request. Content length: {content.Length}, Cursor: {_currentCursorPosition}");
+                int snippetRadius = 2000; // Characters before and after cursor
+                int snippetLength = snippetRadius * 2;
+
+                int start = Math.Max(0, _currentCursorPosition - snippetRadius);
+                // Adjust start if snippet goes beyond content length
+                if (start + snippetLength > content.Length)
+                {
+                    start = Math.Max(0, content.Length - snippetLength);
+                }
+                
+                string actualSnippet = content.Substring(start, Math.Min(snippetLength, content.Length - start));
+
+                var sb = new StringBuilder();
+                if (start > 0)
+                {
+                    sb.AppendLine("... (Content before cursor truncated for initial performance) ...");
+                }
+                sb.AppendLine(actualSnippet);
+                if (start + actualSnippet.Length < content.Length)
+                {
+                    sb.AppendLine("... (Content after cursor truncated for initial performance) ...");
+                }
+                // It's useful to indicate where the cursor is within this snippet for the AI, if possible.
+                // For simplicity in this fast path, we're not recalculating the exact cursor within the snippet,
+                // but the AI will know the snippet is centered around the cursor.
+                // A <<CURSOR POSITION>> marker could be added if precise relative positioning is re-calculated here.
+                System.Diagnostics.Debug.WriteLine($"Lightweight context: Start={start}, Length={actualSnippet.Length}");
+                return sb.ToString();
+            }
+
             // If it's a full story analysis or content is small, return everything
-            if (needsFullStory || content.Length < 2000)
+            if (needsFullStory || content.Length < 2000) // Original threshold for small files
             {
                 if (needsFullStory)
                 {
@@ -860,100 +1010,9 @@ CRITICAL INSTRUCTIONS:
             currentLineIndex = Math.Max(startLineIndex, Math.Min(currentLineIndex, lines.Length - 1));
             System.Diagnostics.Debug.WriteLine($"Current line index: {currentLineIndex}, line content: '{lines[currentLineIndex]}'");
 
-            // Find all chapter boundaries in the document
-            var chapterBoundaries = new List<int>();
-            chapterBoundaries.Add(startLineIndex); // Start from first content line, not the #file: line
-            
-            for (int i = startLineIndex; i < lines.Length; i++)
-            {
-                var line = lines[i].Trim();
-                
-                // Check for chapter headings - ONLY consider ## as chapters, # as title, and ### as subsections
-                if (line.StartsWith("## ", StringComparison.OrdinalIgnoreCase) || 
-                    // Check for "Chapter" variations (case-insensitive)
-                    line.StartsWith("CHAPTER ", StringComparison.OrdinalIgnoreCase) ||
-                    line.Equals("CHAPTER", StringComparison.OrdinalIgnoreCase) ||
-                    // Check for "Part" or "Section" headings (must be standalone or followed by number)
-                    (line.StartsWith("Part ", StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(line, @"^Part\s+\d+", RegexOptions.IgnoreCase)) ||
-                    line.Equals("Part", StringComparison.OrdinalIgnoreCase) ||
-                    (line.StartsWith("Section ", StringComparison.OrdinalIgnoreCase) && Regex.IsMatch(line, @"^Section\s+\d+", RegexOptions.IgnoreCase)) ||
-                    line.Equals("Section", StringComparison.OrdinalIgnoreCase))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Found chapter boundary at line {i}: '{line}' (Level 2 heading or explicit chapter marker)");
-                    chapterBoundaries.Add(i);
-                }
-                // Explicitly log when we're skipping level 1 or 3+ headers
-                else if (line.StartsWith("# ", StringComparison.OrdinalIgnoreCase))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Skipping title at line {i}: '{line}' (Level 1 heading is treated as title, not chapter)");
-                }
-                else if (line.StartsWith("### ", StringComparison.OrdinalIgnoreCase) || 
-                         line.StartsWith("#### ", StringComparison.OrdinalIgnoreCase) || 
-                         line.StartsWith("##### ", StringComparison.OrdinalIgnoreCase) || 
-                         line.StartsWith("###### ", StringComparison.OrdinalIgnoreCase))
-                {
-                    System.Diagnostics.Debug.WriteLine($"Skipping subsection at line {i}: '{line}' (Level 3+ heading is treated as subsection, not chapter)");
-                }
-                // Check for numbered headings (e.g., "1.", "1)") ONLY if they appear to be chapter headings
-                // This avoids treating numbered list items as chapter boundaries
-                else if ((Regex.IsMatch(line, @"^\d+[\.\)]") && 
-                         // Only consider it a chapter heading if it's followed by a title-like string
-                         // (capitalized words, not just a continuation of a sentence)
-                         Regex.IsMatch(line, @"^\d+[\.\)]\s+[A-Z][a-zA-Z\s]+$")) ||
-                         // Or if it's just a number by itself (like "1" or "I" for chapter numbers)
-                         Regex.IsMatch(line, @"^(\d+|[IVXLCDM]+)$"))
-                {
-                    // Additional check: if this is part of a numbered list, don't treat it as a chapter boundary
-                    bool isPartOfNumberedList = false;
-                    
-                    // Check if previous line is also a numbered item
-                    if (i > startLineIndex)
-                    {
-                        var prevLine = lines[i - 1].Trim();
-                        if (Regex.IsMatch(prevLine, @"^\d+[\.\)]"))
-                        {
-                            isPartOfNumberedList = true;
-                            System.Diagnostics.Debug.WriteLine($"Line {i} appears to be part of a numbered list (previous line is also numbered)");
-                        }
-                    }
-                    
-                    // Check if next line is also a numbered item
-                    if (i < lines.Length - 1 && !isPartOfNumberedList)
-                    {
-                        var nextLine = lines[i + 1].Trim();
-                        if (Regex.IsMatch(nextLine, @"^\d+[\.\)]"))
-                        {
-                            isPartOfNumberedList = true;
-                            System.Diagnostics.Debug.WriteLine($"Line {i} appears to be part of a numbered list (next line is also numbered)");
-                        }
-                    }
-                    
-                    if (!isPartOfNumberedList)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Found chapter boundary at line {i}: '{line}' (Numbered heading)");
-                        chapterBoundaries.Add(i);
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine($"NOT treating as chapter boundary at line {i}: '{line}' (Part of a numbered list)");
-                    }
-                }
-                // Debug log for numbered list items that are NOT considered chapter boundaries
-                else if (Regex.IsMatch(line, @"^\d+[\.\)]"))
-                {
-                    System.Diagnostics.Debug.WriteLine($"NOT treating as chapter boundary at line {i}: '{line}' (Appears to be a numbered list item)");
-                }
-            }
-            if (!chapterBoundaries.Contains(lines.Length))
-            {
-                chapterBoundaries.Add(lines.Length); // Add end of file as final boundary if not already added
-            }
-            
-            // Ensure boundaries are properly sorted (just in case)
-            chapterBoundaries.Sort();
-            
-            // Remove any duplicates that might have been added
-            chapterBoundaries = chapterBoundaries.Distinct().ToList();
+            // Use unified chapter detection service for consistent boundary detection
+            var chapterBoundaries = ChapterDetectionService.GetChapterBoundaries(content);
+            System.Diagnostics.Debug.WriteLine($"ChapterDetectionService found {chapterBoundaries.Count} boundaries");
 
             // Find current chapter boundaries
             int currentChapterIndex = 0; // Default to first chapter
@@ -961,21 +1020,28 @@ CRITICAL INSTRUCTIONS:
             // Find the chapter that contains our current line
             for (int i = 0; i < chapterBoundaries.Count - 1; i++)
             {
-                // The cursor is in this chapter if:
-                // - It's anywhere between the start and end boundary lines
-                // - Or it's exactly at a chapter boundary (which we treat as being in that chapter)
-                if (currentLineIndex >= chapterBoundaries[i] && currentLineIndex <= chapterBoundaries[i + 1])
+                // The cursor is in this chapter if it's between boundaries
+                // IMPORTANT: If cursor is exactly at a chapter boundary (heading), it belongs to THAT chapter, not the previous one
+                if (currentLineIndex >= chapterBoundaries[i] && currentLineIndex < chapterBoundaries[i + 1])
                 {
                     currentChapterIndex = i;
                     
                     // Special debug for boundary cases
-                    if (currentLineIndex == chapterBoundaries[i] || currentLineIndex == chapterBoundaries[i + 1])
+                    if (currentLineIndex == chapterBoundaries[i])
                     {
-                        System.Diagnostics.Debug.WriteLine($"Cursor is exactly at a chapter boundary for chapter {i}");
+                        System.Diagnostics.Debug.WriteLine($"Cursor is at the start of chapter boundary {i} - treating as being IN this chapter");
                     }
                     
                     break;
                 }
+            }
+            
+            // Ensure currentChapterIndex is valid (can't exceed the second-to-last boundary)
+            // The last boundary is always the end of document, so max valid chapter index is Count - 2
+            if (currentChapterIndex >= chapterBoundaries.Count - 1)
+            {
+                currentChapterIndex = chapterBoundaries.Count - 2;
+                System.Diagnostics.Debug.WriteLine($"Clamping currentChapterIndex to max valid value: {currentChapterIndex}");
             }
             
             System.Diagnostics.Debug.WriteLine($"Found {chapterBoundaries.Count} chapter boundaries");
@@ -1014,10 +1080,28 @@ CRITICAL INSTRUCTIONS:
 
             // Add current chapter content with cursor position
             var chapterStart = chapterBoundaries[currentChapterIndex];
+            
+            // Debug boundary access
+            System.Diagnostics.Debug.WriteLine($"Accessing boundary for current chapter: currentChapterIndex={currentChapterIndex}, boundaries.Count={chapterBoundaries.Count}");
+            
+            if (currentChapterIndex + 1 >= chapterBoundaries.Count)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ ERROR: Trying to access boundary {currentChapterIndex + 1} but only have {chapterBoundaries.Count} boundaries");
+                return "Error: Invalid chapter boundary access";
+            }
+            
             var chapterEnd = Math.Min(chapterBoundaries[currentChapterIndex + 1], lines.Length - 1);
-            System.Diagnostics.Debug.WriteLine($"Current chapter spans lines {chapterStart}-{chapterEnd}");
+            System.Diagnostics.Debug.WriteLine($"Current chapter spans lines {chapterStart}-{chapterEnd} (lines.Length={lines.Length})");
             
             // Get the complete current chapter content
+            System.Diagnostics.Debug.WriteLine($"Extracting chapter content: Skip({chapterStart}).Take({chapterEnd - chapterStart + 1}) from {lines.Length} lines");
+            
+            if (chapterStart >= lines.Length || chapterEnd >= lines.Length)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ ERROR: Invalid line range - chapterStart={chapterStart}, chapterEnd={chapterEnd}, lines.Length={lines.Length}");
+                return "Error: Invalid line range for chapter extraction";
+            }
+            
             var currentChapterContent = string.Join("\n",
                 lines.Skip(chapterStart)
                      .Take(chapterEnd - chapterStart + 1));
@@ -1029,8 +1113,12 @@ CRITICAL INSTRUCTIONS:
                 var currentChapterLines = currentChapterContent.Split('\n');
                 var cursorLineInChapter = currentLineIndex - chapterStart;
                 
+                System.Diagnostics.Debug.WriteLine($"Cursor marker calculation: currentLineIndex={currentLineIndex}, chapterStart={chapterStart}, cursorLineInChapter={cursorLineInChapter}, chapterLines.Length={currentChapterLines.Length}");
+                
                 // Ensure cursorLineInChapter is within bounds
                 cursorLineInChapter = Math.Max(0, Math.Min(cursorLineInChapter, currentChapterLines.Length - 1));
+                
+                System.Diagnostics.Debug.WriteLine($"Cursor marker position after bounds check: {cursorLineInChapter}");
                 
                 // Add the complete chapter content with cursor position marker
                 for (int i = 0; i < currentChapterLines.Length; i++)
@@ -1040,10 +1128,20 @@ CRITICAL INSTRUCTIONS:
                     {
                         result.AppendLine("<<CURSOR POSITION>>");
                     }
-                    result.AppendLine(currentChapterLines[i]);
+                    
+                    // Safety check before accessing array
+                    if (i < currentChapterLines.Length)
+                    {
+                        result.AppendLine(currentChapterLines[i]);
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"❌ ERROR: Trying to access currentChapterLines[{i}] but length is {currentChapterLines.Length}");
+                        break;
+                    }
                 }
                 
-                System.Diagnostics.Debug.WriteLine($"Added complete current chapter with cursor marker at line {cursorLineInChapter} relative to chapter start");
+                System.Diagnostics.Debug.WriteLine($"✅ Added complete current chapter with cursor marker at line {cursorLineInChapter} relative to chapter start");
             }
             else
             {
@@ -1057,6 +1155,10 @@ CRITICAL INSTRUCTIONS:
             {
                 var nextChapterStart = chapterBoundaries[currentChapterIndex + 1];
                 var nextChapterEnd = chapterBoundaries[currentChapterIndex + 2] - 1;
+                
+                System.Diagnostics.Debug.WriteLine($"Next chapter calculation: currentChapterIndex={currentChapterIndex}, boundaries.Count={chapterBoundaries.Count}");
+                System.Diagnostics.Debug.WriteLine($"Next chapter range: lines {nextChapterStart} to {nextChapterEnd}");
+                
                 if (nextChapterEnd >= nextChapterStart)
                 {
                     // Get the complete next chapter content
@@ -1068,12 +1170,16 @@ CRITICAL INSTRUCTIONS:
                     {
                         result.AppendLine("\n=== NEXT CHAPTER ===");
                         result.AppendLine(nextChapterContent);
-                        System.Diagnostics.Debug.WriteLine($"Added complete next chapter (lines {nextChapterStart}-{nextChapterEnd})");
+                        System.Diagnostics.Debug.WriteLine($"✅ Added complete next chapter (lines {nextChapterStart}-{nextChapterEnd})");
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine("Next chapter was empty");
+                        System.Diagnostics.Debug.WriteLine("❌ Next chapter was empty");
                     }
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"❌ Invalid next chapter range: {nextChapterStart} to {nextChapterEnd}");
                 }
                 
                 // Add marker if there are more chapters after this
@@ -1081,6 +1187,29 @@ CRITICAL INSTRUCTIONS:
                 {
                     result.AppendLine("\n... (Subsequent content omitted) ...");
                     System.Diagnostics.Debug.WriteLine("Added marker for subsequent content");
+                }
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"❌ No next chapter: currentChapterIndex={currentChapterIndex} >= boundaries.Count-2={chapterBoundaries.Count - 2}");
+                
+                // Additional debug: show all boundaries
+                System.Diagnostics.Debug.WriteLine("All chapter boundaries:");
+                for (int i = 0; i < chapterBoundaries.Count; i++)
+                {
+                    var boundaryLine = chapterBoundaries[i];
+                    string lineContent;
+                    
+                    if (boundaryLine >= lines.Length)
+                    {
+                        lineContent = "[END OF DOCUMENT]";
+                    }
+                    else
+                    {
+                        lineContent = lines[boundaryLine].Trim();
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"  [{i}] Line {boundaryLine}: {lineContent}");
                 }
             }
 
@@ -1137,6 +1266,23 @@ CRITICAL INSTRUCTIONS:
             if (!string.IsNullOrEmpty(rulesContent))
             {
                 _rules = rulesContent;
+                
+                // Parse the rules for enhanced understanding
+                try
+                {
+                    _parsedRules = _rulesParser.Parse(rulesContent);
+                    System.Diagnostics.Debug.WriteLine($"Successfully parsed directly set rules:");
+                    System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.Characters.Count} characters");
+                    System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.Timeline.Books.Count} books");
+                    System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.PlotConnections.Count} plot connections");
+                    System.Diagnostics.Debug.WriteLine($"  - {_parsedRules.CriticalFacts.Count} critical facts");
+                }
+                catch (Exception parseEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error parsing directly set rules: {parseEx.Message}");
+                    // Continue with unparsed rules
+                }
+                
                 System.Diagnostics.Debug.WriteLine($"Rules content directly set: {rulesContent.Length} characters");
             }
         }
@@ -1150,6 +1296,23 @@ CRITICAL INSTRUCTIONS:
             if (!string.IsNullOrEmpty(styleContent))
             {
                 _styleGuide = styleContent;
+                
+                // Parse the style guide for enhanced understanding
+                try
+                {
+                    _parsedStyle = _styleParser.Parse(styleContent);
+                    System.Diagnostics.Debug.WriteLine($"Successfully parsed directly set style guide:");
+                    System.Diagnostics.Debug.WriteLine($"  - {_parsedStyle.Sections.Count} sections");
+                    System.Diagnostics.Debug.WriteLine($"  - {_parsedStyle.AllRules.Count} total rules");
+                    System.Diagnostics.Debug.WriteLine($"  - {_parsedStyle.CriticalRules.Count} critical rules");
+                    System.Diagnostics.Debug.WriteLine($"  - Writing sample: {(_parsedStyle.WritingSample?.Length ?? 0)} chars");
+                }
+                catch (Exception parseEx)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error parsing directly set style guide: {parseEx.Message}");
+                    // Continue with unparsed style guide
+                }
+                
                 System.Diagnostics.Debug.WriteLine($"Style guide content directly set: {styleContent.Length} characters");
             }
         }
@@ -1163,6 +1326,10 @@ CRITICAL INSTRUCTIONS:
             if (!string.IsNullOrEmpty(outlineContent))
             {
                 _outline = outlineContent;
+                
+                // Parse outline for enhanced chapter context
+                _outlineChapterService.SetOutline(outlineContent);
+                
                 System.Diagnostics.Debug.WriteLine($"Outline content directly set: {outlineContent.Length} characters");
             }
         }
@@ -1200,7 +1367,7 @@ CRITICAL INSTRUCTIONS:
                     string styleContent = await _fileReferenceService.GetFileContent(stylePath, _currentFilePath);
                     if (!string.IsNullOrEmpty(styleContent))
                     {
-                        SetStyleGuideContent(styleContent);
+                        SetStyleGuideContent(styleContent); // This will now also parse the style guide
                     }
                     else
                     {
@@ -1267,5 +1434,41 @@ CRITICAL INSTRUCTIONS:
         }
 
         public event EventHandler<RetryEventArgs> OnRetryingOverloadedRequest;
+        
+        /// <summary>
+        /// Validates generated content against the outline expectations
+        /// </summary>
+        public List<string> ValidateContentAgainstOutline(string content, int? chapterNumber = null)
+        {
+            if (chapterNumber == null && !string.IsNullOrEmpty(_fictionContent))
+            {
+                // Use unified chapter detection for consistent chapter identification
+                chapterNumber = ChapterDetectionService.GetCurrentChapterNumber(_fictionContent, _currentCursorPosition);
+                System.Diagnostics.Debug.WriteLine($"ValidateContentAgainstOutline: Using unified detection, chapter {chapterNumber}");
+            }
+            
+            if (chapterNumber.HasValue)
+            {
+                return _outlineChapterService.ValidateChapterAgainstOutline(content, chapterNumber.Value);
+            }
+            
+            return new List<string>();
+        }
+        
+        /// <summary>
+        /// Gets a summary of what should happen in the current chapter
+        /// </summary>
+        public string GetCurrentChapterExpectations()
+        {
+            if (!string.IsNullOrEmpty(_fictionContent))
+            {
+                // Use unified chapter detection for consistent chapter identification
+                var currentChapter = ChapterDetectionService.GetCurrentChapterNumber(_fictionContent, _currentCursorPosition);
+                System.Diagnostics.Debug.WriteLine($"GetCurrentChapterExpectations: Using unified detection, chapter {currentChapter}");
+                return _outlineChapterService.GetChapterExpectationSummary(currentChapter);
+            }
+            
+            return "No chapter expectations available.";
+        }
     }
 } 

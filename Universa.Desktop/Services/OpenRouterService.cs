@@ -10,6 +10,8 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using Universa.Desktop.Models;
+using System.Threading;
+using System.IO;
 
 namespace Universa.Desktop.Services
 {
@@ -24,7 +26,7 @@ namespace Universa.Desktop.Services
             _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
             _httpClient = new HttpClient
             {
-                Timeout = TimeSpan.FromSeconds(240) // Set a longer timeout for AI model generation
+                Timeout = TimeSpan.FromSeconds(300) // Set a longer timeout for AI model generation
             };
             _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
             _httpClient.DefaultRequestHeaders.Add("HTTP-Referer", "https://universa.app");
@@ -182,6 +184,18 @@ namespace Universa.Desktop.Services
             [JsonPropertyName("message")]
             public ChatMessage Message { get; set; }
         }
+
+        public class StreamingResponse
+        {
+            [JsonPropertyName("choices")]
+            public List<StreamChoice> Choices { get; set; }
+        }
+
+        public class StreamChoice
+        {
+            [JsonPropertyName("delta")]
+            public ChatMessage Delta { get; set; }
+        }
         #endregion
 
         public async Task<string> SendChatMessage(List<ChatMessage> messages, string modelId)
@@ -260,6 +274,125 @@ namespace Universa.Desktop.Services
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error sending chat message: {ex.Message}");
+                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                throw;
+            }
+        }
+
+        // New streaming method that updates content incrementally
+        public async Task<string> StreamChatMessage(List<ChatMessage> messages, string modelId, Action<string> onContentUpdate, CancellationToken cancellationToken)
+        {
+            try
+            {
+                Debug.WriteLine($"Streaming chat message from OpenRouter with model: {modelId}");
+                Debug.WriteLine($"Number of messages: {messages?.Count ?? 0}");
+
+                // Strip the "openrouter/" prefix if present
+                string actualModelId = modelId.StartsWith("openrouter/") ? modelId.Substring(11) : modelId;
+
+                var request = new
+                {
+                    model = actualModelId,
+                    messages = messages ?? new List<ChatMessage>(),
+                    max_tokens = 16384,
+                    temperature = 0.7,
+                    stream = true, // Enable streaming
+                    provider = new
+                    {
+                        allow_fallbacks = true // Enable automatic fallbacks between providers
+                    }
+                };
+
+                var jsonOptions = new JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+                };
+
+                var jsonContent = JsonSerializer.Serialize(request, jsonOptions);
+                Debug.WriteLine($"Stream Request JSON: {jsonContent}");
+
+                // Create HTTP request manually to handle streaming
+                var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl}/chat/completions");
+                httpRequest.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+                // Use SendAsync with ResponseHeadersRead to start reading the stream before the entire response is received
+                using var response = await _httpClient.SendAsync(
+                    httpRequest, 
+                    HttpCompletionOption.ResponseHeadersRead, 
+                    cancellationToken);
+                
+                response.EnsureSuccessStatusCode();
+                
+                using var stream = await response.Content.ReadAsStreamAsync();
+                using var reader = new StreamReader(stream);
+
+                string fullContent = "";
+                bool receivedAnyContent = false;
+                
+                while (!reader.EndOfStream)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    
+                    var line = await reader.ReadLineAsync();
+                    if (string.IsNullOrEmpty(line)) continue;
+                    
+                    // Server-Sent Events format starts with "data: "
+                    if (!line.StartsWith("data:")) continue;
+                    
+                    // Get content after "data: "
+                    var data = line.Substring(5).Trim();
+                    
+                    // Check for stream end
+                    if (data == "[DONE]") break;
+
+                    try
+                    {
+                        // Parse the JSON chunk
+                        var chunkResponse = JsonSerializer.Deserialize<StreamingResponse>(data, jsonOptions);
+                        if (chunkResponse?.Choices == null || chunkResponse.Choices.Count == 0) continue;
+
+                        var choice = chunkResponse.Choices[0];
+                        var content = choice.Delta?.Content;
+                        
+                        // Only update if we have actual content
+                        if (!string.IsNullOrEmpty(content))
+                        {
+                            receivedAnyContent = true;
+                            fullContent += content;
+                            onContentUpdate(fullContent);
+                        }
+                    }
+                    catch (JsonException ex)
+                    {
+                        Debug.WriteLine($"Error parsing chunk: {ex.Message}");
+                        Debug.WriteLine($"Raw chunk data: {data}");
+                        // Continue processing instead of failing
+                    }
+                }
+
+                // If we didn't receive any content and the stream ended, it was a premature ending
+                if (!receivedAnyContent && string.IsNullOrEmpty(fullContent))
+                {
+                    throw new HttpRequestException("The response ended prematurely without any content. This could be due to a network issue or server timeout.");
+                }
+
+                Debug.WriteLine($"Streaming completed. Total content length: {fullContent.Length}");
+                return fullContent;
+            }
+            catch (OperationCanceledException)
+            {
+                Debug.WriteLine("Streaming was cancelled");
+                throw;
+            }
+            catch (HttpRequestException ex) when (ex.Message.Contains("prematurely"))
+            {
+                Debug.WriteLine($"Stream ended prematurely: {ex.Message}");
+                throw new HttpRequestException("The response was interrupted. This could be due to network issues or server timeouts. Please try again.", ex);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error streaming chat message: {ex.Message}");
                 Debug.WriteLine($"Stack trace: {ex.StackTrace}");
                 throw;
             }
