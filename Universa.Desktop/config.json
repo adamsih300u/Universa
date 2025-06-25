@@ -28,7 +28,7 @@
   "SubsonicUsername": null,
   "SubsonicPassword": null,
   "SubsonicName": null,
-  "WeatherApiKey": "5ed17586274f247b24384896d3100c51",
+  "WeatherApiKey": "",
   "EnableWeather": false,
   "WeatherZipCode": "",
   "EnableMoonPhase": false,
