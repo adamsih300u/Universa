@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -10,14 +11,23 @@ using Universa.Desktop.ViewModels;
 using Universa.Desktop.Services;
 using Universa.Desktop.Interfaces;
 using System.Threading.Tasks;
+using System.Collections;
+using System.ComponentModel;
+using Universa.Desktop.Models;
 
 namespace Universa.Desktop.Controls
 {
     public partial class FictionMessageControl : UserControl
     {
         private readonly ITextSearchService _textSearchService;
+        private bool _isParsed = false;
+        private bool _isVisible = false;
+        private string _pendingContent = string.Empty;
+        private Models.ChatMessage _chatMessage;
+        
         public static readonly DependencyProperty ContentProperty =
-            DependencyProperty.Register("Content", typeof(string), typeof(FictionMessageControl), new PropertyMetadata(string.Empty));
+            DependencyProperty.Register("Content", typeof(string), typeof(FictionMessageControl), 
+                new PropertyMetadata(string.Empty, OnContentChanged));
 
         public string Content
         {
@@ -29,10 +39,209 @@ namespace Universa.Desktop.Controls
         {
             InitializeComponent();
             _textSearchService = new EnhancedTextSearchService();
+            
+            // Set up lazy loading - parse content only when control becomes visible
+            this.IsVisibleChanged += OnVisibilityChanged;
+            this.Loaded += OnLoaded;
+            this.Unloaded += OnUnloaded;
+            this.DataContextChanged += OnDataContextChanged;
+        }
+        
+        private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            // Unsubscribe from old message
+            if (_chatMessage != null)
+            {
+                _chatMessage.PropertyChanged -= OnChatMessagePropertyChanged;
+            }
+
+            // Subscribe to new message
+            _chatMessage = DataContext as Models.ChatMessage;
+            if (_chatMessage != null)
+            {
+                _chatMessage.PropertyChanged += OnChatMessagePropertyChanged;
+            }
+        }
+        
+        private void OnChatMessagePropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            // When IsThinking changes from true to false, message streaming is complete
+            if (e.PropertyName == nameof(Models.ChatMessage.IsThinking))
+            {
+                if (_chatMessage != null && !_chatMessage.IsThinking && !string.IsNullOrEmpty(_pendingContent))
+                {
+                    // Streaming completed, now safe to parse
+                    Debug.WriteLine("Message streaming completed, parsing fiction content");
+                    ParseContentLazy();
+                }
+            }
+        }
+        
+        private static void OnContentChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is FictionMessageControl control)
+            {
+                control.OnContentChanged(e.NewValue as string);
+            }
+        }
+        
+        private void OnContentChanged(string newContent)
+        {
+            _pendingContent = newContent ?? string.Empty;
+            _isParsed = false;
+            
+            // Check if message is still streaming (IsThinking = true)
+            bool isStreaming = _chatMessage?.IsThinking ?? false;
+            
+            // Only parse immediately if:
+            // 1. Control is visible AND
+            // 2. Message is not currently streaming (or we don't have message context)
+            if (_isVisible && !isStreaming)
+            {
+                Debug.WriteLine("Content changed and not streaming, parsing immediately");
+                ParseContentLazy();
+            }
+            else
+            {
+                // Show placeholder until parsing (either because not visible or still streaming)
+                if (isStreaming)
+                {
+                    // Debug output removed to prevent UI performance issues during streaming
+                }
+                ShowPlaceholder();
+            }
+        }
+        
+        private void OnVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            _isVisible = (bool)e.NewValue;
+            if (_isVisible && !_isParsed && !string.IsNullOrEmpty(_pendingContent))
+            {
+                // Check if message is still streaming before parsing
+                bool isStreaming = _chatMessage?.IsThinking ?? false;
+                if (!isStreaming)
+                {
+                    Debug.WriteLine("Control became visible and not streaming, parsing content");
+                    ParseContentLazy();
+                }
+                else
+                {
+                    Debug.WriteLine("Control became visible but still streaming, waiting for completion");
+                    ShowPlaceholder();
+                }
+            }
+        }
+        
+        private void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            _isVisible = this.IsVisible;
+            if (_isVisible && !_isParsed && !string.IsNullOrEmpty(_pendingContent))
+            {
+                // Check if message is still streaming before parsing
+                bool isStreaming = _chatMessage?.IsThinking ?? false;
+                if (!isStreaming)
+                {
+                    Debug.WriteLine("Control loaded and not streaming, parsing content");
+                    ParseContentLazy();
+                }
+                else
+                {
+                    Debug.WriteLine("Control loaded but still streaming, waiting for completion");
+                    ShowPlaceholder();
+                }
+            }
+        }
+        
+        private void ShowPlaceholder()
+        {
+            // Show appropriate placeholder message based on streaming state
+            bool isStreaming = _chatMessage?.IsThinking ?? false;
+            string placeholderText = isStreaming ? "Receiving response..." : "Loading content...";
+            
+            var placeholder = new List<Converters.FictionTextBlock>
+            {
+                new Converters.FictionTextBlock
+                {
+                    Text = placeholderText,
+                    IsCodeBlock = false,
+                    IsInsertion = false
+                }
+            };
+            ItemsContainer.ItemsSource = placeholder;
+        }
+        
+        private void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            // Clean up event subscriptions to prevent memory leaks
+            if (_chatMessage != null)
+            {
+                _chatMessage.PropertyChanged -= OnChatMessagePropertyChanged;
+                _chatMessage = null;
+            }
+        }
+        
+        private async void ParseContentLazy()
+        {
+            if (_isParsed || string.IsNullOrEmpty(_pendingContent))
+                return;
+                
+            _isParsed = true;
+            
+            Debug.WriteLine($"ParseContentLazy starting: content length = {_pendingContent.Length}");
+            
+            try
+            {
+                // Show loading indicator for long content
+                if (_pendingContent.Length > 5000)
+                {
+                    var loadingIndicator = new List<Converters.FictionTextBlock>
+                    {
+                        new Converters.FictionTextBlock
+                        {
+                            Text = $"Parsing fiction content ({_pendingContent.Length:N0} characters)...",
+                            IsCodeBlock = false,
+                            IsInsertion = false
+                        }
+                    };
+                    ItemsContainer.ItemsSource = loadingIndicator;
+                }
+                
+                // Parse content on background thread to avoid blocking UI
+                var converter = new Converters.FictionTextBlockConverter();
+                Debug.WriteLine("Starting background parse...");
+                var parsedContent = await Task.Run(() => 
+                    converter.Convert(_pendingContent, typeof(object), null, null));
+                
+                Debug.WriteLine($"Parse completed, got {(parsedContent as IEnumerable<Converters.FictionTextBlock>)?.Count() ?? 0} blocks");
+                
+                // Update UI on main thread
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    ItemsContainer.ItemsSource = parsedContent as IEnumerable;
+                    Debug.WriteLine("UI updated with parsed content");
+                }, DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Parse error: {ex.Message}\n{ex.StackTrace}");
+                
+                // Show error message if parsing fails
+                var errorBlock = new List<Converters.FictionTextBlock>
+                {
+                    new Converters.FictionTextBlock
+                    {
+                        Text = $"Error parsing content ({_pendingContent.Length:N0} chars): {ex.Message}\n\nFirst 500 chars:\n{_pendingContent.Substring(0, Math.Min(500, _pendingContent.Length))}",
+                        IsCodeBlock = false,
+                        IsInsertion = false
+                    }
+                };
+                ItemsContainer.ItemsSource = errorBlock;
+            }
         }
 
         private void OriginalTextButton_Click(object sender, RoutedEventArgs e)
         {
+            Debug.WriteLine("OriginalTextButton_Click method called!");
             try
             {
                 if (sender is Button button && button.Tag is string originalText)
@@ -86,6 +295,7 @@ namespace Universa.Desktop.Controls
 
         private void ApplyChangesButton_Click(object sender, RoutedEventArgs e)
         {
+            Debug.WriteLine("ApplyChangesButton_Click method called!");
             try
             {
                 if (sender is Button button && button.Tag is Converters.FictionTextBlock fictionBlock)
@@ -113,6 +323,7 @@ namespace Universa.Desktop.Controls
 
         private void AnchorTextButton_Click(object sender, RoutedEventArgs e)
         {
+            Debug.WriteLine("AnchorTextButton_Click method called!");
             try
             {
                 if (sender is Button button && button.Tag is string anchorText)
@@ -140,6 +351,7 @@ namespace Universa.Desktop.Controls
 
         private void ApplyInsertionButton_Click(object sender, RoutedEventArgs e)
         {
+            Debug.WriteLine("ApplyInsertionButton_Click method called!");
             try
             {
                 if (sender is Button button && button.Tag is Converters.FictionTextBlock fictionBlock)
@@ -590,6 +802,8 @@ namespace Universa.Desktop.Controls
             }
         }
 
+
+
         private async void ApplyTextInsertion(object markdownTab, string anchorText, string newText)
         {
             try
@@ -656,17 +870,8 @@ namespace Universa.Desktop.Controls
                             // Calculate insertion point (after the anchor text)
                             insertionIndex = searchResult.Index + searchResult.Length;
                             
-                            // Insert the new text after the anchor
-                            // Add appropriate spacing if needed
-                            string insertionText = newText;
-                            if (!contentCopy.Substring(insertionIndex).StartsWith("\n") && !newText.StartsWith("\n"))
-                            {
-                                insertionText = "\n" + newText;
-                            }
-                            if (!insertionText.EndsWith("\n") && insertionIndex < contentCopy.Length - 1)
-                            {
-                                insertionText = insertionText + "\n";
-                            }
+                            // BULLY IMPROVED SPACING: Determine appropriate spacing based on context
+                            string insertionText = DetermineInsertionSpacing(contentCopy, insertionIndex, newText, anchorText);
                             
                             contentCopy = contentCopy.Insert(insertionIndex, insertionText);
                             success = true;
@@ -743,6 +948,105 @@ namespace Universa.Desktop.Controls
                 Debug.WriteLine($"Error applying text insertion: {ex.Message}");
                 ShowNavigationMessage("Error applying insertion. Please try again.");
             }
+        }
+
+        /// <summary>
+        /// Determines appropriate spacing for text insertion based on context
+        /// </summary>
+        private string DetermineInsertionSpacing(string content, int insertionIndex, string newText, string anchorText)
+        {
+            // Look at what comes before the insertion point
+            string beforeText = content.Substring(Math.Max(0, insertionIndex - 100), Math.Min(100, insertionIndex));
+            
+            // Look at what comes after the insertion point
+            int lookAheadLength = Math.Min(100, content.Length - insertionIndex);
+            string afterText = lookAheadLength > 0 ? content.Substring(insertionIndex, lookAheadLength) : "";
+            
+            // Check if anchor ends with sentence punctuation
+            bool anchorEndsWithSentence = anchorText.TrimEnd().EndsWith(".") || 
+                                         anchorText.TrimEnd().EndsWith("!") || 
+                                         anchorText.TrimEnd().EndsWith("?");
+            
+            // Check if anchor ends with dialogue
+            bool anchorEndsWithDialogue = anchorText.TrimEnd().EndsWith("\"") || 
+                                         anchorText.TrimEnd().EndsWith("'");
+            
+            // Check if we're at the end of a paragraph (followed by double newline)
+            bool isEndOfParagraph = System.Text.RegularExpressions.Regex.IsMatch(afterText, @"^\s*\n\s*\n");
+            
+            // Check if we're at the end of the document
+            bool isEndOfDocument = insertionIndex >= content.Length - 1;
+            
+            // Determine spacing strategy
+            string prefix = "";
+            string suffix = "";
+            
+            if (isEndOfDocument)
+            {
+                // At end of document - ensure we have some space before
+                if (!beforeText.TrimEnd().EndsWith("\n"))
+                {
+                    prefix = "\n\n";
+                }
+                else if (!beforeText.TrimEnd().EndsWith("\n\n"))
+                {
+                    prefix = "\n";
+                }
+            }
+            else if (isEndOfParagraph)
+            {
+                // At end of paragraph - use paragraph spacing
+                prefix = "\n\n";
+                // Don't add suffix since we're already at paragraph break
+            }
+            else if (anchorEndsWithSentence)
+            {
+                // After sentence - use sentence spacing
+                prefix = " ";
+                // Add line break after if not already there
+                if (!afterText.StartsWith("\n"))
+                {
+                    suffix = "\n";
+                }
+            }
+            else if (anchorEndsWithDialogue)
+            {
+                // After dialogue - check if there's a dialogue tag
+                var dialogueTagMatch = System.Text.RegularExpressions.Regex.Match(afterText, @"^\s*(he|she|they|it|\w+)\s+(said|whispered|shouted|asked|replied|answered|muttered|declared|announced)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (dialogueTagMatch.Success)
+                {
+                    // There's a dialogue tag coming, use standard spacing
+                    prefix = " ";
+                    suffix = "\n";
+                }
+                else
+                {
+                    // No dialogue tag, use paragraph spacing for new action/description
+                    prefix = "\n\n";
+                    if (!afterText.StartsWith("\n"))
+                    {
+                        suffix = "\n";
+                    }
+                }
+            }
+            else
+            {
+                // Default case - ensure we have at least some spacing
+                if (!beforeText.TrimEnd().EndsWith("\n"))
+                {
+                    prefix = "\n";
+                }
+                if (!afterText.StartsWith("\n"))
+                {
+                    suffix = "\n";
+                }
+            }
+            
+            // Clean up the new text - remove leading/trailing whitespace to have full control
+            string cleanNewText = newText.Trim();
+            
+            // Combine with determined spacing
+            return prefix + cleanNewText + suffix;
         }
 
         private void ShowNavigationMessage(string message)

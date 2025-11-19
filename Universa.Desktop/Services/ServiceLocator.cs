@@ -21,11 +21,26 @@ namespace Universa.Desktop.Services
             // Register additional services not registered in App.xaml.cs
             services.AddSingleton<WeatherManager>();
             services.AddSingleton<Managers.SyncManager>();
+            services.AddSingleton<IWebDavSyncService, WebDavSyncService>();
             services.AddSingleton<TTSManager>();
-            services.AddSingleton<ModelProvider>();
+            services.AddSingleton<ModelCapabilitiesService>();
+            services.AddSingleton<ModelProvider>(provider =>
+            {
+                var configService = provider.GetRequiredService<IConfigurationService>();
+                var capabilitiesService = provider.GetRequiredService<ModelCapabilitiesService>();
+                return new ModelProvider(configService, capabilitiesService);
+            });
             services.AddSingleton<ISubsonicService, SubsonicService>();
             services.AddSingleton<JellyfinService>();
-            services.AddSingleton<AudiobookshelfService>();
+            services.AddSingleton<IAudiobookshelfService>(provider =>
+            {
+                var config = provider.GetRequiredService<IConfigurationService>().Provider;
+                return new AudiobookshelfService(
+                    config.AudiobookshelfUrl,
+                    config.AudiobookshelfUsername,
+                    config.AudiobookshelfPassword
+                );
+            });
             services.AddSingleton<IMusicDataService, MusicDataService>();
             services.AddTransient<IChapterNavigationService, ChapterNavigationService>();
             services.AddTransient<IMarkdownFontService, MarkdownFontService>();

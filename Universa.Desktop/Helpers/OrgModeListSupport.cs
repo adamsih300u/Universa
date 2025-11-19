@@ -8,13 +8,86 @@ using ICSharpCode.AvalonEdit.Document;
 namespace Universa.Desktop.Helpers
 {
     /// <summary>
-    /// Handles org-mode list functionality including checkboxes
+    /// Handles org-mode list functionality including checkboxes and header level management
     /// </summary>
     public static class OrgModeListSupport
     {
         private static readonly Regex UnorderedListRegex = new Regex(@"^(\s*)[-+*]\s+(.*)", RegexOptions.Compiled);
         private static readonly Regex OrderedListRegex = new Regex(@"^(\s*)(\d+)\.\s+(.*)", RegexOptions.Compiled);
         private static readonly Regex CheckboxListRegex = new Regex(@"^(\s*)[-+*]\s+(\[[ Xx-]\])\s+(.*)", RegexOptions.Compiled);
+        private static readonly Regex HeaderRegex = new Regex(@"^(\s*)(\*+)\s+(.*)", RegexOptions.Compiled);
+        
+        /// <summary>
+        /// Handles tab key press for org mode elements (headers and lists)
+        /// </summary>
+        public static bool HandleTabKey(TextEditor editor, bool isShiftPressed)
+        {
+            var line = editor.Document.GetLineByOffset(editor.CaretOffset);
+            var lineText = editor.Document.GetText(line);
+            
+            // Check if it's a header line
+            var headerMatch = HeaderRegex.Match(lineText);
+            if (headerMatch.Success)
+            {
+                return HandleHeaderTabKey(editor, line, headerMatch, isShiftPressed);
+            }
+            
+            // Check if it's a list item
+            if (IsListItem(lineText))
+            {
+                return IndentListItem(editor, !isShiftPressed);
+            }
+            
+            return false;
+        }
+        
+        /// <summary>
+        /// Handles tab key for header lines (promote/demote levels)
+        /// </summary>
+        private static bool HandleHeaderTabKey(TextEditor editor, DocumentLine line, Match headerMatch, bool isShiftPressed)
+        {
+            var indent = headerMatch.Groups[1].Value;
+            var currentStars = headerMatch.Groups[2].Value;
+            var content = headerMatch.Groups[3].Value;
+            
+            string newStars;
+            if (isShiftPressed)
+            {
+                // Shift+Tab: Promote (reduce level) - remove one star
+                if (currentStars.Length <= 1)
+                    return false; // Can't promote beyond level 1
+                newStars = currentStars.Substring(1);
+            }
+            else
+            {
+                // Tab: Demote (increase level) - add one star
+                if (currentStars.Length >= 6)
+                    return false; // Limit to 6 levels
+                newStars = "*" + currentStars;
+            }
+            
+            var newLineText = $"{indent}{newStars} {content}";
+            editor.Document.Replace(line.Offset, line.Length, newLineText);
+            
+            // Keep cursor at a reasonable position
+            var newCaretPos = line.Offset + indent.Length + newStars.Length + 1; // After "*** "
+            if (newCaretPos <= editor.Document.TextLength)
+            {
+                editor.CaretOffset = Math.Min(newCaretPos, line.Offset + newLineText.Length);
+            }
+            
+            return true;
+        }
+        
+        /// <summary>
+        /// Checks if a line is any type of list item
+        /// </summary>
+        private static bool IsListItem(string lineText)
+        {
+            return UnorderedListRegex.IsMatch(lineText) || 
+                   OrderedListRegex.IsMatch(lineText) || 
+                   CheckboxListRegex.IsMatch(lineText);
+        }
         
         /// <summary>
         /// Toggles checkbox state on the current line
@@ -107,21 +180,34 @@ namespace Universa.Desktop.Helpers
             var line = editor.Document.GetLineByOffset(editor.CaretOffset);
             var lineText = editor.Document.GetText(line);
             
+            // Save cursor position relative to line start
+            var cursorPosInLine = editor.CaretOffset - line.Offset;
+            
             if (UnorderedListRegex.IsMatch(lineText) || 
                 OrderedListRegex.IsMatch(lineText) || 
                 CheckboxListRegex.IsMatch(lineText))
             {
                 if (indent)
                 {
-                    // Add two spaces at the beginning
+                    // Add two spaces at the beginning of the line
                     editor.Document.Insert(line.Offset, "  ");
+                    // Adjust cursor position to account for added spaces
+                    editor.CaretOffset = line.Offset + cursorPosInLine + 2;
                 }
                 else
                 {
-                    // Remove two spaces from the beginning if they exist
+                    // Remove up to two spaces from the beginning if they exist
                     if (lineText.StartsWith("  "))
                     {
                         editor.Document.Remove(line.Offset, 2);
+                        // Adjust cursor position to account for removed spaces
+                        editor.CaretOffset = line.Offset + Math.Max(0, cursorPosInLine - 2);
+                    }
+                    else if (lineText.StartsWith(" "))
+                    {
+                        editor.Document.Remove(line.Offset, 1);
+                        // Adjust cursor position to account for removed space
+                        editor.CaretOffset = line.Offset + Math.Max(0, cursorPosInLine - 1);
                     }
                 }
                 return true;

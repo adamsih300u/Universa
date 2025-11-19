@@ -37,6 +37,7 @@ namespace Universa.Desktop.Views
             JellyfinPasswordBox.PasswordChanged += (s, e) => _viewModel.UpdateJellyfinPassword(JellyfinPasswordBox.Password);
             AudiobookshelfPasswordBox.PasswordChanged += (s, e) => _viewModel.UpdateAudiobookshelfPassword(AudiobookshelfPasswordBox.Password);
             SyncPasswordBox.PasswordChanged += (s, e) => _viewModel.UpdateSyncPassword(SyncPasswordBox.Password);
+            WebDavPasswordBox.PasswordChanged += (s, e) => _viewModel.UpdateWebDavPassword(WebDavPasswordBox.Password);
 
             // Load initial password values
             LoadPasswords();
@@ -138,6 +139,9 @@ namespace Universa.Desktop.Views
             if (!string.IsNullOrEmpty(_viewModel.SyncPassword))
                 SyncPasswordBox.Password = _viewModel.SyncPassword;
 
+            if (!string.IsNullOrEmpty(_viewModel.WebDavPassword))
+                WebDavPasswordBox.Password = _viewModel.WebDavPassword;
+
             if (!string.IsNullOrEmpty(_viewModel.MatrixPassword))
                 MatrixPasswordBox.Password = _viewModel.MatrixPassword;
 
@@ -167,6 +171,7 @@ namespace Universa.Desktop.Views
             _viewModel.SavePassword("XAIApiKey", XAIKeyBox.Password);
             _viewModel.SavePassword("OpenRouterApiKey", OpenRouterKeyBox.Password);
             _viewModel.SavePassword("SyncPassword", SyncPasswordBox.Password);
+            _viewModel.SavePassword("WebDavPassword", WebDavPasswordBox.Password);
             _viewModel.SavePassword("MatrixPassword", MatrixPasswordBox.Password);
             _viewModel.SavePassword("SubsonicPassword", SubsonicPasswordBox.Password);
             _viewModel.SavePassword("JellyfinPassword", JellyfinPasswordBox.Password);

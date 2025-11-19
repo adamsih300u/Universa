@@ -18,10 +18,11 @@ namespace Universa.Desktop.Services
         private string _styleGuide;
         private string _rules;
         private readonly FileReferenceService _fileReferenceService;
+        private readonly OutlineCharacterReferenceService _characterReferenceService;
         private static Dictionary<string, OutlineWritingBeta> _instances = new Dictionary<string, OutlineWritingBeta>();
         private static readonly object _lock = new object();
         private static readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
-        private const int CONVERSATION_HISTORY_LIMIT = 8;  // Keep last 4 exchanges (user + assistant pairs)
+        private const int CONVERSATION_HISTORY_LIMIT = 4;  // Keep last 2 exchanges (user + assistant pairs)
         private const int OUTLINE_REFRESH_INTERVAL = 1;    // Always refresh outline context (fresh every message)
         private const int CONVERSATION_TRIM_INTERVAL = 6;  // Only trim conversation every 6 messages
         private int _messagesSinceRefresh = 0;
@@ -83,9 +84,9 @@ namespace Universa.Desktop.Services
             System.Diagnostics.Debug.WriteLine($"Conversation: ~{conversationTokens} tokens");
             System.Diagnostics.Debug.WriteLine($"Total: ~{systemTokens + conversationTokens} tokens");
             
-            if (_currentProvider == AIProvider.Anthropic && (systemTokens + conversationTokens) > 100000)
+            if ((systemTokens + conversationTokens) > 180000)
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ WARNING: Approaching Anthropic's token limit!");
+                System.Diagnostics.Debug.WriteLine("WARNING: Approaching 200K token response limit!");
             }
         }
 
@@ -104,6 +105,9 @@ namespace Universa.Desktop.Services
             {
                 _fileReferenceService = new FileReferenceService(Configuration.Instance.LibraryPath);
             }
+            
+            // Initialize character reference service
+            _characterReferenceService = new OutlineCharacterReferenceService(_fileReferenceService);
             
             if (!string.IsNullOrEmpty(filePath))
             {
@@ -361,6 +365,10 @@ namespace Universa.Desktop.Services
                 {
                     await ProcessRulesReference(rulesRef);
                 }
+                
+                // Process character references
+                await _characterReferenceService.ProcessCharacterReferences(_frontmatter, _currentFilePath);
+                System.Diagnostics.Debug.WriteLine($"Character reference processing complete: {_characterReferenceService.GetCharacterSummary()}");
             }
         }
 
@@ -372,11 +380,12 @@ namespace Universa.Desktop.Services
                 var content = await _fileReferenceService.GetFileContent(styleRef);
                 if (!string.IsNullOrEmpty(content))
                 {
-                    _styleGuide = content;
+                    // Strip frontmatter to avoid including metadata in the prompt
+                    _styleGuide = StripFrontmatter(content);
                     
                     // Parse the style guide
-                    _parsedStyle = _styleParser.Parse(content);
-                    System.Diagnostics.Debug.WriteLine($"Style guide loaded successfully. Length: {content.Length}");
+                    _parsedStyle = _styleParser.Parse(_styleGuide);
+                    System.Diagnostics.Debug.WriteLine($"Style guide loaded successfully. Length: {_styleGuide.Length} (frontmatter stripped)");
                 }
                 else
                 {
@@ -397,11 +406,12 @@ namespace Universa.Desktop.Services
                 var content = await _fileReferenceService.GetFileContent(rulesRef);
                 if (!string.IsNullOrEmpty(content))
                 {
-                    _rules = content;
+                    // Strip frontmatter to avoid including metadata in the prompt
+                    _rules = StripFrontmatter(content);
                     
                     // Parse the rules
-                    _parsedRules = _rulesParser.Parse(content);
-                    System.Diagnostics.Debug.WriteLine($"Rules loaded successfully. Length: {content.Length}");
+                    _parsedRules = _rulesParser.Parse(_rules);
+                    System.Diagnostics.Debug.WriteLine($"Rules loaded successfully. Length: {_rules.Length} (frontmatter stripped)");
                 }
                 else
                 {
@@ -476,6 +486,13 @@ namespace Universa.Desktop.Services
                 prompt.AppendLine(_rules);
             }
 
+            // Add character profiles if available
+            var characterProfilesSection = _characterReferenceService.BuildCharacterProfilesSection();
+            if (!string.IsNullOrEmpty(characterProfilesSection))
+            {
+                prompt.AppendLine(characterProfilesSection);
+            }
+
             // Add outline-specific guidance
             prompt.AppendLine("\n=== OUTLINE DEVELOPMENT GUIDANCE ===");
             prompt.AppendLine("Your role is to help develop comprehensive story outlines with the following structure:");
@@ -484,30 +501,41 @@ namespace Universa.Desktop.Services
             prompt.AppendLine("- Brief 2-3 sentence summary of the entire story");
             prompt.AppendLine("");
             prompt.AppendLine("# Notes");
-            prompt.AppendLine("- Important notes about themes, tone, special considerations");
-            prompt.AppendLine("- Use bullet points for better parsing");
+            prompt.AppendLine("- Core themes and their development throughout the story");
+            prompt.AppendLine("- Tone and mood considerations for different chapters");
+            prompt.AppendLine("- Special narrative techniques or structural elements");
+            prompt.AppendLine("- Important symbols, motifs, or recurring elements");
+            prompt.AppendLine("- Genre-specific considerations or tropes to utilize/subvert");
             prompt.AppendLine("");
             prompt.AppendLine("# Characters");
-            prompt.AppendLine("- Protagonists");
-            prompt.AppendLine("  - Character Name - Brief description of role and personality");
-            prompt.AppendLine("  - Another Character - Description");
-            prompt.AppendLine("- Antagonists");
-            prompt.AppendLine("  - Villain Name - Brief description of role and motivations");
-            prompt.AppendLine("- Supporting Characters");
-            prompt.AppendLine("  - Support Character - Brief description");
+            prompt.AppendLine("## Protagonists");
+            prompt.AppendLine("- Character Name - Brief description of role and personality");
+            prompt.AppendLine("- Another Character - Description");
+            prompt.AppendLine("## Antagonists");
+            prompt.AppendLine("- Villain Name - Brief description of role and motivations");
+            prompt.AppendLine("## Supporting Characters");
+            prompt.AppendLine("- Support Character - Brief description");
+            prompt.AppendLine("");
+            prompt.AppendLine("NOTE: Character sections support both header format (## Protagonists) and bullet format (- Protagonists)");
             prompt.AppendLine("");
             prompt.AppendLine("# Outline");
             prompt.AppendLine("## Chapter 1");
-            prompt.AppendLine("Brief summary of what happens in this chapter (2-4 sentences)");
-            prompt.AppendLine("- Key event or action that occurs");
-            prompt.AppendLine("- Character development moment");
-            prompt.AppendLine("- Plot advancement");
+            prompt.AppendLine("Brief summary of what happens in this chapter (3-5 sentences)");
+            prompt.AppendLine("- Major story beat or event");
+            prompt.AppendLine("  - Specific action or revelation");
+            prompt.AppendLine("  - Character consequence or reaction");
+            prompt.AppendLine("- Secondary story beat");
+            prompt.AppendLine("  - How this develops or complicates");
+            prompt.AppendLine("  - Connection to overall plot");
+            prompt.AppendLine("- Chapter conclusion beat");
+            prompt.AppendLine("  - How chapter ends");
+            prompt.AppendLine("  - Setup for next chapter");
             prompt.AppendLine("");
             prompt.AppendLine("## Chapter 2");
-            prompt.AppendLine("Brief summary of what happens in this chapter (2-4 sentences)");
-            prompt.AppendLine("- Key event or action that occurs");
-            prompt.AppendLine("- Character development moment");
-            prompt.AppendLine("- Plot advancement");
+            prompt.AppendLine("Brief summary of what happens in this chapter (3-5 sentences)");
+            prompt.AppendLine("- Major story beat or event");
+            prompt.AppendLine("  - Specific details");
+            prompt.AppendLine("  - Character impact");
             prompt.AppendLine("");
             prompt.AppendLine("(Continue numerically - DO NOT name chapters, only number them)");
 
@@ -537,6 +565,8 @@ namespace Universa.Desktop.Services
                 }
             }
 
+
+
             // Add current outline content
             if (!string.IsNullOrEmpty(_outlineContent))
             {
@@ -550,6 +580,7 @@ namespace Universa.Desktop.Services
             prompt.AppendLine("=== RESPONSE FORMAT ===");
             prompt.AppendLine("When suggesting specific text changes, you MUST use EXACTLY this format:");
             prompt.AppendLine("");
+            prompt.AppendLine("For REVISIONS (replacing existing text):");
             prompt.AppendLine("```");
             prompt.AppendLine("Original text:");
             prompt.AppendLine("[paste the exact text to be replaced]");
@@ -560,9 +591,42 @@ namespace Universa.Desktop.Services
             prompt.AppendLine("[your new version of the text]");
             prompt.AppendLine("```");
             prompt.AppendLine("");
+            prompt.AppendLine("For INSERTIONS (adding new text after existing text):");
+            prompt.AppendLine("```");
+            prompt.AppendLine("Insert after:");
+            prompt.AppendLine("[paste the exact anchor text to insert after]");
+            prompt.AppendLine("```");
+            prompt.AppendLine("");
+            prompt.AppendLine("```");
+            prompt.AppendLine("New text:");
+            prompt.AppendLine("[the new content to insert]");
+            prompt.AppendLine("```");
+            prompt.AppendLine("");
+            prompt.AppendLine("CRITICAL TEXT PRECISION REQUIREMENTS:");
+            prompt.AppendLine("- Original text and Insert after must be EXACT, COMPLETE, and VERBATIM from the outline");
+            prompt.AppendLine("- Include ALL whitespace, line breaks, and formatting exactly as written");
+            prompt.AppendLine("- Include complete sentences or natural text boundaries (periods, paragraph breaks)");
+            prompt.AppendLine("- NEVER paraphrase, summarize, or reformat the original text");
+            prompt.AppendLine("- COPY AND PASTE directly from the outline - do not retype or modify");
+            prompt.AppendLine("- Include sufficient context (minimum 10-20 words) for unique identification");
+            prompt.AppendLine("- If bullet points, include the bullet symbols and indentation exactly");
+            prompt.AppendLine("- If headers, include the ## markdown symbols exactly");
+            prompt.AppendLine("");
+            prompt.AppendLine("TEXT MATCHING VALIDATION:");
+            prompt.AppendLine("- Your original text MUST be findable with exact text search in the outline");
+            prompt.AppendLine("- If you cannot copy exact text, provide surrounding context for identification");
+            prompt.AppendLine("- Test your original text by mentally searching for it in the outline");
+            prompt.AppendLine("- Incomplete or modified text will cause Apply buttons to fail");
+            prompt.AppendLine("");
+            prompt.AppendLine("ANCHOR TEXT GUIDELINES FOR INSERTIONS:");
+            prompt.AppendLine("- Include COMPLETE sections, headers, or bullet points that end BEFORE where you want to insert");
+            prompt.AppendLine("- NEVER use partial sentences or incomplete phrases as anchor text");
+            prompt.AppendLine("- ALWAYS end anchor text at natural boundaries: section endings, headers, paragraph breaks");
+            prompt.AppendLine("- Include enough context (at least 10-20 words) to ensure unique identification");
+            prompt.AppendLine("");
             prompt.AppendLine("GRANULAR REVISION GUIDELINES:");
             prompt.AppendLine("- For SMALL CHANGES: Use the 'Original text/Changed to' format with minimal scope");
-            prompt.AppendLine("- For ADDITIONS: Simply provide the new content to be added at a specific location");
+            prompt.AppendLine("- For TARGETED ADDITIONS: Use the 'Insert after/New text' format to add content at specific locations");
             prompt.AppendLine("- For ENHANCEMENTS: Modify only the specific bullet points or paragraphs that need updating");
             prompt.AppendLine("- AVOID rewriting entire chapters unless specifically requested");
             prompt.AppendLine("- PRESERVE formatting, indentation, and structure of unchanged content");
@@ -574,96 +638,153 @@ namespace Universa.Desktop.Services
             prompt.AppendLine("- If multiple revisions are needed, provide them cleanly in sequence");
             prompt.AppendLine("- Let the revised outline content speak for itself");
             prompt.AppendLine("");
-            prompt.AppendLine("If you are generating new content (e.g., adding new chapters, expanding sections), simply provide the new text directly without the 'Original text/Changed to' format.");
+            prompt.AppendLine("If you are generating new content (e.g., creating new major sections, adding entire chapters), simply provide the new text directly without the revision or insertion format.");
+            prompt.AppendLine("");
+            prompt.AppendLine("=== ORIGINALITY & PLOT PLAGIARISM AVOIDANCE ===");
+            prompt.AppendLine("CRITICAL: Create entirely original story outlines that avoid plagiarizing from EXTERNAL published works:");
+            prompt.AppendLine("- Develop unique plot structures and story beats that don't copy existing books, movies, or media");
+            prompt.AppendLine("- Avoid replicating specific plot sequences, character arcs, or story progressions from published works");
+            prompt.AppendLine("- Create original conflicts, revelations, and dramatic moments");
+            prompt.AppendLine("- Develop fresh approaches to genre conventions and narrative structure");
+            prompt.AppendLine("- Ensure chapter progressions and story beats are your own creative construction");
+            prompt.AppendLine("- Draw inspiration from general themes and structures without copying specific plot elements");
+            prompt.AppendLine("");
+            prompt.AppendLine("IMPORTANT: ALWAYS use your PROJECT REFERENCE MATERIALS for consistency:");
+            prompt.AppendLine("- Character Profiles: Use established character traits, relationships, and development arcs");
+            prompt.AppendLine("- Rules: Follow universe constraints, world-building elements, and established facts");
+            prompt.AppendLine("- Style Guide: Match the intended tone, themes, and narrative approach");
+            prompt.AppendLine("- Existing Outline: Build upon and expand current story structure when refining");
+            prompt.AppendLine("- Reference materials are for CONSISTENCY and CONTINUITY, not content to avoid");
             prompt.AppendLine("");
             prompt.AppendLine("CRITICAL INSTRUCTIONS:");
             prompt.AppendLine("1. When developing outlines, focus on:");
             prompt.AppendLine("   - Clear plot progression from chapter to chapter");
             prompt.AppendLine("   - Character development arcs");
-            prompt.AppendLine("   - Thematic consistency");
+            prompt.AppendLine("   - Thematic consistency and development throughout the story");
             prompt.AppendLine("   - Proper story structure (setup, rising action, climax, resolution)");
-            prompt.AppendLine("   - MANUSCRIPT-READY CONTENT: Outlines should provide rich material for full chapter creation");
-            prompt.AppendLine("   - CONTENT DEPTH: Focus on substance and detail, not writing style (style is handled during prose generation)");
+            prompt.AppendLine("   - STRUCTURAL FOUNDATION: Outlines should provide clear plot progression for story development");
+            prompt.AppendLine("   - CONCISE FOCUS: Focus on essential story beats, not detailed prose or dialogue");
+            prompt.AppendLine("   - THEME INTEGRATION: Ensure themes are clearly articulated in Notes section");
             prompt.AppendLine("");
-            prompt.AppendLine("2. For chapter outlines (MANUSCRIPT PREPARATION FOCUS):");
+            prompt.AppendLine("2. For chapter outlines (STRUCTURED NARRATIVE BEATS):");
             prompt.AppendLine("   - Use EXACT format: \"## Chapter [number]\" (e.g., \"## Chapter 1\", \"## Chapter 2\")");
             prompt.AppendLine("   - NEVER create custom chapter names or titles");
-            prompt.AppendLine("   - Include a comprehensive summary paragraph (3-5 sentences minimum)");
-            prompt.AppendLine("   - Follow with detailed bullet points using \"-\" for key events");
+            prompt.AppendLine("   - Include a comprehensive summary paragraph (3-5 sentences)");
+            prompt.AppendLine("   - Follow with major narrative beats as main bullets (\"-\")");
+            prompt.AppendLine("   - Each main beat can have UP TO 2 sub-bullets (\"  -\") for details");
+            prompt.AppendLine("   - Maximum 8-10 main beats per chapter to prevent ballooning");
+            prompt.AppendLine("   - Focus on WHAT HAPPENS, not how it's written or dialogue content");
+            prompt.AppendLine("   - Include major plot events, character actions, and story progression");
+            prompt.AppendLine("   - Avoid dialogue, internal thoughts, or prose-level descriptions");
+            prompt.AppendLine("   - Keep main bullets concise (1-2 sentences), sub-bullets brief");
             prompt.AppendLine("   - Ensure each chapter advances the plot meaningfully");
-            prompt.AppendLine("   - PROVIDE scene-by-scene breakdowns with rich detail");
-            prompt.AppendLine("   - SPECIFY character POV, emotional journey, and internal conflicts for each scene");
-            prompt.AppendLine("   - DETAIL key dialogue exchanges: topics, emotional subtext, character goals");
-            prompt.AppendLine("   - DESCRIBE action sequences step-by-step with sufficient detail for prose expansion");
-            prompt.AppendLine("   - INDICATE setting details, atmosphere, and sensory elements");
-            prompt.AppendLine("   - INCLUDE character reactions, thoughts, and emotional beats throughout");
             prompt.AppendLine("");
-            prompt.AppendLine("3. Chapter Content Requirements for Manuscript Creation:");
-            prompt.AppendLine("   - Scene opening: Specific setting, character state, immediate situation/conflict");
-            prompt.AppendLine("   - Dialogue content: Key conversation points, character motivations, emotional dynamics");
-            prompt.AppendLine("   - Action sequences: Step-by-step breakdown of physical events and character responses");
-            prompt.AppendLine("   - Character internal journey: Thoughts, realizations, emotional shifts, decision points");
-            prompt.AppendLine("   - Environmental details: Setting descriptions, atmosphere, mood indicators");
-            prompt.AppendLine("   - Relationship dynamics: How characters interact, power dynamics, emotional undercurrents");
-            prompt.AppendLine("   - Plot advancement: How events move the story forward, consequences, setup for future events");
-            prompt.AppendLine("   - Scene transitions: How each scene connects, time passage, location changes");
-            prompt.AppendLine("   - Chapter conclusion: Emotional resolution, cliffhangers, character state changes");
+            prompt.AppendLine("3. Chapter Content Guidelines (STRUCTURAL EVENTS ONLY):");
+            prompt.AppendLine("   - Major plot events: What significant things happen?");
+            prompt.AppendLine("   - Character actions: What do characters DO (not think or feel)?");
+            prompt.AppendLine("   - Story progression: How does the plot move forward?");
+            prompt.AppendLine("   - Key reveals or discoveries: What information is revealed?");
+            prompt.AppendLine("   - Conflicts or obstacles: What problems arise?");
+            prompt.AppendLine("   - Setting changes: Where does the action take place?");
+            prompt.AppendLine("   - Chapter conclusion: How does the chapter end?");
             prompt.AppendLine("");
-            prompt.AppendLine("4. Content Depth Guidelines:");
-            prompt.AppendLine("   - Each scene should have enough detail to write 1,000-3,000 words of prose");
-            prompt.AppendLine("   - Include multiple layers: plot events, character emotions, relationship dynamics");
-            prompt.AppendLine("   - Specify sensory details that bring scenes to life");
-            prompt.AppendLine("   - Note pacing changes: slow character moments vs. fast action sequences");
-            prompt.AppendLine("   - Include subtext and underlying tensions between characters");
-            prompt.AppendLine("   - Describe physical actions and character body language");
-            prompt.AppendLine("   - Note important props, objects, or environmental elements");
+            prompt.AppendLine("4. Narrative Beat Structure:");
+            prompt.AppendLine("   - Main bullets (\"-\"): Major story beats, plot events, or scene transitions");
+            prompt.AppendLine("   - Sub-bullets (\"  -\"): Specific details, character actions, or consequences");
+            prompt.AppendLine("   - Use sub-bullets to break down complex beats into clear components");
+            prompt.AppendLine("   - AVOID dialogue unless user specifically provides it");
+            prompt.AppendLine("   - AVOID character thoughts, emotions, or internal monologue");
+            prompt.AppendLine("   - AVOID detailed descriptions of settings or atmosphere");
+            prompt.AppendLine("   - FOCUS on plot structure and essential story progression");
+            prompt.AppendLine("   - Maximum 8-10 main beats per chapter (each with up to 2 sub-bullets)");
             prompt.AppendLine("");
             prompt.AppendLine("5. Character formatting MUST follow this pattern:");
             prompt.AppendLine("   - Use \"- Protagonists\", \"- Antagonists\", \"- Supporting Characters\" as section headers");
-            prompt.AppendLine("   - Format each character as: \"  - Character Name - Description\"");
+            prompt.AppendLine("   - Format each character as: \"  - Character Name - Brief role description\"");
             prompt.AppendLine("   - Use consistent bullet formatting throughout");
-            prompt.AppendLine("   - INCLUDE detailed character motivations, goals, and emotional drivers");
-            prompt.AppendLine("   - SPECIFY character relationships and dynamics with other characters");
+            prompt.AppendLine("   - Keep character descriptions concise (1-2 sentences maximum)");
+            prompt.AppendLine("   - Focus on character role in the story, not detailed psychology");
             prompt.AppendLine("");
-            prompt.AppendLine("6. For parser compatibility:");
+            prompt.AppendLine("6. Notes Section - Themes and Story Elements:");
+            prompt.AppendLine("   - ALWAYS include a robust Notes section with core themes");
+            prompt.AppendLine("   - Identify 2-4 major themes and how they develop through the story");
+            prompt.AppendLine("   - Note tone shifts between chapters (dark, hopeful, tense, etc.)");
+            prompt.AppendLine("   - Include important symbols, motifs, or recurring elements");
+            prompt.AppendLine("   - Mention genre-specific elements or tropes being used/subverted");
+            prompt.AppendLine("   - Keep theme descriptions concise but meaningful");
+            prompt.AppendLine("");
+            prompt.AppendLine("7. For parser compatibility:");
             prompt.AppendLine("   - Use \"-\" for all bullet points (not \"•\" or other symbols)");
             prompt.AppendLine("   - Maintain consistent indentation (2 spaces for sub-bullets)");
             prompt.AppendLine("   - Include action keywords in chapter descriptions (discovers, reveals, confronts, etc.)");
             prompt.AppendLine("   - Keep character names consistent throughout the outline");
             prompt.AppendLine("");
-            prompt.AppendLine("7. When expanding or refining existing outline content:");
+            prompt.AppendLine("8. When expanding or refining existing outline content:");
             prompt.AppendLine("   - Maintain the established structure and formatting");
             prompt.AppendLine("   - Build upon existing character and plot elements");
-            prompt.AppendLine("   - ADD layers of detail that enrich the story content");
-            prompt.AppendLine("   - Preserve the exact heading structure for optimal parsing");
-            prompt.AppendLine("   - FOCUS on content depth rather than writing style");
+            prompt.AppendLine("   - ADD key story events without excessive detail");
+            prompt.AppendLine("   - PRESERVE the exact heading structure for optimal parsing");
+            prompt.AppendLine("   - FOCUS on structural clarity rather than prose details");
             prompt.AppendLine("");
-            prompt.AppendLine("8. GRANULAR REVISION APPROACH:");
+            prompt.AppendLine("9. GRANULAR REVISION APPROACH:");
             prompt.AppendLine("   - PREFER TARGETED CHANGES: When a user requests specific modifications, make only the changes needed");
             prompt.AppendLine("   - PRESERVE EXISTING CONTENT: Keep all good content that doesn't conflict with the request");
             prompt.AppendLine("   - INCREMENTAL IMPROVEMENTS: Add or modify individual bullet points, scenes, or character details rather than rewriting entire chapters");
             prompt.AppendLine("   - SURGICAL EDITS: Replace only the specific sections that need updating");
             prompt.AppendLine("   - CONTEXTUAL ADDITIONS: When adding new elements, integrate them smoothly with existing content");
             prompt.AppendLine("");
-            prompt.AppendLine("9. Granular Change Guidelines:");
+            prompt.AppendLine("10. Granular Change Guidelines:");
             prompt.AppendLine("   - For character additions: Add only the new character to the Characters section, keep existing ones unchanged");
             prompt.AppendLine("   - For plot adjustments: Modify only affected chapter sections, not entire chapters");
             prompt.AppendLine("   - For scene modifications: Change only the specific scenes mentioned, preserve others");
             prompt.AppendLine("   - For detail enhancement: Add bullet points or expand existing ones rather than rewriting");
             prompt.AppendLine("   - For continuity fixes: Make minimal necessary adjustments to maintain story flow");
             prompt.AppendLine("");
-            prompt.AppendLine("10. Always consider:");
+            prompt.AppendLine("11. Always consider:");
             prompt.AppendLine("   - How the outline serves the overall story arc");
-            prompt.AppendLine("   - Character motivations and development throughout each scene");
+            prompt.AppendLine("   - Major character actions and plot progression");
             prompt.AppendLine("   - Pacing and tension management across all chapters");
             prompt.AppendLine("   - Integration with any established series or universe rules");
-            prompt.AppendLine("   - MANUSCRIPT READINESS: Does each chapter provide sufficient material for rich prose?");
-            prompt.AppendLine("   - SCENE RICHNESS: Multiple layers of plot, character, emotion, and setting");
-            prompt.AppendLine("   - CONTENT COMPLETENESS: Can Fiction Writing Beta create compelling chapters from this outline?");
+            prompt.AppendLine("   - STRUCTURAL CLARITY: Are the key story beats clearly defined?");
+            prompt.AppendLine("   - PLOT PROGRESSION: Does each chapter move the story forward meaningfully?");
+            prompt.AppendLine("   - CONCISENESS: Is the outline focused on essential events only?");
             prompt.AppendLine("");
-            prompt.AppendLine("IMPORTANT: This outline will be used as source material for prose generation.");
-            prompt.AppendLine("Focus on providing rich, detailed content rather than polished writing style.");
-            prompt.AppendLine("The Fiction Writing Beta chain will handle style guide compliance during prose creation.");
+            prompt.AppendLine("IMPORTANT: This outline provides the structural foundation for story development.");
+            prompt.AppendLine("Focus on clear plot progression and key events rather than detailed content.");
+            prompt.AppendLine("Keep outlines concise to prevent ballooning - detailed prose will be handled later.");
+            prompt.AppendLine("");
+            prompt.AppendLine("=== CLARIFYING QUESTIONS (USE SPARINGLY) ===");
+            prompt.AppendLine("When a user request is genuinely ambiguous or lacks essential context, you MAY ask clarifying questions.");
+            prompt.AppendLine("Use this capability SPARINGLY - only when truly necessary for quality outline development.");
+            prompt.AppendLine("");
+            prompt.AppendLine("WHEN TO ASK QUESTIONS:");
+            prompt.AppendLine("- Request is vague about story direction (\"make it better\" without specifics)");
+            prompt.AppendLine("- Conflicting elements that need clarification (timeline issues, character motivations)");
+            prompt.AppendLine("- Missing critical context for major plot decisions");
+            prompt.AppendLine("- Unclear genre expectations or target audience implications");
+            prompt.AppendLine("- Ambiguous character relationship dynamics that affect plot structure");
+            prompt.AppendLine("");
+            prompt.AppendLine("WHEN NOT TO ASK QUESTIONS:");
+            prompt.AppendLine("- Request is clear enough to proceed with reasonable assumptions");
+            prompt.AppendLine("- You can make good creative decisions based on existing outline context");
+            prompt.AppendLine("- Minor details that don't significantly impact story structure");
+            prompt.AppendLine("- Style preferences that can be inferred from existing content");
+            prompt.AppendLine("");
+            prompt.AppendLine("QUESTION FORMAT:");
+            prompt.AppendLine("**CLARIFICATION NEEDED**");
+            prompt.AppendLine("I need some additional context to provide the best outline development:");
+            prompt.AppendLine("");
+            prompt.AppendLine("1. [Specific question about story direction/character motivation/plot structure]");
+            prompt.AppendLine("2. [Another focused question if needed - maximum 3 questions]");
+            prompt.AppendLine("");
+            prompt.AppendLine("Once you provide this context, I'll develop the outline revisions accordingly.");
+            prompt.AppendLine("");
+            prompt.AppendLine("QUESTION GUIDELINES:");
+            prompt.AppendLine("- Ask focused, specific questions that directly impact outline structure");
+            prompt.AppendLine("- Limit to 1-3 questions maximum to avoid overwhelming the user");
+            prompt.AppendLine("- Frame questions in terms of story development needs");
+            prompt.AppendLine("- Avoid questions about minor details or preferences");
+            prompt.AppendLine("- Always explain why the clarification is needed for better outline development");
 
             return prompt.ToString();
         }
@@ -778,101 +899,65 @@ namespace Universa.Desktop.Services
         {
             var prompt = new StringBuilder();
             
-            // Determine if this is an outline development request
-            bool isOutlineDevelopment = OUTLINE_DEVELOPMENT_KEYWORDS.Any(keyword => 
-                request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
-            
-            // Detect granular revision requests
-            var granularKeywords = new[]
+            // Add previous conversation context if it exists, with clear delineation
+            var conversationMessages = _memory.Where(m => !m.Role.Equals("system", StringComparison.OrdinalIgnoreCase)).ToList();
+            if (conversationMessages.Any())
             {
-                "add", "modify", "change", "update", "adjust", "fix", "correct", "revise",
-                "expand this", "enhance", "improve", "refine", "tweak", "small change",
-                "minor adjustment", "just need", "only change", "specific", "particular"
-            };
-            
-            bool isGranularRequest = granularKeywords.Any(keyword => 
-                request.Contains(keyword, StringComparison.OrdinalIgnoreCase)) && !isOutlineDevelopment;
-            
-            if (isOutlineDevelopment)
-            {
-                prompt.AppendLine("=== OUTLINE DEVELOPMENT REQUEST ===");
-                prompt.AppendLine("The user is requesting comprehensive outline development. Focus on:");
-                prompt.AppendLine("- Story structure and pacing");
-                prompt.AppendLine("- Character arcs and development");
-                prompt.AppendLine("- Plot progression and tension");
-                prompt.AppendLine("- Thematic consistency");
-                prompt.AppendLine("- Parser-compatible formatting");
-                prompt.AppendLine("");
-            }
-            else if (isGranularRequest)
-            {
-                prompt.AppendLine("=== GRANULAR REVISION REQUEST ===");
-                prompt.AppendLine("The user is requesting a specific, targeted change. Focus on:");
-                prompt.AppendLine("- Making ONLY the requested modifications");
-                prompt.AppendLine("- Preserving all existing content that works well");
-                prompt.AppendLine("- Using surgical precision rather than broad rewrites");
-                prompt.AppendLine("- Maintaining established structure and formatting");
-                prompt.AppendLine("- Integrating changes smoothly with existing content");
-                prompt.AppendLine("");
+                prompt.AppendLine("=== PREVIOUS CONVERSATION ===");
+                
+                foreach (var message in conversationMessages)
+                {
+                    prompt.AppendLine($"[{message.Role.ToUpper()}]: {message.Content}");
+                    prompt.AppendLine();
+                }
+                
+                prompt.AppendLine("=== END PREVIOUS CONVERSATION ===");
+                prompt.AppendLine();
             }
             
-            // Add parsed outline insights if available
-            if (_parsedCurrentOutline != null)
-            {
-                prompt.AppendLine("=== CURRENT OUTLINE ANALYSIS (UPDATED) ===");
-                prompt.AppendLine($"Parsed outline contains:");
-                prompt.AppendLine($"- {_parsedCurrentOutline.Chapters.Count} chapters");
-                prompt.AppendLine($"- {_parsedCurrentOutline.Characters.Count} characters");
-                prompt.AppendLine($"- {_parsedCurrentOutline.MajorPlotPoints.Count} major plot points");
-                
-                // Always indicate fresh analysis since we refresh every message
-                prompt.AppendLine("🔄 FRESH OUTLINE ANALYSIS: Working with the most current version of the outline");
-                
-                // Acknowledge conversation continuity if we have preserved messages
-                var conversationMessageCount = _memory.Count(m => !m.Role.Equals("system", StringComparison.OrdinalIgnoreCase));
-                if (conversationMessageCount > 2)
-                {
-                    prompt.AppendLine("💬 CONVERSATION CONTEXT: Continue building on our previous discussion while working with the updated outline context above.");
-                }
-                
-                if (_parsedCurrentOutline.Chapters.Any())
-                {
-                    prompt.AppendLine("Current chapters:");
-                    foreach (var chapter in _parsedCurrentOutline.Chapters.Take(5))
-                    {
-                        var summaryPreview = !string.IsNullOrEmpty(chapter.Summary) 
-                            ? chapter.Summary.Substring(0, Math.Min(80, chapter.Summary.Length))
-                            : "No summary available";
-                        prompt.AppendLine($"  • Chapter {chapter.Number}: {summaryPreview}...");
-                    }
-                    if (_parsedCurrentOutline.Chapters.Count > 5)
-                    {
-                        prompt.AppendLine($"  • ... and {_parsedCurrentOutline.Chapters.Count - 5} more chapters");
-                    }
-                }
-                
-                // Validation check
-                var (isValid, issues) = ValidateOutlineFormat();
-                if (!isValid)
-                {
-                    prompt.AppendLine("\n⚠️ FORMATTING ISSUES DETECTED:");
-                    foreach (var issue in issues.Where(i => !i.Contains("valid and parser-compatible")))
-                    {
-                        prompt.AppendLine($"  • {issue}");
-                    }
-                    prompt.AppendLine("Please address these formatting issues for optimal parser compatibility.");
-                }
-                else
-                {
-                    prompt.AppendLine("\n✅ Outline format is parser-compatible");
-                }
-                prompt.AppendLine("");
-            }
-            
-            prompt.AppendLine($"=== USER REQUEST ===");
+            // Add the current user request with clear header
+            prompt.AppendLine("=== CURRENT REQUEST ===");
             prompt.AppendLine(request);
             
             return prompt.ToString();
+        }
+
+        /// <summary>
+        /// Strips frontmatter from content to include only the main content in prompts
+        /// </summary>
+        private string StripFrontmatter(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+                return content;
+
+            // Check for frontmatter (starts with ---)
+            if (content.StartsWith("---\n") || content.StartsWith("---\r\n"))
+            {
+                // Find the closing ---
+                int secondDelimiterPos = content.IndexOf("\n---", 3);
+                if (secondDelimiterPos == -1)
+                {
+                    secondDelimiterPos = content.IndexOf("\r\n---", 3);
+                }
+                
+                if (secondDelimiterPos != -1)
+                {
+                    // Skip past the closing --- and any following newlines
+                    int contentStart = secondDelimiterPos + 4; // Skip past "\n---"
+                    if (contentStart < content.Length && content[contentStart] == '\n')
+                        contentStart++;
+                    else if (contentStart < content.Length - 1 && content.Substring(contentStart, 2) == "\r\n")
+                        contentStart += 2;
+                    
+                    if (contentStart < content.Length)
+                    {
+                        return content.Substring(contentStart).Trim();
+                    }
+                }
+            }
+
+            // No frontmatter found, return original content
+            return content;
         }
 
         /// <summary>

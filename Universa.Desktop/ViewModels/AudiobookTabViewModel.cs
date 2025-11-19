@@ -7,6 +7,7 @@ using System.Windows;
 using System.Windows.Input;
 using Universa.Desktop.Models;
 using Universa.Desktop.Services;
+using Universa.Desktop.Interfaces;
 using Universa.Desktop.Cache;
 using System.Linq;
 using System.Windows.Data;
@@ -17,7 +18,7 @@ namespace Universa.Desktop.ViewModels
 {
     public class AudiobookTabViewModel : INotifyPropertyChanged
     {
-        private readonly AudiobookshelfService _audiobookshelfService;
+        private readonly IAudiobookshelfService _audiobookshelfService;
         private const int CACHE_STALE_HOURS = 1;
         private bool _isLoading;
         private string _errorMessage;
@@ -106,7 +107,7 @@ namespace Universa.Desktop.ViewModels
             }
         }
 
-        public AudiobookTabViewModel(AudiobookshelfService audiobookshelfService)
+        public AudiobookTabViewModel(IAudiobookshelfService audiobookshelfService)
         {
             _audiobookshelfService = audiobookshelfService;
             _items = new ObservableCollection<AudiobookItem>();

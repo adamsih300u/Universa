@@ -271,7 +271,7 @@
                         </TextBlock>
                     </Button>
 
-                    <views:ChatSidebar x:Name="ChatSidebar"
+                    <local:ChatSidebar x:Name="ChatSidebar"
                                      Grid.Column="1"
                                      Background="{DynamicResource WindowBackgroundBrush}"/>
                 </Grid>
@@ -310,14 +310,29 @@
                 </StatusBarItem>
                 <StatusBarItem HorizontalAlignment="Right">
                     <StackPanel Orientation="Horizontal">
-                        <Ellipse x:Name="SyncStatusIndicator"
+                        <Button x:Name="WebDavSyncButton"
+                               Content="↻"
+                               Width="24"
+                               Height="18"
+                               FontSize="14"
+                               FontWeight="Bold"
+                               Padding="0"
+                               Margin="5,0"
+                               ToolTip="Sync with WebDAV"
+                               Click="WebDavSync_Click"
+                               Background="Transparent"
+                               BorderThickness="1"
+                               BorderBrush="{DynamicResource BorderBrush}"/>
+                        <Ellipse x:Name="WebDavSyncStatusIndicator"
                                 Width="10"
                                 Height="10"
                                 Margin="5,0"
-                                Fill="Gray"/>
-                        <TextBlock x:Name="SyncStatusText" 
-                                 Text="Not Connected"
-                                 Margin="5,0"/>
+                                Fill="Gray"
+                                ToolTip="WebDAV Sync Status"/>
+                        <TextBlock x:Name="WebDavSyncStatusText" 
+                                 Text="Idle"
+                                 Margin="5,0"
+                                 VerticalAlignment="Center"/>
                     </StackPanel>
                 </StatusBarItem>
             </StatusBar>

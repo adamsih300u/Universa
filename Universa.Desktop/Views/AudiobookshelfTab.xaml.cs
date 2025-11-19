@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using Universa.Desktop.Models;
 using Universa.Desktop.Services;
+using Universa.Desktop.Interfaces;
 using Universa.Desktop.Cache;
 using System.Threading.Tasks;
 using System.Linq;
@@ -13,8 +14,8 @@ namespace Universa.Desktop.Views
 {
     public partial class AudiobookshelfTab : UserControl
     {
-        private readonly AudiobookshelfService _service;
-        private List<LibraryResponse> _libraries;
+        private readonly IAudiobookshelfService _service;
+        private List<AudiobookshelfLibraryResponse> _libraries;
         private string _currentLibraryId;
         private Dictionary<string, double> _progress;
         private List<AudiobookItem> _currentLibraryItems;
@@ -23,7 +24,7 @@ namespace Universa.Desktop.Views
         private List<AudiobookItem> _inProgressCache;
         private static readonly TimeSpan CacheMaxAge = TimeSpan.FromHours(1);
 
-        public AudiobookshelfTab(AudiobookshelfService service)
+        public AudiobookshelfTab(IAudiobookshelfService service)
         {
             InitializeComponent();
             _service = service;
@@ -388,9 +389,8 @@ namespace Universa.Desktop.Views
                     System.Diagnostics.Debug.WriteLine($"Loading episodes for podcast: {podcastId}");
                     var episodes = await _service.GetPodcastEpisodesAsync(podcastId);
                     System.Diagnostics.Debug.WriteLine($"Loaded {episodes.Count} episodes");
-                    ItemList.ItemsSource = episodes
-                        .OrderByDescending(e => e.PublishedAt)
-                        .ToList();
+                    var sortedEpisodes = episodes.OrderByDescending(e => e.PublishedAt).ToList();
+                    ItemList.ItemsSource = sortedEpisodes;
                 }
                 else switch (tag)
                 {
@@ -418,7 +418,7 @@ namespace Universa.Desktop.Views
 
         private async void LibrarySelector_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (LibrarySelector.SelectedItem is LibraryResponse library)
+            if (LibrarySelector.SelectedItem is AudiobookshelfLibraryResponse library)
             {
                 _currentLibraryId = library.Id;
                 await LoadLibraryItems(library.Id);

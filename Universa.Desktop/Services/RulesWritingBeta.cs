@@ -20,6 +20,7 @@ namespace Universa.Desktop.Services
     {
         private string _rulesContent;
         private string _styleGuide;
+        private List<string> _characterProfiles;
         private readonly FileReferenceService _fileReferenceService;
         private static Dictionary<string, RulesWritingBeta> _instances = new Dictionary<string, RulesWritingBeta>();
         private static readonly object _lock = new object();
@@ -51,17 +52,17 @@ namespace Universa.Desktop.Services
         {
             "develop universe", "expand universe", "create universe", "build universe",
             "world building", "worldbuilding", "universe rules", "universe structure",
-            "character development", "character profile", "character arc", "character relationship",
+            "magic system", "technology rules", "social structure", "cultural norms",
             "series synopsis", "book synopsis", "timeline", "chronology",
-            "antagonist organization", "supporting characters", "character network"
+            "organizations", "institutions", "power dynamics", "universe constraints"
         };
 
-        // Keywords that indicate character-focused requests
+        // Keywords that indicate character-related universe rules requests
         private static readonly string[] CHARACTER_KEYWORDS = new[]
         {
             "character", "protagonist", "antagonist", "villain", "hero", "supporting character",
-            "character arc", "character development", "character profile", "character background",
-            "character relationship", "character progression", "personality", "motivation"
+            "character abilities", "character limitations", "character constraints", "character rules",
+            "character relationships", "character hierarchy", "character affiliations", "character background"
         };
 
         public RulesWritingBeta(string apiKey, string model, AIProvider provider, string filePath = null, string libraryPath = null)
@@ -147,15 +148,15 @@ namespace Universa.Desktop.Services
             {
                 _frontmatter = ExtractFrontmatter(_rulesContent);
                 
-                // Parse rules content using enhanced parser
+                // Parse rules content for debug/validation purposes only (not used for filtering)
                 try
                 {
                     _parsedRules = _rulesParser.Parse(_rulesContent);
-                    System.Diagnostics.Debug.WriteLine($"Successfully parsed rules content with {_parsedRules.Core.CoreCharacters.Count} core characters and {_parsedRules.Arcs.Count} arcs");
+                    System.Diagnostics.Debug.WriteLine($"Successfully parsed rules content for validation purposes");
                 }
                 catch (Exception ex)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Error parsing rules content: {ex.Message}");
+                    System.Diagnostics.Debug.WriteLine($"Rules parsing failed (not critical since we use raw content): {ex.Message}");
                     _parsedRules = null;
                 }
             }
@@ -174,6 +175,97 @@ namespace Universa.Desktop.Services
             {
                 System.Diagnostics.Debug.WriteLine($"Error loading style reference: {ex.Message}");
             }
+
+            // NEW: Load character profiles if referenced
+            try
+            {
+                var characterRefs = _frontmatter?
+                    .Where(kvp => kvp.Key.StartsWith("ref_character") && !string.IsNullOrEmpty(kvp.Value))
+                    .ToList();
+
+                if (characterRefs?.Any() == true)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found {characterRefs.Count} character references in rules file");
+                    foreach (var characterRef in characterRefs)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Processing character reference '{characterRef.Key}': '{characterRef.Value}'");
+                        await ProcessCharacterReference(characterRef.Value, characterRef.Key);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading character references: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Process a character reference
+        /// </summary>
+        private async Task ProcessCharacterReference(string refPath, string refKey)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Loading character reference from: '{refPath}' (key: '{refKey}')");
+                
+                string characterContent = await _fileReferenceService.GetFileContent(refPath, _currentFilePath);
+                if (!string.IsNullOrEmpty(characterContent))
+                {
+                    if (_characterProfiles == null)
+                        _characterProfiles = new List<string>();
+                    
+                    // Strip frontmatter from character profiles to avoid muddying the content
+                    string cleanedContent = StripFrontmatter(characterContent);
+                    _characterProfiles.Add(cleanedContent);
+                    
+                    // Extract character name from key (e.g., "ref_character_derek" -> "Derek")
+                    string characterName = "Unknown Character";
+                    if (refKey.StartsWith("ref_character_") && refKey.Length > "ref_character_".Length)
+                    {
+                        characterName = refKey.Substring("ref_character_".Length);
+                        // Capitalize first letter
+                        if (!string.IsNullOrEmpty(characterName))
+                        {
+                            characterName = char.ToUpper(characterName[0]) + characterName.Substring(1);
+                        }
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"Successfully loaded character reference '{characterName}': {cleanedContent.Length} characters (frontmatter stripped)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Character reference file was empty or could not be loaded: '{refPath}'");
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading character reference: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Strip frontmatter from content
+        /// </summary>
+        private string StripFrontmatter(string content)
+        {
+            if (string.IsNullOrEmpty(content) || !content.StartsWith("---"))
+                return content;
+
+            var frontmatterEnd = content.IndexOf("\n---", 3);
+            if (frontmatterEnd == -1)
+                return content;
+
+            var contentStart = frontmatterEnd + 4; // Length of "\n---"
+            if (contentStart < content.Length)
+            {
+                // If there's a newline after the closing delimiter, skip it too
+                if (content[contentStart] == '\n')
+                    contentStart++;
+                
+                return content.Substring(contentStart);
+            }
+
+            return content;
         }
 
         private Dictionary<string, string> ExtractFrontmatter(string content)
@@ -234,7 +326,7 @@ namespace Universa.Desktop.Services
         private string BuildRulesPrompt(string request)
         {
             var prompt = new StringBuilder();
-            prompt.AppendLine("You are a master universe architect specialized in creating comprehensive Rules files that define literary universes, character development, and series continuity. Your expertise lies in developing rich, consistent worldbuilding documentation that serves as the foundation for multi-book series.");
+            prompt.AppendLine("You are a master universe architect specialized in creating comprehensive Rules files that define literary universes, worldbuilding systems, and series continuity. Your expertise lies in developing rich, consistent universe documentation that serves as the foundation for multi-book series.");
             
             // Add current date and time context
             prompt.AppendLine("");
@@ -276,24 +368,37 @@ namespace Universa.Desktop.Services
                 }
             }
 
-            // Add current rules content (filtered for context)
+            // Add current rules content (using raw, well-formatted content)
             if (!string.IsNullOrEmpty(_rulesContent))
             {
                 prompt.AppendLine("\n=== CURRENT RULES CONTENT ===");
                 prompt.AppendLine("This is the current universe documentation being developed. Build upon and enhance this content:");
                 
-                // Use filtered content if parsing was successful, otherwise fall back to raw content
-                var filteredContent = GetContextuallyFilteredRulesContent(request);
-                if (!string.IsNullOrEmpty(filteredContent))
+                // ALWAYS use raw content - user's formatting is excellent and parsing was making it worse
+                prompt.AppendLine(_rulesContent);
+                System.Diagnostics.Debug.WriteLine("Using raw rules content - trusting user's excellent formatting");
+            }
+
+            // Add character profiles if available (for universe rules context only)
+            if (_characterProfiles?.Count > 0)
+            {
+                prompt.AppendLine("\n=== EXISTING CHARACTER PROFILES FOR UNIVERSE RULES ===");
+                prompt.AppendLine("These character profiles provide context for universe rules development:");
+                prompt.AppendLine("Use these to ensure universe rules are consistent with established character relationships and abilities.");
+                prompt.AppendLine("");
+                
+                for (int i = 0; i < _characterProfiles.Count; i++)
                 {
-                    prompt.AppendLine(filteredContent);
-                    System.Diagnostics.Debug.WriteLine("Using filtered rules content for enhanced context");
+                    prompt.AppendLine($"--- Character Profile {i + 1} ---");
+                    prompt.AppendLine(_characterProfiles[i]);
+                    prompt.AppendLine("");
                 }
-                else
-                {
-                    prompt.AppendLine(_rulesContent);
-                    System.Diagnostics.Debug.WriteLine("Using raw rules content as fallback");
-                }
+                
+                prompt.AppendLine("UNIVERSE RULES CHARACTER CONSISTENCY GUIDELINES:");
+                prompt.AppendLine("- Ensure universe rules are consistent with established character abilities and limitations");
+                prompt.AppendLine("- Reference character relationships when developing universe social structures and hierarchies");
+                prompt.AppendLine("- Consider character backgrounds when establishing universe history and cultural norms");
+                prompt.AppendLine("- Maintain consistency with character motivations in universe rule development");
             }
 
             // Add comprehensive rules development guidance
@@ -315,73 +420,25 @@ Your role is to help create comprehensive universe documentation with the follow
 - Timeline progression and character aging
 - Major plot threads that span multiple books
 
-**[Character Profiles]**
-- Comprehensive character development with full arcs
-- Physical descriptions, personality traits, and motivations
-- Skills, abilities, and areas of expertise
-- Personal relationships and dynamics with other characters
-- Character progression through the series timeline
-- Background, education, and formative experiences
-- Internal conflicts and psychological complexity
-- Distinctive qualities and recurring themes
-
-**Supporting Character Profiles**
-- Brief but detailed descriptions of secondary characters
-- Roles in the overall narrative
-- Connections to main characters
-- Specific story functions
-
-=== CHARACTER DEVELOPMENT EXCELLENCE ===
-When developing character profiles, include:
-
-**Core Characteristics**
-- Age progression throughout series
-- Physical appearance with specific details
-- Personality traits and psychological makeup
-- Health considerations and physical condition
-
-**Background & Education**
-- Educational background and formative experiences
-- Professional history and career development
-- Family background and personal history
-- Key life events that shaped the character
-
-**Skills & Abilities** 
-- Professional competencies and expertise
-- Physical and mental capabilities
-- Special skills or talents
-- Areas of weakness or limitation
-
-**Relationships**
-- Connections with other main characters
-- Evolution of relationships over time
-- Professional and personal dynamics
-- Romantic relationships and their complexity
-
-**Character Arc**
-- Growth and development throughout the series
-- Internal conflicts and resolution
-- Professional evolution and changes
-- Physical and emotional journey through time
-
-**Distinctive Qualities**
-- Unique mannerisms, habits, or preferences
-- Memorable physical traits or accessories
-- Speech patterns or characteristic behaviors
-- Personal rituals or meaningful objects
+**[Character References]**
+- Reference existing character profiles for consistency
+- Note character relationships and dynamics
+- Document character roles in universe events
+- Track character involvement in major plot threads
 
 === SERIES CONTINUITY MANAGEMENT ===
 For series synopsis entries:
-- Track character appearances across books
-- Note character development between books
-- Maintain timeline consistency
-- Show how events in one book affect later books
-- Include character ages and progression
-- Reference previous events appropriately
+- Track universe rule consistency across books
+- Note how universe constraints affect story progression
+- Maintain timeline consistency and causality
+- Show how universe events affect multiple books
+- Include universe evolution and rule changes
+- Reference previous universe events appropriately
 
 === RESPONSE FORMAT INSTRUCTIONS ===
 When suggesting specific content changes, you MUST use EXACTLY this format:
 
+For REVISIONS (replacing existing text):
 ```
 Original text:
 [paste the exact text to be replaced]
@@ -392,26 +449,59 @@ Changed to:
 [your new enhanced version]
 ```
 
-For new content additions (expanding profiles, adding characters, etc.), provide the content directly.
+For INSERTIONS (adding new text after existing text):
+```
+Insert after:
+[paste the exact anchor text to insert after]
+```
+
+```
+New text:
+[the new content to insert]
+```
+
+CRITICAL TEXT PRECISION REQUIREMENTS:
+- Original text and Insert after must be EXACT, COMPLETE, and VERBATIM from the current rules content
+- Include ALL whitespace, line breaks, and formatting exactly as written
+- Include complete sentences or natural text boundaries (periods, paragraph breaks)
+- NEVER paraphrase, summarize, or reformat the original text
+- COPY AND PASTE directly from the current content - do not retype or modify
+- Include sufficient context (minimum 10-20 words) for unique identification
+- If bullet points, include the bullet symbols and indentation exactly
+- If headers, include the ## markdown symbols exactly
+
+TEXT MATCHING VALIDATION:
+- Your original text MUST be findable with exact text search in the current rules content
+- If you cannot copy exact text, provide surrounding context for identification
+- Test your original text by mentally searching for it in the current rules content
+- Incomplete or modified text will cause Apply buttons to fail
+
+ANCHOR TEXT GUIDELINES FOR INSERTIONS:
+- Include COMPLETE sections, headers, or bullet points that end BEFORE where you want to insert
+- NEVER use partial sentences or incomplete phrases as anchor text
+- ALWAYS end anchor text at natural boundaries: section endings, headers, paragraph breaks
+- Include enough context (at least 10-20 words) to ensure unique identification
+
+For new content additions (expanding universe rules, adding worldbuilding elements, creating new major sections), provide the content directly without the revision or insertion format.
 
 === CRITICAL DEVELOPMENT PRINCIPLES ===
-1. **Consistency**: Ensure all character details align across the universe
-2. **Depth**: Create multi-dimensional characters with complex motivations
-3. **Timeline Integrity**: Maintain accurate chronological progression
-4. **Relationship Networks**: Show how characters interconnect and influence each other
-5. **Series Evolution**: Track how characters change and grow throughout multiple books
-6. **Distinctive Voice**: Each character should have unique personality and traits
-7. **Comprehensive Documentation**: Provide enough detail for consistent usage across multiple stories
+1. **Universe Consistency**: Ensure all rules and constraints align across the universe
+2. **Logical Framework**: Create coherent world-building systems and limitations
+3. **Timeline Integrity**: Maintain accurate chronological progression and causality
+4. **Character Integration**: Ensure rules work with existing character abilities and relationships
+5. **Series Evolution**: Track how universe rules affect multiple books and storylines
+6. **Clear Documentation**: Provide comprehensive rules for consistent usage across stories
+7. **Flexible Constraints**: Create rules that guide storytelling without being overly restrictive
 
 === UNIVERSE BUILDING FOCUS AREAS ===
-- Character psychology and motivation
-- Inter-character relationships and dynamics  
-- Timeline management and character aging
-- Skills and abilities development over time
-- Background institutions and organizations
-- Supporting character ecosystems
-- Character-specific themes and arcs
-- Physical and emotional character evolution");
+- Magic systems and technology limitations
+- Social structures and cultural norms
+- Political systems and power dynamics
+- Economic and resource constraints
+- Historical events and their consequences
+- Geographic and environmental factors
+- Religious and philosophical frameworks
+- Scientific and supernatural laws");
 
             return prompt.ToString();
         }
@@ -432,20 +522,20 @@ For new content additions (expanding profiles, adding characters, etc.), provide
                 prompt.AppendLine("=== UNIVERSE DEVELOPMENT REQUEST ===");
                 prompt.AppendLine("Focus on comprehensive universe building including:");
                 prompt.AppendLine("- World consistency and logical framework");
-                prompt.AppendLine("- Character network development");
-                prompt.AppendLine("- Timeline and continuity management");
-                prompt.AppendLine("- Series-wide plot thread tracking");
+                prompt.AppendLine("- Magic system and technology constraints");
+                prompt.AppendLine("- Social structures and cultural norms");
+                prompt.AppendLine("- Timeline and causality management");
                 prompt.AppendLine("");
             }
             else if (isCharacterFocused)
             {
-                prompt.AppendLine("=== CHARACTER DEVELOPMENT REQUEST ===");
-                prompt.AppendLine("Focus on rich character development including:");
-                prompt.AppendLine("- Psychological depth and complexity");
-                prompt.AppendLine("- Character relationships and dynamics");
-                prompt.AppendLine("- Growth arcs throughout the series");
-                prompt.AppendLine("- Distinctive personality traits and mannerisms");
-                prompt.AppendLine("- Professional and personal background");
+                prompt.AppendLine("=== CHARACTER-RELATED UNIVERSE RULES REQUEST ===");
+                prompt.AppendLine("Focus on universe rules that affect characters including:");
+                prompt.AppendLine("- Character ability limitations and constraints");
+                prompt.AppendLine("- Social hierarchies and character relationships");
+                prompt.AppendLine("- Character development rules and progression systems");
+                prompt.AppendLine("- Background institutions and character affiliations");
+                prompt.AppendLine("- Character interaction guidelines and cultural norms");
                 prompt.AppendLine("");
             }
             
@@ -587,14 +677,19 @@ For new content additions (expanding profiles, adding characters, etc.), provide
         /// </summary>
         public string GetCurrentContextInfo()
         {
-            if (_parsedRules == null)
-                return "No parsed rules available";
-
             var info = new StringBuilder();
-            info.AppendLine($"Core Characters: {_parsedRules.Core.CoreCharacters.Count}");
-            info.AppendLine($"Series Arcs: {_parsedRules.Arcs.Count}");
-            info.AppendLine($"Book Details: {_parsedRules.BookDetails.Count}");
-            info.AppendLine($"Total Books in Timeline: {_parsedRules.Timeline.Books.Count}");
+            info.AppendLine($"Content Processing: Using raw, user-formatted content");
+            info.AppendLine($"Content Length: {_rulesContent?.Length ?? 0} characters");
+            info.AppendLine($"Frontmatter Fields: {_frontmatter?.Count ?? 0}");
+            
+            if (_parsedRules != null)
+            {
+                info.AppendLine($"Parsing Status: Available for validation (Core Characters: {_parsedRules.Core.CoreCharacters.Count})");
+            }
+            else
+            {
+                info.AppendLine($"Parsing Status: Not available (using raw content only)");
+            }
 
             return info.ToString();
         }

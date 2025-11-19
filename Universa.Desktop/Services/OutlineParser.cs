@@ -392,11 +392,7 @@ namespace Universa.Desktop.Services
                     }
                 }
                 
-                // Extract character mentions
-                ExtractCharacterMentions(line, chapter.CharactersPresent);
-                
-                // Extract locations
-                ExtractLocationMentions(line, chapter.Locations);
+                // Skip character and location extraction - too error-prone with outline text
                 
                 // Build content
                 if (!string.IsNullOrWhiteSpace(line))
@@ -442,23 +438,46 @@ namespace Universa.Desktop.Services
                 if (string.IsNullOrWhiteSpace(line))
                     continue;
                     
-                // Check for role headers
-                if (line.Trim() == "- Protagonists" || line.Contains("Protagonists"))
+                // Check for role headers - SPLENDID: Support both bullet and header formats
+                var trimmedLine = line.Trim();
+                
+                // Header format: ## Protagonists, ## Antagonists, etc.
+                if (trimmedLine.StartsWith("## "))
+                {
+                    var headerTitle = trimmedLine.Substring(3).Trim();
+                    if (headerTitle.Contains("Protagonists"))
+                    {
+                        currentRole = CharacterRole.Protagonist;
+                        continue;
+                    }
+                    else if (headerTitle.Contains("Antagonists"))
+                    {
+                        currentRole = CharacterRole.Antagonist;
+                        continue;
+                    }
+                    else if (headerTitle.Contains("Supporting"))
+                    {
+                        currentRole = CharacterRole.Supporting;
+                        continue;
+                    }
+                }
+                // Bullet format: - Protagonists, - Antagonists, etc.
+                else if (trimmedLine == "- Protagonists" || trimmedLine.Contains("Protagonists"))
                 {
                     currentRole = CharacterRole.Protagonist;
                     continue;
                 }
-                else if (line.Trim() == "- Antagonists" || line.Contains("Antagonists"))
+                else if (trimmedLine == "- Antagonists" || trimmedLine.Contains("Antagonists"))
                 {
                     currentRole = CharacterRole.Antagonist;
                     continue;
                 }
-                else if (line.Contains("Supporting Characters"))
+                else if (trimmedLine.Contains("Supporting Characters"))
                 {
                     currentRole = CharacterRole.Supporting;
                     continue;
                 }
-                else if (line.Contains("Characters Specific to this Book"))
+                else if (trimmedLine.Contains("Characters Specific to this Book"))
                 {
                     // Section header, skip
                     continue;
@@ -480,7 +499,6 @@ namespace Universa.Desktop.Services
                 }
                 
                 // New character detection - handle indented bullets
-                var trimmedLine = line.TrimStart();
                 if (trimmedLine.StartsWith("- ") && !inDescription)
                 {
                     // Save previous character

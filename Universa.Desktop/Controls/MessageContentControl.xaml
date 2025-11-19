@@ -1,0 +1,22 @@
+<UserControl x:Class="Universa.Desktop.Controls.MessageContentControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:Universa.Desktop.Controls">
+    <Grid>
+        <!-- Regular text display -->
+        <TextBox x:Name="RegularTextBox"
+                 Text="{Binding Content, Mode=OneWay}" 
+                 TextWrapping="Wrap"
+                 Foreground="{DynamicResource TextBrush}"
+                 Background="Transparent"
+                 BorderThickness="0"
+                 IsReadOnly="True"
+                 IsHitTestVisible="True"
+                 Focusable="True"/>
+        
+        <!-- Fiction content with Find/Apply buttons -->
+        <controls:FictionMessageControl x:Name="FictionControl"
+                                        Content="{Binding Content}"
+                                        Visibility="Collapsed"/>
+    </Grid>
+</UserControl> 

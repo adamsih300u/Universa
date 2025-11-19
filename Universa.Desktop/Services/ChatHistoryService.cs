@@ -56,8 +56,10 @@ namespace Universa.Desktop.Services
                         InputText = t.InputText,
                         Messages = new List<Models.ChatMessage>(t.Messages),
                         ChatModeMessages = new List<Models.ChatMessage>(t.ChatModeMessages),
-                        ContextModeScrollPosition = t.ContextModeScrollPosition,
-                        ChatModeScrollPosition = t.ChatModeScrollPosition
+                        LockedFilePath = t.LockedFilePath,
+                        LockedChainType = t.LockedChainType?.ToString(),
+                        IsLocked = t.IsLocked,
+                        CurrentPersona = t.CurrentPersona
                     }).ToList()
                 };
                 

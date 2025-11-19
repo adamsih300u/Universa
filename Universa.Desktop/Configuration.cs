@@ -274,6 +274,50 @@ namespace Universa.Desktop
             set { Settings.Default.SyncIntervalMinutes = value; Settings.Default.Save(); OnPropertyChanged(nameof(SyncIntervalMinutes)); }
         }
         
+        // WebDAV Sync Settings
+        public string WebDavServerUrl
+        {
+            get => Settings.Default.WebDavServerUrl;
+            set { Settings.Default.WebDavServerUrl = value; Settings.Default.Save(); OnPropertyChanged(nameof(WebDavServerUrl)); }
+        }
+
+        public string WebDavUsername
+        {
+            get => Settings.Default.WebDavUsername;
+            set { Settings.Default.WebDavUsername = value; Settings.Default.Save(); OnPropertyChanged(nameof(WebDavUsername)); }
+        }
+
+        public string WebDavPassword
+        {
+            get => Settings.Default.WebDavPassword;
+            set { Settings.Default.WebDavPassword = value; Settings.Default.Save(); OnPropertyChanged(nameof(WebDavPassword)); }
+        }
+
+        public string WebDavRemoteFolder
+        {
+            get => Settings.Default.WebDavRemoteFolder;
+            set { Settings.Default.WebDavRemoteFolder = value; Settings.Default.Save(); OnPropertyChanged(nameof(WebDavRemoteFolder)); }
+        }
+
+        public bool WebDavAutoSync
+        {
+            get => Settings.Default.WebDavAutoSync;
+            set { Settings.Default.WebDavAutoSync = value; Settings.Default.Save(); OnPropertyChanged(nameof(WebDavAutoSync)); }
+        }
+
+        public int WebDavSyncIntervalMinutes
+        {
+            get => Settings.Default.WebDavSyncIntervalMinutes;
+            set { Settings.Default.WebDavSyncIntervalMinutes = value; Settings.Default.Save(); OnPropertyChanged(nameof(WebDavSyncIntervalMinutes)); }
+        }
+
+        private DateTime? _lastWebDavSyncTime;
+        public DateTime? LastWebDavSyncTime
+        {
+            get => _lastWebDavSyncTime;
+            set { _lastWebDavSyncTime = value; OnPropertyChanged(nameof(LastWebDavSyncTime)); }
+        }
+
         private DateTime? _lastWebSyncTime;
         public DateTime? LastWebSyncTime 
         { 

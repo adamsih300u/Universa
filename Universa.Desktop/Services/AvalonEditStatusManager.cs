@@ -35,12 +35,8 @@ namespace Universa.Desktop.Services
             _textEditor = avalonEditor;
             _statusTextBlock = statusTextBlock;
 
-            // Subscribe to text changes for live updates
-            if (_textEditor != null)
-            {
-                _textEditor.Document.TextChanged += (s, e) => UpdateStatus(_textEditor.Text);
-                _textEditor.TextArea.Caret.PositionChanged += (s, e) => UpdateStatus(_textEditor.Text);
-            }
+            // Note: Don't subscribe to text changes here - let the tab control the update timing
+            // to avoid double updates and performance issues
         }
 
         public void UpdateStatus(string content, string chapterInfo = null)
@@ -50,26 +46,69 @@ namespace Universa.Desktop.Services
 
             try
             {
-                var wordCount = CalculateWordCount(content);
-                var characterCount = CalculateCharacterCount(content);
-                var paragraphCount = CountParagraphs(content);
-                var currentChapter = GetCurrentChapterInfo();
-
-                var readingTime = CalculateReadingTime(wordCount);
-                var effectiveChapterInfo = chapterInfo ?? currentChapter;
-                var statusText = FormatStatusText(wordCount, characterCount, readingTime, effectiveChapterInfo);
-
-                _statusTextBlock.Text = statusText;
-                
-                // Fire status updated event
-                StatusUpdated?.Invoke(this, new StatusUpdateEventArgs
+                // For very large documents (paste operations), show immediate feedback and process asynchronously
+                if (content?.Length > 50000) // 50k+ characters
                 {
-                    StatusText = statusText,
-                    WordCount = wordCount,
-                    CharacterCount = characterCount,
-                    ReadingTime = readingTime,
-                    ChapterInfo = effectiveChapterInfo
-                });
+                    _statusTextBlock.Text = "Calculating word count...";
+                    
+                    // Use Dispatcher to allow UI to update, then calculate
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+                    {
+                        try
+                        {
+                            var wordCount = CalculateWordCount(content);
+                            var characterCount = CalculateCharacterCount(content);
+                            var currentChapter = GetCurrentChapterInfo();
+
+                            var readingTime = CalculateReadingTime(wordCount);
+                            var effectiveChapterInfo = chapterInfo ?? currentChapter;
+                            var statusText = FormatStatusText(wordCount, characterCount, readingTime, effectiveChapterInfo);
+
+                            _statusTextBlock.Text = statusText;
+                            
+                            // Fire status updated event
+                            StatusUpdated?.Invoke(this, new StatusUpdateEventArgs
+                            {
+                                StatusText = statusText,
+                                WordCount = wordCount,
+                                CharacterCount = characterCount,
+                                ReadingTime = readingTime,
+                                ChapterInfo = effectiveChapterInfo
+                            });
+                            
+                            System.Diagnostics.Debug.WriteLine($"Large document status update completed: {statusText}");
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error calculating large document status: {ex.Message}");
+                            _statusTextBlock.Text = "Status calculation error";
+                        }
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+                else
+                {
+                    // Normal processing for smaller documents
+                    var wordCount = CalculateWordCount(content);
+                    var characterCount = CalculateCharacterCount(content);
+                    var paragraphCount = CountParagraphs(content);
+                    var currentChapter = GetCurrentChapterInfo();
+
+                    var readingTime = CalculateReadingTime(wordCount);
+                    var effectiveChapterInfo = chapterInfo ?? currentChapter;
+                    var statusText = FormatStatusText(wordCount, characterCount, readingTime, effectiveChapterInfo);
+
+                    _statusTextBlock.Text = statusText;
+                    
+                    // Fire status updated event
+                    StatusUpdated?.Invoke(this, new StatusUpdateEventArgs
+                    {
+                        StatusText = statusText,
+                        WordCount = wordCount,
+                        CharacterCount = characterCount,
+                        ReadingTime = readingTime,
+                        ChapterInfo = effectiveChapterInfo
+                    });
+                }
             }
             catch (Exception ex)
             {

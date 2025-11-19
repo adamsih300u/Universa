@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -20,10 +21,15 @@ namespace Universa.Desktop.Services
         private readonly string _apiKey;
         private readonly HttpClient _httpClient;
         private const string BaseUrl = "https://openrouter.ai/api/v1";
+        private readonly ModelCapabilitiesService _capabilitiesService;
+        private readonly ConcurrentDictionary<string, int> _dynamicContextLengths = new();
+        private readonly List<string> _enabledModels;
 
-        public OpenRouterService(string apiKey)
+        public OpenRouterService(string apiKey, ModelCapabilitiesService capabilitiesService = null, List<string> enabledModels = null)
         {
             _apiKey = apiKey ?? throw new ArgumentNullException(nameof(apiKey));
+            _capabilitiesService = capabilitiesService ?? new ModelCapabilitiesService();
+            _enabledModels = enabledModels ?? new List<string>();
             _httpClient = new HttpClient
             {
                 Timeout = TimeSpan.FromSeconds(300) // Set a longer timeout for AI model generation
@@ -33,40 +39,143 @@ namespace Universa.Desktop.Services
             _httpClient.DefaultRequestHeaders.Add("X-Title", "Universa Desktop");
         }
 
+        /// <summary>
+        /// Gets appropriate max_tokens based on dynamic model capabilities or fallback to known limits
+        /// </summary>
+        private async Task<int> GetMaxTokensForModelAsync(string modelId)
+        {
+            try
+            {
+                // First, try to use dynamic context length if we have it
+                string actualModelId = modelId.StartsWith("openrouter/") ? modelId.Substring(11) : modelId;
+                
+                if (_dynamicContextLengths.TryGetValue(actualModelId, out int dynamicContextLength))
+                {
+                    // Use generous output limit: 1/2 of context length or up to 64K for modern models
+                    // This supports longer responses from models like Claude, Grok, and GPT-4
+                    // The ExecuteWithTokenFallback mechanism will retry with lower limits if rejected
+                    int dynamicOutputLimit = Math.Min(dynamicContextLength / 2, 65536);
+                    Debug.WriteLine($"Using dynamic context length for {actualModelId}: {dynamicContextLength} -> output limit: {dynamicOutputLimit}");
+                    return dynamicOutputLimit;
+                }
+
+                // Fallback to ModelCapabilitiesService
+                var maxTokens = await _capabilitiesService.GetMaxOutputTokensAsync(modelId, AIProvider.OpenRouter);
+                Debug.WriteLine($"Using ModelCapabilitiesService for {modelId}: {maxTokens} max output tokens");
+                return maxTokens;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error getting max tokens for {modelId}: {ex.Message}");
+                // Conservative fallback
+                return 2048;
+            }
+        }
+
+        /// <summary>
+        /// Attempts request with progressively lower token limits if 400 errors occur
+        /// </summary>
+        private async Task<T> ExecuteWithTokenFallback<T>(
+            Func<int, Task<T>> requestFunc, 
+            string modelId, 
+            string operation = "request")
+        {
+            var maxTokens = await GetMaxTokensForModelAsync(modelId);
+            var fallbackLimits = new[] { maxTokens, maxTokens / 2, 1024, 512 };
+            
+            Exception lastException = null;
+            
+            foreach (var tokenLimit in fallbackLimits)
+            {
+                try
+                {
+                    Debug.WriteLine($"Attempting {operation} with {tokenLimit} max_tokens for model {modelId}");
+                    return await requestFunc(tokenLimit);
+                }
+                catch (HttpRequestException ex) when (ex.Message.Contains("400"))
+                {
+                    Debug.WriteLine($"400 error with {tokenLimit} tokens, trying lower limit...");
+                    lastException = ex;
+                    continue;
+                }
+            }
+            
+            // If all attempts failed, throw the last exception
+            throw new Exception($"All token limit fallbacks failed for model {modelId}", lastException);
+        }
+
         public async Task<List<AIModelInfo>> GetAvailableModels()
         {
             try
             {
                 Debug.WriteLine("Fetching available models from OpenRouter...");
+
                 var response = await _httpClient.GetAsync($"{BaseUrl}/models");
-                response.EnsureSuccessStatusCode();
-
                 var content = await response.Content.ReadAsStringAsync();
-                var modelsResponse = JsonSerializer.Deserialize<OpenRouterModelsResponse>(content);
 
-                if (modelsResponse?.Data == null)
+                if (!response.IsSuccessStatusCode)
                 {
-                    Debug.WriteLine("No models returned from OpenRouter API");
+                    Debug.WriteLine($"Error fetching models: {response.StatusCode} - {content}");
                     return new List<AIModelInfo>();
                 }
 
-                var models = modelsResponse.Data
-                    .Where(m => m.Id != null)
-                    .Select(m => new AIModelInfo
-                    {
-                        Name = m.Id,
-                        DisplayName = FormatModelName(m.Id, m.Name),
-                        Provider = AIProvider.OpenRouter
-                    })
-                    .ToList();
+                var modelsResponse = JsonSerializer.Deserialize<OpenRouterModelsResponse>(content);
+                var models = new List<AIModelInfo>();
 
-                Debug.WriteLine($"Retrieved {models.Count} models from OpenRouter");
+                if (modelsResponse?.Data != null)
+                {
+                    foreach (var model in modelsResponse.Data)
+                    {
+                        // Skip models that might not be suitable
+                        if (string.IsNullOrEmpty(model.Id)) continue;
+
+                        var modelName = $"openrouter/{model.Id}";
+                        
+                        // Only update capabilities for enabled models (or all if no specific models enabled)
+                        bool shouldUpdateCapabilities = _enabledModels.Count == 0 || _enabledModels.Contains(modelName);
+                        
+                        // Store dynamic context length for this model
+                        if (model.ContextLength > 0)
+                        {
+                            _dynamicContextLengths[model.Id] = model.ContextLength;
+                            
+                            // Only update the ModelCapabilitiesService for enabled models
+                            if (shouldUpdateCapabilities)
+                            {
+                                var capabilities = new ModelCapabilities
+                                {
+                                    ModelId = modelName,
+                                    Provider = AIProvider.OpenRouter,
+                                    ContextLength = model.ContextLength,
+                                    MaxOutputTokens = CalculateOutputTokens(model.Id, model.ContextLength),
+                                    SupportsStreaming = true,
+                                    SupportsImages = IsVisionModel(model.Id),
+                                    SupportsToolCalling = true, // Most OpenRouter models support tools
+                                    SupportsReasoning = ModelCapabilityHelpers.SupportsReasoningTokens(modelName, AIProvider.OpenRouter),
+                                    LastUpdated = DateTime.UtcNow
+                                };
+                                
+                                _capabilitiesService.UpdateModelCapabilities(modelName, AIProvider.OpenRouter, capabilities);
+                                
+                                Debug.WriteLine($"Updated dynamic capabilities for {model.Id}: Context={model.ContextLength}, Output={capabilities.MaxOutputTokens}");
+                            }
+                        }
+
+                        models.Add(new AIModelInfo
+                        {
+                            Name = modelName,
+                            DisplayName = FormatModelName(model.Id, model.Name),
+                            Provider = AIProvider.OpenRouter
+                        });
+                    }
+                }
+
+                Debug.WriteLine($"Found {models.Count} OpenRouter models with {_dynamicContextLengths.Count} context lengths cached");
                 return models;
             }
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error fetching OpenRouter models: {ex.Message}");
-                Debug.WriteLine(ex.StackTrace);
                 return new List<AIModelInfo>();
             }
         }
@@ -118,6 +227,44 @@ namespace Universa.Desktop.Services
             return string.Join(" ", words);
         }
 
+        /// <summary>
+        /// Calculates appropriate max output tokens based on model ID
+        /// </summary>
+        private int CalculateOutputTokens(string modelId, int contextLength)
+        {
+            string lowerModelId = modelId.ToLowerInvariant();
+            
+            // Claude 4.5 Sonnet supports 64K output tokens
+            if (lowerModelId.Contains("claude") && (lowerModelId.Contains("sonnet-4.5") || lowerModelId.Contains("sonnet-4-5")))
+            {
+                return 64000;
+            }
+            
+            // Earlier Claude models support 8K output tokens
+            if (lowerModelId.Contains("claude"))
+            {
+                return 8192;
+            }
+            
+            // Most modern models support up to 64K output tokens
+            // Conservative limit - let ExecuteWithTokenFallback retry with lower limits if needed
+            return Math.Min(contextLength / 2, 65536);
+        }
+
+        private bool IsVisionModel(string modelId)
+        {
+            var lowerModelId = modelId.ToLowerInvariant();
+            return lowerModelId.Contains("gpt-4o") || 
+                   lowerModelId.Contains("gpt-4-turbo") ||
+                   lowerModelId.Contains("gpt-4-vision") ||
+                   lowerModelId.Contains("claude-3") ||
+                   lowerModelId.Contains("claude-4") ||
+                   lowerModelId.Contains("claude-sonnet-4") ||
+                   lowerModelId.Contains("gemini") ||
+                   lowerModelId.Contains("llava") ||
+                   lowerModelId.Contains("vision");
+        }
+
         #region Models
         public class ChatMessage
         {
@@ -126,6 +273,14 @@ namespace Universa.Desktop.Services
 
             [JsonPropertyName("content")]
             public string Content { get; set; }
+
+            [JsonPropertyName("reasoning")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string Reasoning { get; set; }
+
+            [JsonPropertyName("reasoning_details")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public object ReasoningDetails { get; set; }
         }
 
         private class OpenRouterModelsResponse
@@ -185,6 +340,13 @@ namespace Universa.Desktop.Services
             public ChatMessage Message { get; set; }
         }
 
+        public class ChatResponseWithReasoning
+        {
+            public string Content { get; set; }
+            public string Reasoning { get; set; }
+            public object ReasoningDetails { get; set; }
+        }
+
         public class StreamingResponse
         {
             [JsonPropertyName("choices")]
@@ -195,12 +357,38 @@ namespace Universa.Desktop.Services
         {
             [JsonPropertyName("delta")]
             public ChatMessage Delta { get; set; }
+            
+            [JsonPropertyName("finish_reason")]
+            public string FinishReason { get; set; }
+
+            [JsonPropertyName("reasoning_details")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public List<object> ReasoningDetails { get; set; }
+        }
+
+        public class ReasoningConfig
+        {
+            [JsonPropertyName("effort")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public string Effort { get; set; } // "high", "medium", "low", "minimal", "none"
+
+            [JsonPropertyName("max_tokens")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public int? MaxTokens { get; set; }
+
+            [JsonPropertyName("exclude")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public bool? Exclude { get; set; }
+
+            [JsonPropertyName("enabled")]
+            [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+            public bool? Enabled { get; set; }
         }
         #endregion
 
-        public async Task<string> SendChatMessage(List<ChatMessage> messages, string modelId)
+        public async Task<string> SendChatMessage(List<ChatMessage> messages, string modelId, ReasoningConfig reasoning = null)
         {
-            try
+            return await ExecuteWithTokenFallback(async (maxTokens) =>
             {
                 Debug.WriteLine($"Sending chat message to OpenRouter with model: {modelId}");
                 Debug.WriteLine($"Number of messages: {messages?.Count ?? 0}");
@@ -208,17 +396,25 @@ namespace Universa.Desktop.Services
                 // Strip the "openrouter/" prefix if present
                 string actualModelId = modelId.StartsWith("openrouter/") ? modelId.Substring(11) : modelId;
 
-                var request = new
+                var request = new Dictionary<string, object>
                 {
-                    model = actualModelId,
-                    messages = messages ?? new List<ChatMessage>(),
-                    max_tokens = 16384,
-                    temperature = 0.7,
-                    provider = new
-                    {
-                        allow_fallbacks = true // Enable automatic fallbacks between providers
-                    }
+                    { "model", actualModelId },
+                    { "messages", messages ?? new List<ChatMessage>() },
+                    { "max_tokens", maxTokens },
+                    { "temperature", 0.7 },
+                    { "provider", new { allow_fallbacks = true } }
                 };
+
+                // Add reasoning config if provided
+                if (reasoning != null)
+                {
+                    request["reasoning"] = reasoning;
+                    Debug.WriteLine($"✓ REASONING PARAMETER SENT: Requesting reasoning with config - Effort: {reasoning.Effort ?? "default"}, MaxTokens: {reasoning.MaxTokens?.ToString() ?? "default"}, Exclude: {reasoning.Exclude?.ToString() ?? "false"}");
+                }
+                else
+                {
+                    Debug.WriteLine($"✗ NO REASONING PARAMETER: Reasoning not requested for this API call");
+                }
 
                 var jsonOptions = new JsonSerializerOptions
                 {
@@ -227,7 +423,7 @@ namespace Universa.Desktop.Services
                 };
 
                 var jsonContent = JsonSerializer.Serialize(request, jsonOptions);
-                Debug.WriteLine($"Request JSON: {jsonContent}");
+                Debug.WriteLine($"Request JSON with {maxTokens} max_tokens: {jsonContent}");
 
                 var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
 
@@ -261,7 +457,20 @@ namespace Universa.Desktop.Services
                         throw new Exception("No response content from OpenRouter");
                     }
 
-                    return result.Choices[0].Message?.Content ?? 
+                    var message = result.Choices[0].Message;
+                    if (message == null)
+                    {
+                        throw new Exception("Empty message from OpenRouter");
+                    }
+
+                    // Store reasoning if present (for potential future use in context)
+                    if (!string.IsNullOrEmpty(message.Reasoning))
+                    {
+                        Debug.WriteLine($"Received reasoning tokens: {message.Reasoning.Length} characters");
+                    }
+
+                    // Return content - reasoning_details will be preserved via message object in context
+                    return message.Content ?? 
                         throw new Exception("Empty message content from OpenRouter");
                 }
                 catch (JsonException ex)
@@ -270,19 +479,13 @@ namespace Universa.Desktop.Services
                     Debug.WriteLine($"Raw response content: {responseContent}");
                     throw new Exception($"Failed to parse OpenRouter response: {ex.Message}. Response content: {responseContent}");
                 }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error sending chat message: {ex.Message}");
-                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                throw;
-            }
+            }, modelId, "SendChatMessage");
         }
 
         // New streaming method that updates content incrementally
-        public async Task<string> StreamChatMessage(List<ChatMessage> messages, string modelId, Action<string> onContentUpdate, CancellationToken cancellationToken)
+        public async Task<string> StreamChatMessage(List<ChatMessage> messages, string modelId, Action<string> onContentUpdate, CancellationToken cancellationToken, ReasoningConfig reasoning = null, Action<string, object> onReasoningUpdate = null)
         {
-            try
+            return await ExecuteWithTokenFallback(async (maxTokens) =>
             {
                 Debug.WriteLine($"Streaming chat message from OpenRouter with model: {modelId}");
                 Debug.WriteLine($"Number of messages: {messages?.Count ?? 0}");
@@ -290,18 +493,26 @@ namespace Universa.Desktop.Services
                 // Strip the "openrouter/" prefix if present
                 string actualModelId = modelId.StartsWith("openrouter/") ? modelId.Substring(11) : modelId;
 
-                var request = new
+                var request = new Dictionary<string, object>
                 {
-                    model = actualModelId,
-                    messages = messages ?? new List<ChatMessage>(),
-                    max_tokens = 16384,
-                    temperature = 0.7,
-                    stream = true, // Enable streaming
-                    provider = new
-                    {
-                        allow_fallbacks = true // Enable automatic fallbacks between providers
-                    }
+                    { "model", actualModelId },
+                    { "messages", messages ?? new List<ChatMessage>() },
+                    { "max_tokens", maxTokens },
+                    { "temperature", 0.7 },
+                    { "stream", true },
+                    { "provider", new { allow_fallbacks = true } }
                 };
+
+                // Add reasoning config if provided
+                if (reasoning != null)
+                {
+                    request["reasoning"] = reasoning;
+                    Debug.WriteLine($"✓ REASONING PARAMETER SENT (STREAM): Requesting reasoning with config - Effort: {reasoning.Effort ?? "default"}, MaxTokens: {reasoning.MaxTokens?.ToString() ?? "default"}, Exclude: {reasoning.Exclude?.ToString() ?? "false"}");
+                }
+                else
+                {
+                    Debug.WriteLine($"✗ NO REASONING PARAMETER (STREAM): Reasoning not requested for this streaming API call");
+                }
 
                 var jsonOptions = new JsonSerializerOptions
                 {
@@ -328,6 +539,8 @@ namespace Universa.Desktop.Services
                 using var reader = new StreamReader(stream);
 
                 string fullContent = "";
+                string fullReasoning = "";
+                List<object> accumulatedReasoningDetails = new List<object>();
                 bool receivedAnyContent = false;
                 
                 while (!reader.EndOfStream)
@@ -354,6 +567,26 @@ namespace Universa.Desktop.Services
 
                         var choice = chunkResponse.Choices[0];
                         var content = choice.Delta?.Content;
+                        var reasoning = choice.Delta?.Reasoning;
+                        
+                        // Log finish reason if present (indicates why generation stopped)
+                        if (!string.IsNullOrEmpty(choice.FinishReason))
+                        {
+                            Debug.WriteLine($"Stream finished with reason: {choice.FinishReason}");
+                        }
+
+                        // Accumulate reasoning details for context preservation
+                        if (choice.ReasoningDetails != null && choice.ReasoningDetails.Count > 0)
+                        {
+                            accumulatedReasoningDetails.AddRange(choice.ReasoningDetails);
+                            Debug.WriteLine($"Received reasoning_details chunk with {choice.ReasoningDetails.Count} items");
+                            
+                            // Notify callback if provided
+                            if (onReasoningUpdate != null)
+                            {
+                                onReasoningUpdate(fullReasoning, accumulatedReasoningDetails.Count > 0 ? accumulatedReasoningDetails : null);
+                            }
+                        }
                         
                         // Only update if we have actual content
                         if (!string.IsNullOrEmpty(content))
@@ -361,6 +594,19 @@ namespace Universa.Desktop.Services
                             receivedAnyContent = true;
                             fullContent += content;
                             onContentUpdate(fullContent);
+                        }
+
+                        // Accumulate reasoning text for context preservation
+                        if (!string.IsNullOrEmpty(reasoning))
+                        {
+                            fullReasoning += reasoning;
+                            Debug.WriteLine($"Received reasoning chunk: {reasoning.Length} characters");
+                            
+                            // Notify callback if provided
+                            if (onReasoningUpdate != null)
+                            {
+                                onReasoningUpdate(fullReasoning, accumulatedReasoningDetails.Count > 0 ? accumulatedReasoningDetails : null);
+                            }
                         }
                     }
                     catch (JsonException ex)
@@ -378,24 +624,15 @@ namespace Universa.Desktop.Services
                 }
 
                 Debug.WriteLine($"Streaming completed. Total content length: {fullContent.Length}");
+                
+                // Final reasoning update with complete data
+                if (onReasoningUpdate != null && (accumulatedReasoningDetails.Count > 0 || !string.IsNullOrEmpty(fullReasoning)))
+                {
+                    onReasoningUpdate(fullReasoning, accumulatedReasoningDetails.Count > 0 ? accumulatedReasoningDetails : null);
+                }
+                
                 return fullContent;
-            }
-            catch (OperationCanceledException)
-            {
-                Debug.WriteLine("Streaming was cancelled");
-                throw;
-            }
-            catch (HttpRequestException ex) when (ex.Message.Contains("prematurely"))
-            {
-                Debug.WriteLine($"Stream ended prematurely: {ex.Message}");
-                throw new HttpRequestException("The response was interrupted. This could be due to network issues or server timeouts. Please try again.", ex);
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error streaming chat message: {ex.Message}");
-                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                throw;
-            }
+            }, modelId, "StreamChatMessage");
         }
 
         // Overload for simple message sending

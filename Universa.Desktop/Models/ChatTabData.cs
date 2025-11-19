@@ -46,21 +46,29 @@ namespace Universa.Desktop.Models
         public List<Models.ChatMessage> ChatModeMessages { get; set; }
         
         /// <summary>
-        /// Saved scroll position for context mode messages
+        /// The file path this tab is locked to, if any
         /// </summary>
-        public double ContextModeScrollPosition { get; set; }
+        public string LockedFilePath { get; set; }
         
         /// <summary>
-        /// Saved scroll position for chat mode messages
+        /// The chain type this tab is locked to, if any
         /// </summary>
-        public double ChatModeScrollPosition { get; set; }
+        public string LockedChainType { get; set; }
+        
+        /// <summary>
+        /// Whether this tab is locked to a specific file and chain
+        /// </summary>
+        public bool IsLocked { get; set; }
+        
+        /// <summary>
+        /// The current persona for this tab, if any
+        /// </summary>
+        public string CurrentPersona { get; set; }
         
         public ChatTabData()
         {
             Messages = new List<Models.ChatMessage>();
             ChatModeMessages = new List<Models.ChatMessage>();
-            ContextModeScrollPosition = 0.0;
-            ChatModeScrollPosition = 0.0;
         }
     }
     

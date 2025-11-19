@@ -18,6 +18,7 @@ namespace Universa.Desktop.Services
         private string _styleGuide;
         private string _rules;
         private string _outline;
+        private List<string> _characterProfiles;
         private readonly FileReferenceService _fileReferenceService;
         private static Dictionary<string, FictionWritingBeta> _instances = new Dictionary<string, FictionWritingBeta>();
         private static readonly object _lock = new object();
@@ -42,25 +43,38 @@ namespace Universa.Desktop.Services
         
         // Enhanced outline parsing and chapter context
         private readonly OutlineChapterService _outlineChapterService = new OutlineChapterService();
+        
+        // Chapter follow-up service for asking about next chapter generation
+        private readonly ChapterFollowUpService _chapterFollowUpService = new ChapterFollowUpService();
 
         // Properties to access provider and model
         protected AIProvider CurrentProvider => _currentProvider;
         protected string CurrentModel => _currentModel;
 
-        // Consolidated list of keywords that trigger full story analysis
+        // BULLY FIX: More precise keywords that require explicit full story analysis intent
+        // Removed overly broad terms like "overall" that cause false positives
         private static readonly string[] FULL_STORY_KEYWORDS = new[]
         {
-            "entire story",
-            "full story",
-            "whole story",
-            "overall",
-            "story arc",
-            "character arc",
-            "story analysis",
-            "narrative flow",
-            "story structure",
-            "plot analysis",
-            "complete story"
+            "analyze entire story",
+            "analyze the entire story",
+            "entire story analysis",
+            "entire story content",
+            "full story analysis",
+            "analyze full story",
+            "analyze the full story",
+            "analyze whole story",
+            "analyze the whole story", 
+            "complete story analysis",
+            "analyze complete story",
+            "overall story analysis",        // More specific than just "overall"
+            "overall narrative analysis",
+            "full narrative analysis",
+            "analyze story structure",       // More specific than just "story structure"
+            "analyze narrative flow",        // More specific than just "narrative flow"
+            "analyze plot structure",        // More specific than just "plot analysis"
+            "story-wide analysis",
+            "full manuscript analysis",
+            "analyze the manuscript"
         };
         
         // Keywords that indicate full chapter generation requests
@@ -93,9 +107,27 @@ namespace Universa.Desktop.Services
             System.Diagnostics.Debug.WriteLine($"Conversation: ~{conversationTokens} tokens");
             System.Diagnostics.Debug.WriteLine($"Total: ~{systemTokens + conversationTokens} tokens");
             
-            if (_currentProvider == AIProvider.Anthropic && (systemTokens + conversationTokens) > 100000)
+            // Check if we're using full story analysis mode by looking for the marker in system message
+            bool isFullStoryMode = systemMessage?.Content?.Contains("=== FULL STORY ANALYSIS MODE ===") == true;
+            if (isFullStoryMode)
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ WARNING: Approaching Anthropic's token limit!");
+                System.Diagnostics.Debug.WriteLine("🔍 FULL STORY ANALYSIS MODE: Using reduced references to prevent 400 errors");
+                System.Diagnostics.Debug.WriteLine("   - Truncated style guide to core principles only");
+                System.Diagnostics.Debug.WriteLine("   - Excluded detailed rules and character profiles");
+                System.Diagnostics.Debug.WriteLine("   - Included outline for story structure context");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine("✏️  REGULAR EDITING MODE: Using full reference materials");
+            }
+            
+            if ((systemTokens + conversationTokens) > 180000)
+            {
+                System.Diagnostics.Debug.WriteLine("⚠️  WARNING: Approaching 200K token response limit!");
+                if (!isFullStoryMode)
+                {
+                    System.Diagnostics.Debug.WriteLine("💡 SUGGESTION: Try using 'entire story content' for reduced reference mode");
+                }
             }
         }
 
@@ -224,6 +256,7 @@ namespace Universa.Desktop.Services
             // Process frontmatter if present
             bool hasFrontmatter = false;
             _frontmatter = new Dictionary<string, string>();
+            _characterProfiles = new List<string>();
             
             System.Diagnostics.Debug.WriteLine($"Checking for frontmatter in content starting with: '{content.Substring(0, Math.Min(20, content.Length))}...'");
             
@@ -331,72 +364,72 @@ namespace Universa.Desktop.Services
             // Check for references in frontmatter and process them
             if (hasFrontmatter)
             {
-                System.Diagnostics.Debug.WriteLine("Processing frontmatter references");
+                System.Diagnostics.Debug.WriteLine("Processing frontmatter references with cascade support");
                 
-                // Define possible variations of keys to check
-                string[] styleKeyVariations = new[] { "style", "ref style", "style-file", "style-ref", "stylefile", "styleref", "style_file", "style_ref" };
-                string[] rulesKeyVariations = new[] { "rules", "ref rules", "rules-file", "rules-ref", "rulesfile", "rulesref", "rules_file", "rules_ref" };
-                string[] outlineKeyVariations = new[] { "outline", "ref outline", "outline-file", "outline-ref", "outlinefile", "outlineref", "outline_file", "outline_ref" };
+                // NEW: Use cascade loading to get all references including those from outline
+                var allReferences = await _fileReferenceService.LoadReferencesWithCascadeAsync(content, enableCascade: true);
                 
-                // Process style reference - try all variations
-                string styleRef = null;
-                foreach (var keyVariation in styleKeyVariations)
+                // Process all loaded references
+                foreach (var reference in allReferences)
                 {
-                    if (_frontmatter.TryGetValue(keyVariation, out styleRef) && !string.IsNullOrEmpty(styleRef))
+                    switch (reference.Type)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Found style reference using key '{keyVariation}': '{styleRef}'");
-                        break;
+                        case FileReferenceType.Style:
+                            _styleGuide = reference.Content;
+                            System.Diagnostics.Debug.WriteLine($"Loaded style guide via cascade: {reference.Content?.Length ?? 0} chars");
+                            
+                            // Parse the style guide for enhanced understanding
+                            try
+                            {
+                                _parsedStyle = _styleParser.Parse(reference.Content);
+                                System.Diagnostics.Debug.WriteLine($"Successfully parsed cascaded style guide: {_parsedStyle.Sections.Count} sections");
+                            }
+                            catch (Exception parseEx)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Error parsing cascaded style guide: {parseEx.Message}");
+                            }
+                            break;
+                            
+                        case FileReferenceType.Rules:
+                            _rules = reference.Content;
+                            System.Diagnostics.Debug.WriteLine($"Loaded rules via cascade: {reference.Content?.Length ?? 0} chars");
+                            
+                            // Parse the rules for enhanced understanding
+                            try
+                            {
+                                _parsedRules = _rulesParser.Parse(reference.Content);
+                                System.Diagnostics.Debug.WriteLine($"Successfully parsed cascaded rules: {_parsedRules.Characters.Count} characters");
+                            }
+                            catch (Exception parseEx)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"Error parsing cascaded rules: {parseEx.Message}");
+                            }
+                            break;
+                            
+                        case FileReferenceType.Outline:
+                            _outline = reference.Content;
+                            System.Diagnostics.Debug.WriteLine($"Loaded outline via cascade: {reference.Content?.Length ?? 0} chars");
+                            
+                            // Parse outline for enhanced chapter context
+                            _outlineChapterService.SetOutline(reference.Content);
+                            break;
+                            
+                        case FileReferenceType.Character:
+                            if (_characterProfiles == null)
+                                _characterProfiles = new List<string>();
+                            
+                            // Strip frontmatter from character profiles to avoid muddying the content
+                            string cleanedContent = StripFrontmatter(reference.Content);
+                            _characterProfiles.Add(cleanedContent);
+                            
+                            var characterName = reference.GetCharacterName() ?? "Unknown Character";
+                            System.Diagnostics.Debug.WriteLine($"Loaded character via cascade: {characterName} ({cleanedContent.Length} chars)");
+                            break;
                     }
                 }
                 
-                if (!string.IsNullOrEmpty(styleRef))
-                {
-                    await ProcessStyleReference(styleRef);
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("No style reference found in frontmatter using any key variation");
-                }
-                
-                // Process rules reference - try all variations
-                string rulesRef = null;
-                foreach (var keyVariation in rulesKeyVariations)
-                {
-                    if (_frontmatter.TryGetValue(keyVariation, out rulesRef) && !string.IsNullOrEmpty(rulesRef))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Found rules reference using key '{keyVariation}': '{rulesRef}'");
-                        break;
-                    }
-                }
-                
-                if (!string.IsNullOrEmpty(rulesRef))
-                {
-                    await ProcessRulesReference(rulesRef);
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("No rules reference found in frontmatter using any key variation");
-                }
-                
-                // Process outline reference - try all variations
-                string outlineRef = null;
-                foreach (var keyVariation in outlineKeyVariations)
-                {
-                    if (_frontmatter.TryGetValue(keyVariation, out outlineRef) && !string.IsNullOrEmpty(outlineRef))
-                    {
-                        System.Diagnostics.Debug.WriteLine($"Found outline reference using key '{keyVariation}': '{outlineRef}'");
-                        break;
-                    }
-                }
-                
-                if (!string.IsNullOrEmpty(outlineRef))
-                {
-                    await ProcessOutlineReference(outlineRef);
-                }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine("No outline reference found in frontmatter using any key variation");
-                }
+                // No fallback - cascade either works or it doesn't
+                System.Diagnostics.Debug.WriteLine("Cascade processing complete - no fallback processing");
             }
             else
             {
@@ -408,6 +441,7 @@ namespace Universa.Desktop.Services
             System.Diagnostics.Debug.WriteLine($"Style guide: {(_styleGuide != null ? $"{_styleGuide.Length} chars" : "NULL")}");
             System.Diagnostics.Debug.WriteLine($"Rules: {(_rules != null ? $"{_rules.Length} chars" : "NULL")}");
             System.Diagnostics.Debug.WriteLine($"Outline: {(_outline != null ? $"{_outline.Length} chars" : "NULL")}");
+            System.Diagnostics.Debug.WriteLine($"Character profiles: {(_characterProfiles?.Count ?? 0)} loaded ({(_characterProfiles?.Sum(c => c.Length) ?? 0)} total chars)");
             System.Diagnostics.Debug.WriteLine($"Fiction content: {(_fictionContent != null ? $"{_fictionContent.Length} chars" : "NULL")}");
             
             // Log token estimates for debugging
@@ -417,6 +451,8 @@ namespace Universa.Desktop.Services
             InitializeSystemMessage();
         }
         
+
+
         /// <summary>
         /// Process a style reference
         /// </summary>
@@ -577,6 +613,99 @@ namespace Universa.Desktop.Services
             }
         }
 
+        /// <summary>
+        /// Process a character reference
+        /// </summary>
+        private async Task ProcessCharacterReference(string refPath, string refKey)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"Loading character reference from: '{refPath}' (key: '{refKey}')");
+                System.Diagnostics.Debug.WriteLine($"  Current file path: '{_currentFilePath}'");
+                System.Diagnostics.Debug.WriteLine($"  Library path: '{_fileReferenceService?.GetType().GetField("_libraryPath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(_fileReferenceService)}'");
+                
+                string characterContent = await _fileReferenceService.GetFileContent(refPath, _currentFilePath);
+                if (!string.IsNullOrEmpty(characterContent))
+                {
+                    // Strip frontmatter from character profiles to avoid muddying the content
+                    string cleanedContent = StripFrontmatter(characterContent);
+                    _characterProfiles.Add(cleanedContent);
+                    
+                    // Extract character name from key (e.g., "ref_character_derek" -> "Derek")
+                    string characterName = "Unknown Character";
+                    if (refKey.StartsWith("ref_character_") && refKey.Length > "ref_character_".Length)
+                    {
+                        characterName = refKey.Substring("ref_character_".Length);
+                        // Capitalize first letter
+                        if (!string.IsNullOrEmpty(characterName))
+                        {
+                            characterName = char.ToUpper(characterName[0]) + characterName.Substring(1);
+                        }
+                    }
+                    
+                    System.Diagnostics.Debug.WriteLine($"Successfully loaded character reference '{characterName}': {cleanedContent.Length} characters (frontmatter stripped)");
+                }
+                else
+                {
+                    System.Diagnostics.Debug.WriteLine($"Character reference file was empty or could not be loaded: '{refPath}'");
+                    
+                    // Try to check if the file exists directly
+                    string directPath = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(_currentFilePath), refPath);
+                    if (System.IO.File.Exists(directPath))
+                    {
+                        System.Diagnostics.Debug.WriteLine($"File exists at direct path: '{directPath}', but content couldn't be loaded");
+                    }
+                    else
+                    {
+                        System.Diagnostics.Debug.WriteLine($"File does NOT exist at direct path: '{directPath}'");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error loading character reference: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+            }
+        }
+
+        /// <summary>
+        /// Strips frontmatter from content to provide clean character profile data
+        /// </summary>
+        private string StripFrontmatter(string content)
+        {
+            if (string.IsNullOrEmpty(content))
+                return content;
+
+            // Check for frontmatter (starts with ---)
+            if (content.StartsWith("---\n") || content.StartsWith("---\r\n"))
+            {
+                // Find the closing ---
+                int secondDelimiterPos = content.IndexOf("\n---", 3);
+                if (secondDelimiterPos == -1)
+                {
+                    secondDelimiterPos = content.IndexOf("\r\n---", 3);
+                }
+                
+                if (secondDelimiterPos != -1)
+                {
+                    // Skip past the closing --- and any following newlines
+                    int contentStart = secondDelimiterPos + 4; // Skip past "\n---"
+                    if (contentStart < content.Length && content[contentStart] == '\n')
+                        contentStart++;
+                    else if (contentStart < content.Length - 1 && content.Substring(contentStart, 2) == "\r\n")
+                        contentStart += 2;
+                    
+                    if (contentStart < content.Length)
+                    {
+                        return content.Substring(contentStart).Trim();
+                    }
+                }
+            }
+
+            // No frontmatter found, return original content
+            return content;
+        }
+
         private void InitializeSystemMessage()
         {
             var systemPrompt = BuildFictionPrompt("");
@@ -605,181 +734,407 @@ namespace Universa.Desktop.Services
             prompt.AppendLine($"Current Date/Time: {DateTime.Now:F}");
             prompt.AppendLine($"Local Time Zone: {TimeZoneInfo.Local.DisplayName}");
             
-            // Always use raw style guide - avoid parsing issues that lose context
-            if (!string.IsNullOrEmpty(_styleGuide))
+            // Check if this is a full story analysis request to determine content level
+            bool needsFullStory = FULL_STORY_KEYWORDS.Any(keyword => 
+                request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+            if (needsFullStory)
             {
-                prompt.AppendLine("\n=== STYLE GUIDE ===");
-                prompt.AppendLine("The following is your comprehensive guide to the writing style with clear sections and headers:");
-                prompt.AppendLine(_styleGuide);
+                // REDUCED MODE FOR FULL STORY ANALYSIS
+                // When sending full story content, only include essential references to stay within token limits
+                prompt.AppendLine("");
+                prompt.AppendLine("=== FULL STORY ANALYSIS MODE ===");
+                prompt.AppendLine("You are analyzing the complete story content. Focus on overall narrative structure, consistency, and flow.");
+                
+                // Include only essential style guidance if available
+                if (!string.IsNullOrEmpty(_styleGuide))
+                {
+                    // Extract just the core style principles (first ~500 chars) rather than the full guide
+                    var truncatedStyle = _styleGuide.Length > 500 ? _styleGuide.Substring(0, 500) + "..." : _styleGuide;
+                    prompt.AppendLine("\n=== CORE STYLE PRINCIPLES ===");
+                    prompt.AppendLine(truncatedStyle);
+                }
+                
+                // Include outline for story structure context
+                if (!string.IsNullOrEmpty(_outline))
+                {
+                    prompt.AppendLine("\n=== STORY OUTLINE ===");
+                    prompt.AppendLine("Use this outline to understand the intended story structure:");
+                    prompt.AppendLine(_outline);
+                }
+                
+                // Add basic frontmatter if available
+                if (_frontmatter != null)
+                {
+                    prompt.AppendLine("\n=== DOCUMENT INFO ===");
+                    if (_frontmatter.TryGetValue("title", out string title) && !string.IsNullOrEmpty(title))
+                    {
+                        prompt.AppendLine($"Title: {title}");
+                    }
+                    if (_frontmatter.TryGetValue("genre", out string genre) && !string.IsNullOrEmpty(genre))
+                    {
+                        prompt.AppendLine($"Genre: {genre}");
+                    }
+                }
+                
+                prompt.AppendLine("");
+                prompt.AppendLine("=== FULL STORY ANALYSIS INSTRUCTIONS ===");
+                prompt.AppendLine("When analyzing the full story:");
+                prompt.AppendLine("- Focus on overall narrative structure and pacing");
+                prompt.AppendLine("- Identify consistency issues across chapters");
+                prompt.AppendLine("- Suggest high-level improvements for story flow");
+                prompt.AppendLine("- Consider character development arcs throughout");
+                prompt.AppendLine("- Note any plot holes or continuity issues");
+                prompt.AppendLine("- Provide constructive feedback on the complete work");
             }
             else
             {
-                // Fallback framework description if no style guide available
-                prompt.AppendLine("\nYou have access to these storytelling resources:");
-                prompt.AppendLine("* **CORE RULES**: Facts about your story world");
-                prompt.AppendLine("* **STORY OUTLINE**: Plot structure for reference");
-                prompt.AppendLine("* **CURRENT STORY CONTENT**: Existing narrative to build upon");
-            }
-
-            // Add title and author information if available
-            if (_frontmatter != null)
-            {
-                prompt.AppendLine("\n=== DOCUMENT METADATA ===");
+                // FULL MODE FOR REGULAR EDITING
+                // Include all reference materials for detailed editing work
                 
-                if (_frontmatter.TryGetValue("title", out string title) && !string.IsNullOrEmpty(title))
+                // Always use raw style guide - avoid parsing issues that lose context
+                if (!string.IsNullOrEmpty(_styleGuide))
                 {
-                    prompt.AppendLine($"Title: {title}");
-                }
-                
-                if (_frontmatter.TryGetValue("author", out string author) && !string.IsNullOrEmpty(author))
-                {
-                    prompt.AppendLine($"Author: {author}");
-                }
-                
-                if (_frontmatter.TryGetValue("genre", out string genre) && !string.IsNullOrEmpty(genre))
-                {
-                    prompt.AppendLine($"Genre: {genre}");
-                }
-                
-                if (_frontmatter.TryGetValue("series", out string series) && !string.IsNullOrEmpty(series))
-                {
-                    prompt.AppendLine($"Series: {series}");
-                }
-                
-                if (_frontmatter.TryGetValue("summary", out string summary) && !string.IsNullOrEmpty(summary))
-                {
-                    prompt.AppendLine($"\nSummary: {summary}");
-                }
-                
-                // Check for any chapters defined in frontmatter
-                var chapterKeys = _frontmatter.Keys.Where(k => k.StartsWith("chapter")).ToList();
-                if (chapterKeys.Count > 0)
-                {
-                    prompt.AppendLine("\nChapter Structure:");
-                    foreach (var key in chapterKeys.OrderBy(k => k))
+                    prompt.AppendLine("\n=== STYLE GUIDE ===");
+                    prompt.AppendLine("The following is your comprehensive guide to the writing style with clear sections and headers:");
+                    
+                    // ENHANCEMENT: Add special handling for Writing Sample if parsed successfully
+                    if (_parsedStyle?.WritingSample?.Length > 0)
                     {
-                        prompt.AppendLine($"- {key}: {_frontmatter[key]}");
+                        prompt.AppendLine("\n** WRITING SAMPLE USAGE **");
+                        prompt.AppendLine("CRITICAL: Your style guide contains a Writing Sample. When you encounter it:");
+                        prompt.AppendLine("- EMULATE the technical style elements (voice, pacing, sentence structure, descriptive techniques)");
+                        prompt.AppendLine("- NEVER copy characters, plot elements, settings, or specific content from the sample");
+                        prompt.AppendLine("- ANALYZE the prose style and apply those techniques to your own original content");
+                        prompt.AppendLine("");
                     }
-                }
-            }
-
-            // Always use raw rules content - avoid parsing issues that strip character names
-            if (!string.IsNullOrEmpty(_rules))
-            {
-                prompt.AppendLine("\n=== CORE RULES ===");
-                prompt.AppendLine("These are fundamental rules for the story universe with clear sections and character descriptions:");
-                prompt.AppendLine(_rules);
-            }
-
-            // Add enhanced outline context if available
-            if (!string.IsNullOrEmpty(_outline))
-            {
-                // Use unified chapter detection service for consistent chapter number detection
-                int currentChapter = 1;
-                if (!string.IsNullOrEmpty(_fictionContent))
-                {
-                    currentChapter = ChapterDetectionService.GetCurrentChapterNumber(_fictionContent, _currentCursorPosition);
-                    System.Diagnostics.Debug.WriteLine($"BuildFictionPrompt: Current chapter determined as {currentChapter} (unified detection)");
-                }
-                
-                // Check if this is a chapter generation request
-                bool isChapterGeneration = CHAPTER_GENERATION_KEYWORDS.Any(keyword => 
-                    request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
-                
-                // Get chapter context and build enhanced prompt
-                var chapterContext = _outlineChapterService.GetChapterContext(currentChapter);
-                var enhancedOutlinePrompt = _outlineChapterService.BuildChapterOutlinePrompt(chapterContext, isChapterGeneration);
-                
-                if (!string.IsNullOrEmpty(enhancedOutlinePrompt))
-                {
-                    prompt.AppendLine(enhancedOutlinePrompt);
+                    
+                    // ENHANCEMENT: Highlight critical rules if parsed successfully  
+                    if (_parsedStyle?.CriticalRules?.Count > 0)
+                    {
+                        prompt.AppendLine("** CRITICAL STYLE REQUIREMENTS **");
+                        prompt.AppendLine("These rules from your style guide MUST be followed without exception:");
+                        foreach (var rule in _parsedStyle.CriticalRules.Take(5)) // Limit to avoid bloat
+                        {
+                            prompt.AppendLine($"- {rule}");
+                        }
+                        prompt.AppendLine("");
+                    }
+                    
+                    // Present the full raw style guide (primary approach)
+                    prompt.AppendLine(_styleGuide);
                 }
                 else
                 {
-                    // Fallback to original outline presentation
-                    prompt.AppendLine("\n=== STORY OUTLINE (STRUCTURAL GUIDANCE) ===");
-                    prompt.AppendLine("📋 This provides story structure for reference - USE AS CREATIVE GOALS, NOT SOURCE TEXT:");
-                    prompt.AppendLine(_outline);
-                    prompt.AppendLine("\n⚠️ IMPORTANT: Transform outline objectives into completely original narrative prose. Do not expand outline text directly.");
+                    // Fallback framework description if no style guide available
+                    prompt.AppendLine("\nYou have access to these storytelling resources:");
+                    prompt.AppendLine("* **CORE RULES**: Facts about your story world");
+                    prompt.AppendLine("* **STORY OUTLINE**: Plot structure for reference");
+                    prompt.AppendLine("* **CURRENT STORY CONTENT**: Existing narrative to build upon");
                 }
+
+                // Add title and author information if available
+                if (_frontmatter != null)
+                {
+                    prompt.AppendLine("\n=== DOCUMENT METADATA ===");
+                    
+                    if (_frontmatter.TryGetValue("title", out string title) && !string.IsNullOrEmpty(title))
+                    {
+                        prompt.AppendLine($"Title: {title}");
+                    }
+                    
+                    if (_frontmatter.TryGetValue("author", out string author) && !string.IsNullOrEmpty(author))
+                    {
+                        prompt.AppendLine($"Author: {author}");
+                    }
+                    
+                    if (_frontmatter.TryGetValue("genre", out string genre) && !string.IsNullOrEmpty(genre))
+                    {
+                        prompt.AppendLine($"Genre: {genre}");
+                    }
+                    
+                    if (_frontmatter.TryGetValue("series", out string series) && !string.IsNullOrEmpty(series))
+                    {
+                        prompt.AppendLine($"Series: {series}");
+                    }
+                    
+                    if (_frontmatter.TryGetValue("summary", out string summary) && !string.IsNullOrEmpty(summary))
+                    {
+                        prompt.AppendLine($"\nSummary: {summary}");
+                    }
+                    
+                    // Check for any chapters defined in frontmatter
+                    var chapterKeys = _frontmatter.Keys.Where(k => k.StartsWith("chapter")).ToList();
+                    if (chapterKeys.Count > 0)
+                    {
+                        prompt.AppendLine("\nChapter Structure:");
+                        foreach (var key in chapterKeys.OrderBy(k => k))
+                        {
+                            prompt.AppendLine($"- {key}: {_frontmatter[key]}");
+                        }
+                    }
+                }
+
+                // Always use raw rules content - avoid parsing issues that strip character names
+                if (!string.IsNullOrEmpty(_rules))
+                {
+                    prompt.AppendLine("\n=== CORE RULES ===");
+                    prompt.AppendLine("These are fundamental rules for the story universe with clear sections and character descriptions:");
+                    prompt.AppendLine(_rules);
+                }
+
+                // Add character profiles if available
+                if (_characterProfiles?.Count > 0)
+                {
+                    prompt.AppendLine("\n=== CHARACTER PROFILES ===");
+                    prompt.AppendLine("These are detailed character profiles for consistency in dialogue, behavior, and development:");
+                    for (int i = 0; i < _characterProfiles.Count; i++)
+                    {
+                        prompt.AppendLine($"\n--- Character Profile {i + 1} ---");
+                        prompt.AppendLine(_characterProfiles[i]);
+                    }
+                    prompt.AppendLine("\nUse these profiles to maintain character consistency in dialogue patterns, personality traits, relationships, and character development throughout the story.");
+                }
+
+                // Add enhanced outline context if available
+                if (!string.IsNullOrEmpty(_outline))
+                {
+                    // Use unified chapter detection service for consistent chapter number detection
+                    int currentChapter = 1;
+                    if (!string.IsNullOrEmpty(_fictionContent))
+                    {
+                        currentChapter = ChapterDetectionService.GetCurrentChapterNumber(_fictionContent, _currentCursorPosition);
+                        System.Diagnostics.Debug.WriteLine($"BuildFictionPrompt: Current chapter determined as {currentChapter} (unified detection)");
+                    }
+                    
+                    // Check if this is a chapter generation request
+                    bool isChapterGeneration = CHAPTER_GENERATION_KEYWORDS.Any(keyword => 
+                        request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                    
+                    // Get chapter context and build enhanced prompt
+                    var chapterContext = _outlineChapterService.GetChapterContext(currentChapter);
+                    var enhancedOutlinePrompt = _outlineChapterService.BuildChapterOutlinePrompt(chapterContext, isChapterGeneration);
+                    
+                    if (!string.IsNullOrEmpty(enhancedOutlinePrompt))
+                    {
+                        prompt.AppendLine(enhancedOutlinePrompt);
+                    }
+                    else
+                    {
+                        // Fallback to original outline presentation
+                        prompt.AppendLine("\n=== STORY OUTLINE: PLOT STRUCTURE & STORY BEATS ===");
+                        prompt.AppendLine("This section contains the planned story structure including:");
+                        prompt.AppendLine("- Plot points and story beats to achieve");
+                        prompt.AppendLine("- Chapter summaries and major scenes");  
+                        prompt.AppendLine("- Character arcs and development moments");
+                        prompt.AppendLine("- Key events and dramatic moments");
+                        prompt.AppendLine("- Relationship developments and conflicts");
+                        prompt.AppendLine("\nUSE AS CREATIVE GOALS TO ACHIEVE, NOT TEXT TO EXPAND:");
+                        prompt.AppendLine(_outline);
+                        prompt.AppendLine("\nIMPORTANT: These are objectives and plot points - create original scenes that ACHIEVE these goals through fresh dialogue, action, and narrative.");
+                    }
+                }
+
+                // Note: The actual story content will be provided in the CURRENT CONTENT section
+
+                // Add detailed response format instructions for regular editing
+                prompt.AppendLine("");
+                prompt.AppendLine("=== CRITICAL OUTLINE USAGE INSTRUCTIONS ===");
+                prompt.AppendLine("OUTLINE CONTENT DEFINITION: The outline contains PLOT OBJECTIVES and STORY GOALS, not finished prose.");
+                prompt.AppendLine("You will see bullet points, chapter summaries, character beats, and plot events that need to happen.");
+                prompt.AppendLine("");
+                prompt.AppendLine("DO NOT:");
+                prompt.AppendLine("- Copy outline bullet points into your prose");
+                prompt.AppendLine("- Expand outline text directly into paragraphs");
+                prompt.AppendLine("- Use outline phrasing as the basis for sentences");
+                prompt.AppendLine("- Treat outline descriptions as content to elaborate or reword");
+                prompt.AppendLine("");
+                prompt.AppendLine("INSTEAD DO:");
+                prompt.AppendLine("- Interpret outline points as DRAMATIC GOALS to achieve through original scenes");
+                prompt.AppendLine("- Create completely new dialogue, action, and descriptions that fulfill the plot objectives");
+                prompt.AppendLine("- Invent specific character interactions and detailed scenes that make the outlined events happen");
+                prompt.AppendLine("- Transform plot summaries into vivid, engaging narrative scenes with your own fresh prose");
+                prompt.AppendLine("");
+                prompt.AppendLine("=== RESPONSE FORMAT (STRUCTURED JSON) ===");
+                prompt.AppendLine("You MUST respond using structured JSON format for all editing operations.");
+                prompt.AppendLine("This ensures precise, parseable output with no formatting ambiguity.");
+                prompt.AppendLine("");
+                prompt.AppendLine("You may optionally wrap the JSON in markdown code blocks for readability if you prefer:");
+                prompt.AppendLine("");
+                prompt.AppendLine("JSON SCHEMA:");
+                prompt.AppendLine(@"{");
+                prompt.AppendLine(@"  ""response_type"": ""text"" | ""edits"",");
+                prompt.AppendLine(@"  ""text"": ""..."",          // Use when answering questions or providing analysis");
+                prompt.AppendLine(@"  ""commentary"": ""..."",    // Optional: brief explanation before edits");
+                prompt.AppendLine(@"  ""edits"": [");
+                prompt.AppendLine(@"    {");
+                prompt.AppendLine(@"      ""operation"": ""replace"" | ""insert"" | ""delete"" | ""generate"",");
+                prompt.AppendLine(@"      ""original"": ""exact text to find"",     // For replace/delete");
+                prompt.AppendLine(@"      ""changed"": ""new text"",                // For replace");
+                prompt.AppendLine(@"      ""anchor"": ""text to insert after"",    // For insert");
+                prompt.AppendLine(@"      ""new"": ""content to add/generate"",    // For insert/generate");
+                prompt.AppendLine(@"      ""explanation"": ""optional reason""      // Optional");
+                prompt.AppendLine(@"    }");
+                prompt.AppendLine(@"  ]");
+                prompt.AppendLine(@"}");
+                prompt.AppendLine("");
+                prompt.AppendLine("EXAMPLE RESPONSES:");
+                prompt.AppendLine("");
+                prompt.AppendLine("For answering questions or providing analysis:");
+                prompt.AppendLine(@"{");
+                prompt.AppendLine(@"  ""response_type"": ""text"",");
+                prompt.AppendLine(@"  ""text"": ""Based on your style guide, consider showing John's emotional state through physical actions rather than internal monologue...""");
+                prompt.AppendLine(@"}");
+                prompt.AppendLine("");
+                prompt.AppendLine("For making revisions:");
+                prompt.AppendLine(@"{");
+                prompt.AppendLine(@"  ""response_type"": ""edits"",");
+                prompt.AppendLine(@"  ""commentary"": ""Tightening dialogue and improving character voice"",");
+                prompt.AppendLine(@"  ""edits"": [");
+                prompt.AppendLine(@"    {");
+                prompt.AppendLine(@"      ""operation"": ""replace"",");
+                prompt.AppendLine(@"      ""original"": ""He walked to the door slowly and opened it."",");
+                prompt.AppendLine(@"      ""changed"": ""He strode to the door and yanked it open.""");
+                prompt.AppendLine(@"    },");
+                prompt.AppendLine(@"    {");
+                prompt.AppendLine(@"      ""operation"": ""insert"",");
+                prompt.AppendLine(@"      ""anchor"": ""He strode to the door and yanked it open."",");
+                prompt.AppendLine(@"      ""new"": ""The hinges screamed in protest, echoing his frustration.""");
+                prompt.AppendLine(@"    },");
+                prompt.AppendLine(@"    {");
+                prompt.AppendLine(@"      ""operation"": ""delete"",");
+                prompt.AppendLine(@"      ""original"": ""This sentence is redundant and should be removed.""");
+                prompt.AppendLine(@"    }");
+                prompt.AppendLine(@"  ]");
+                prompt.AppendLine(@"}");
+                prompt.AppendLine("");
+                prompt.AppendLine("For generating new content:");
+                prompt.AppendLine(@"{");
+                prompt.AppendLine(@"  ""response_type"": ""edits"",");
+                prompt.AppendLine(@"  ""edits"": [");
+                prompt.AppendLine(@"    {");
+                prompt.AppendLine(@"      ""operation"": ""generate"",");
+                prompt.AppendLine(@"      ""new"": ""## Chapter 7\n\nJohn stepped into the dimly lit warehouse...""");
+                prompt.AppendLine(@"    }");
+                prompt.AppendLine(@"  ]");
+                prompt.AppendLine(@"}");
+                prompt.AppendLine("");
+                prompt.AppendLine("CRITICAL SCOPE ANALYSIS - Before selecting original text, always ask:");
+                prompt.AppendLine("- Does this change affect character mood, tone, or emotional state in subsequent sentences?");
+                prompt.AppendLine("- Would the next paragraph become inconsistent or awkward after this revision?");
+                prompt.AppendLine("- Is this part of a larger dialogue exchange, action sequence, or emotional moment?");
+                prompt.AppendLine("- Does the revision logic continue beyond the obvious problem text?");
+                prompt.AppendLine("- Are there related sentences that reference or build on the content being revised?");
+                prompt.AppendLine("");
+                prompt.AppendLine("COMPLETE REVISION UNITS - When selecting original text, include ALL affected content:");
+                prompt.AppendLine("- Complete dialogue exchanges if tone or speaker attitude changes");
+                prompt.AppendLine("- Full action sequences that share the same emotional or physical momentum");
+                prompt.AppendLine("- Any subsequent sentences that would sound disconnected after the revision");
+                prompt.AppendLine("- Related paragraphs that reference or continue the revised content's logic");
+                prompt.AppendLine("- Emotional transitions that span multiple sentences or paragraphs");
+                prompt.AppendLine("");
+                prompt.AppendLine("SCOPE EXAMPLES:");
+                prompt.AppendLine("BAD - Incomplete scope: Only revises \"John slammed the door angrily\" but leaves \"He smiled warmly at Sarah\" creating emotional inconsistency");
+                prompt.AppendLine("GOOD - Complete scope: Revises both sentences together to maintain emotional continuity throughout the character's actions");
+                prompt.AppendLine("");
+                prompt.AppendLine("CRITICAL REVISION REQUIREMENTS:");
+                prompt.AppendLine("- Original text and Insert after must ONLY come from CURRENT CONTENT section");
+                prompt.AppendLine("- NEVER suggest changes to text from: Outline, Rules, Character Profiles, or Style Guide");
+                prompt.AppendLine("- Reference materials are for GUIDANCE only - they are NOT content to be edited");
+                prompt.AppendLine("- Only the actual story narrative in CURRENT CONTENT should be revised or have insertions");
+                prompt.AppendLine("- If you see outline text, rules text, or character profile text - these are READ-ONLY references");
+                prompt.AppendLine("");
+                prompt.AppendLine("CRITICAL TEXT PRECISION REQUIREMENTS:");
+                prompt.AppendLine("⚠️ WARNING: The 'original' and 'anchor' fields MUST be PERFECT, CHARACTER-FOR-CHARACTER matches.");
+                prompt.AppendLine("The system uses EXACT TEXT MATCHING. Even a single character difference will cause failure.");
+                prompt.AppendLine("");
+                prompt.AppendLine("MANDATORY RULES FOR 'original' and 'anchor' fields:");
+                prompt.AppendLine("1. EXACT COPY: Copy the text EXACTLY as it appears - byte-for-byte identical");
+                prompt.AppendLine("2. NO CORRECTIONS: Do NOT fix typos, grammar, or punctuation in the original text");
+                prompt.AppendLine("3. PRESERVE JSON: Use \\n for line breaks, \\\" for quotes within strings");
+                prompt.AppendLine("4. NO NORMALIZATION: Keep inconsistent spacing, double spaces, odd breaks as-is");
+                prompt.AppendLine("5. NO PARAPHRASING: Do NOT rewrite or summarize - copy verbatim only");
+                prompt.AppendLine("6. COMPLETE UNITS: Include complete sentences ending with proper punctuation");
+                prompt.AppendLine("7. SUFFICIENT LENGTH: Include 20-50+ words for unique identification");
+                prompt.AppendLine("8. VALID JSON: Ensure all JSON is properly formatted and escapable");
+                prompt.AppendLine("");
+                prompt.AppendLine("COMMON JSON FORMATTING MISTAKES TO AVOID:");
+                prompt.AppendLine("❌ BAD: Fixing typos in original (\"he walked\" when content has \"he walkd\")");
+                prompt.AppendLine("✅ GOOD: Copy typos exactly (\"he walkd\" even though it's wrong)");
+                prompt.AppendLine("");
+                prompt.AppendLine("❌ BAD: Unescaped quotes (\"He said \"hello\" to her\")");
+                prompt.AppendLine("✅ GOOD: Escaped quotes (\"He said \\\"hello\\\" to her\")");
+                prompt.AppendLine("");
+                prompt.AppendLine("❌ BAD: Literal line breaks in JSON string");
+                prompt.AppendLine("✅ GOOD: Escaped line breaks (\"First line\\nSecond line\")");
+                prompt.AppendLine("");
+                prompt.AppendLine("❌ BAD: Partial sentence (\"John walked to the\")");
+                prompt.AppendLine("✅ GOOD: Complete sentence (\"John walked to the door and opened it.\")");
+                prompt.AppendLine("");
+                prompt.AppendLine("TEXT MATCHING VALIDATION:");
+                prompt.AppendLine("- Mentally perform CTRL+F search - would your text be found exactly?");
+                prompt.AppendLine("- If you had to retype it from memory, you're doing it wrong - you must copy");
+                prompt.AppendLine("- Every character matters: spaces, punctuation, capitalization, line breaks");
+                prompt.AppendLine("- If match fails, user cannot apply the revision and must manually edit");
+                prompt.AppendLine("");
+                prompt.AppendLine("⚠️ JSON FORMATTING REQUIREMENTS:");
+                prompt.AppendLine("- ALWAYS output valid, parseable JSON");
+                prompt.AppendLine("- Properly escape quotes and newlines within JSON strings");
+                prompt.AppendLine("- For new chapters, use: {\"response_type\": \"edits\", \"edits\": [{\"operation\": \"generate\", \"new\": \"## Chapter 7\\n\\nContent...\"}]}");
+                prompt.AppendLine("- Chapter headers MUST use ## (double hashtags), never single #");
+                prompt.AppendLine("- If responding with multiple operations, put them all in the same \"edits\" array");
+                prompt.AppendLine("=== RESPONSE APPROACH FOR QUESTIONS ===");
+                prompt.AppendLine("TARGETED QUESTIONS: For specific, direct questions (e.g., 'How should this character react?', 'What's wrong with this dialogue?', 'Should I add more description here?'):");
+                prompt.AppendLine("- Provide a focused, direct answer without comprehensive story analysis");
+                prompt.AppendLine("- Address exactly what the user asked");
+                prompt.AppendLine("- Reference relevant style guide or rules points if helpful");
+                prompt.AppendLine("- Keep response concise and actionable");
+                prompt.AppendLine("- No need for full story structure or thematic analysis unless specifically requested");
+                prompt.AppendLine("");
+                prompt.AppendLine("COMPREHENSIVE ANALYSIS: Provide thorough, detailed analysis when user requests:");
+                prompt.AppendLine("- Full story analysis: 'Analyze entire story', 'Overall story structure', 'Complete story review'");
+                prompt.AppendLine("- Chapter assessment: 'How does Chapter X look?', 'What do you think of this chapter?', 'Is this chapter working?'");
+                prompt.AppendLine("- Scene evaluation: 'How's this scene?', 'Does this work?', 'Feedback on this part'");
+                prompt.AppendLine("- Or when the user clearly asks for evaluation, assessment, or detailed feedback");
+                prompt.AppendLine("- For these requests, provide thorough analysis with specific examples and actionable suggestions");
+                prompt.AppendLine("");
+                prompt.AppendLine("When providing analysis or answering questions:");
+                prompt.AppendLine("- For targeted questions: Be direct and concise");
+                prompt.AppendLine("- For assessment/evaluation requests: Be thorough and detailed");
+                prompt.AppendLine("- Always point to specific parts of materials (Style Guide, Rules, Outline, Current Content) if relevant");
+                prompt.AppendLine("");
+                prompt.AppendLine("REVISION FOCUS: When providing revisions or insertions, be concise:");
+                prompt.AppendLine("- Provide the revision/insertion blocks with minimal explanation");
+                prompt.AppendLine("- Only add commentary if the user specifically asks for reasoning or analysis");
+                prompt.AppendLine("- Focus on the changes themselves, not lengthy explanations");
+                prompt.AppendLine("- If multiple revisions are needed, provide them cleanly in sequence");
+                prompt.AppendLine("- Let the revised text speak for itself");
+                prompt.AppendLine("");
+                prompt.AppendLine("When generating new content:");
+                prompt.AppendLine("- Follow your style guide completely - it contains all writing guidance you need");
+                prompt.AppendLine("- Write original narrative prose, never expand or copy outline text");
+                prompt.AppendLine("- For new chapters, ALWAYS use the format: \"## Chapter [number]\" (e.g., \"## Chapter 1\", \"## Chapter 2\")");
+                prompt.AppendLine("- NEVER use single # for chapter headers - this breaks navigation and parsing");
+                prompt.AppendLine("");
+                prompt.AppendLine("=== ORIGINALITY & PLAGIARISM AVOIDANCE ===");
+                prompt.AppendLine("CRITICAL: Create entirely original fiction prose that avoids plagiarism from EXTERNAL published works:");
+                prompt.AppendLine("- Generate fresh, unique narrative voice and storytelling approach");
+                prompt.AppendLine("- Avoid copying or closely mimicking scenes, dialogue, or plot elements from published books, movies, or other media");
+                prompt.AppendLine("- Create original character interactions, descriptions, and narrative sequences");
+                prompt.AppendLine("- Develop unique phrasing, metaphors, and stylistic elements");
+                prompt.AppendLine("- Draw inspiration from story structure and themes without copying specific content from external sources");
+                prompt.AppendLine("- Ensure all dialogue, action sequences, and descriptions are your own original creation");
+                prompt.AppendLine("");
+                prompt.AppendLine("IMPORTANT: ALWAYS use your PROJECT REFERENCE MATERIALS (Style Guide, Rules, Character Profiles, Outline):");
+                prompt.AppendLine("- Character Profiles: Use these to maintain consistency in dialogue patterns, personality traits, and relationships");
+                prompt.AppendLine("- Rules: Follow universe facts, character abilities, and world-building constraints");
+                prompt.AppendLine("- Style Guide: Adhere to the established writing style and narrative approach");
+                prompt.AppendLine("- Outline: Achieve the planned story beats and plot objectives through original scenes");
+                prompt.AppendLine("- Reference materials are for GUIDANCE and CONSISTENCY, not content to avoid");
+                prompt.AppendLine("");
+                prompt.AppendLine("- Treat outline points as EVENTS/OCCURRENCES to write about, not content to elaborate");
+                prompt.AppendLine("- Create scenes showing these events happening through original dialogue, actions, and narrative");
             }
-
-            // Style guide is now handled above - no need for duplicate section
-
-            // Add current content (potentially a snippet)
-            // The BuildContextPrompt method is responsible for adding the === CURRENT CONTENT === section with relevant fiction text.
-            // No need to add _fictionContent directly here if BuildContextPrompt handles it before this system message is finalized for the API call.
-            // However, if this BuildFictionPrompt is the *sole* source of the system message that includes current content, it should be here.
-            // Based on ProcessRequest calling UpdateContentAndInitialize (which calls this) and then BuildContextPrompt for user message,
-            // it seems the system message generated here might be more static, with context added per user turn.
-            // For clarity, let's assume the system prompt might be used as a base and could benefit from seeing the full content context if no other mechanism provides it.
-            // Re-adding a general instruction about current content if it's not empty.
-            if (!string.IsNullOrEmpty(_fictionContent))
-            {
-                prompt.AppendLine("\n=== CURRENT STORY CONTENT ===");
-                prompt.AppendLine("This is the story text being worked on. Follow the style guide and core rules when working with this content.");
-            }
-
-            // Add response format instructions
-            prompt.AppendLine(@"
-
-=== CRITICAL OUTLINE USAGE INSTRUCTIONS ===
-⚠️ OUTLINE HANDLING: The outline provides STRUCTURAL GUIDANCE only. 
-
-DO NOT:
-- Copy outline bullet points into your prose
-- Expand outline text directly into paragraphs
-- Use outline phrasing as the basis for sentences
-- Treat outline descriptions as content to elaborate
-
-INSTEAD:
-- Use outline points as dramatic moments to CREATE
-- Develop your own original dialogue and descriptions  
-- Create fresh narrative prose that ACHIEVES the outlined goals
-- Invent specific details, conversations, and actions that fulfill the outline's purpose
-
-=== RESPONSE FORMAT ===
-When suggesting specific text changes, you MUST use EXACTLY this format:
-
-For REVISIONS (replacing existing text):
-```
-Original text:
-[paste the exact text to be replaced]
-```
-
-```
-Changed to:
-[your new version of the text]
-```
-
-For INSERTIONS (adding new text after existing text):
-```
-Insert after:
-[paste the exact anchor text to insert after]
-```
-
-```
-New text:
-[the new content to insert]
-```
-
-If you are generating new content (e.g., continuing a scene, writing a new paragraph), simply provide the new text directly without the revision or insertion format.
-If providing analysis, suggestions, or answering questions, use clear, concise language. Point to specific parts of the provided materials (Style Guide, Rules, Outline, Story Content) if relevant.
-
-**REVISION FOCUS**: When providing revisions or insertions, be concise:
-- Provide the revision/insertion blocks with minimal explanation
-- Only add commentary if the user specifically asks for reasoning or analysis
-- Focus on the changes themselves, not lengthy explanations
-- If multiple revisions are needed, provide them cleanly in sequence
-- Let the revised text speak for itself
-
-When generating new content:
-- Follow your style guide completely - it contains all writing guidance you need
-- Write original narrative prose, never expand or copy outline text
-- Treat outline points as EVENTS/OCCURRENCES to write about, not content to elaborate
-- Create scenes showing these events happening through original dialogue, actions, and narrative");
-
-            // Removed hardcoded narrative rules - relying on style guide content instead
 
             return prompt.ToString();
         }
@@ -825,10 +1180,13 @@ When generating new content:
                         // Process the request with the AI
                         var response = await ExecutePrompt(contextPrompt);
                         
-                        // Add the response to memory
+                        // Process the response for potential chapter follow-up questions
+                        var processedResponse = _chapterFollowUpService.ProcessResponse(response, request);
+                        
+                        // Add the original response to memory (not the processed one with follow-up)
                         AddAssistantMessage(response);
                         
-                        return response;
+                        return processedResponse;
                     }
                     catch (Exception ex) when (ex.Message.Contains("overloaded_error") && retryCount < maxRetries)
                     {
@@ -870,8 +1228,43 @@ When generating new content:
             if (!string.IsNullOrEmpty(_fictionContent))
             {
                 var relevantContent = GetRelevantContent(_fictionContent, request);
+                
+                // Check if this is full story mode to avoid adding chapter-specific instructions
+                bool needsFullStory = FULL_STORY_KEYWORDS.Any(keyword => 
+                    request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                
                 prompt.AppendLine("\n=== CURRENT CONTENT ===");
-                prompt.AppendLine("This is the specific portion of the story we're working with. Focus your editing, suggestions, and content generation on this section, while maintaining consistency with the overall rules and style defined in the system message. If this is a full story view, consider the broader narrative structure in your response.");
+                prompt.AppendLine("This is the STORY NARRATIVE you're working with - this is the ONLY editable content.");
+                prompt.AppendLine("");
+                
+                // Add explicit editing workspace boundaries for chapter-based editing
+                if (!needsFullStory)
+                {
+                    prompt.AppendLine("🚨 CRITICAL: EDITING WORKSPACE BOUNDARIES 🚨");
+                    prompt.AppendLine("");
+                    prompt.AppendLine("WHAT YOU CAN EDIT:");
+                    prompt.AppendLine("✅ CURRENT CHAPTER section ONLY - This is your editing workspace");
+                    prompt.AppendLine("✅ The actual story prose, dialogue, descriptions, and narrative");
+                    prompt.AppendLine("");
+                    prompt.AppendLine("WHAT YOU CANNOT EDIT (READ-ONLY REFERENCE MATERIALS):");
+                    prompt.AppendLine("❌ Style Guide (in system message) - These are writing rules, NOT story content");
+                    prompt.AppendLine("❌ Core Rules (in system message) - Universe facts, NOT story content");
+                    prompt.AppendLine("❌ Character Profiles (in system message) - Reference info, NOT story content");
+                    prompt.AppendLine("❌ Outline (in system message) - Plot structure, NOT story content");
+                    prompt.AppendLine("❌ PREVIOUS CHAPTER sections (below) - Context only, already written");
+                    prompt.AppendLine("❌ NEXT CHAPTER sections (below) - Context only, already written");
+                    prompt.AppendLine("");
+                    prompt.AppendLine("⚠️ VERIFICATION BEFORE EACH EDIT:");
+                    prompt.AppendLine("Before selecting 'original' or 'anchor' text, ask yourself:");
+                    prompt.AppendLine("1. Is this text from the === CURRENT CHAPTER === section? (If no, STOP)");
+                    prompt.AppendLine("2. Is this story narrative prose, dialogue, or description? (If no, STOP)");
+                    prompt.AppendLine("3. Is this from outline, rules, style guide, or character profiles? (If yes, STOP)");
+                    prompt.AppendLine("");
+                    prompt.AppendLine("If you want to suggest outline changes, respond with 'response_type: text' and explain.");
+                    prompt.AppendLine("NEVER use 'original' text from outline, rules, profiles, or other chapters.");
+                    prompt.AppendLine("");
+                }
+                
                 prompt.AppendLine(relevantContent);
             }
 
@@ -890,6 +1283,18 @@ When generating new content:
             // Check if this is a request for full story analysis
             bool needsFullStory = FULL_STORY_KEYWORDS.Any(keyword => 
                 request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                
+            // BULLY FIX: Add debug logging for keyword detection
+            if (needsFullStory)
+            {
+                var matchedKeyword = FULL_STORY_KEYWORDS.First(keyword => 
+                    request.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+                System.Diagnostics.Debug.WriteLine($"🔍 FULL STORY MODE triggered by keyword: '{matchedKeyword}' in request: '{request.Substring(0, Math.Min(100, request.Length))}...'");
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"✏️  CHAPTER MODE: No full story keywords detected in request: '{request.Substring(0, Math.Min(100, request.Length))}...'");
+            }
 
             // OPTIMIZATION FOR LARGE FILES ON INITIAL/GENERIC REQUEST:
             // If the request is generic (empty/whitespace) and the file is large, 
@@ -933,13 +1338,30 @@ When generating new content:
             {
                 if (needsFullStory)
                 {
-                    System.Diagnostics.Debug.WriteLine($"Returning full story content for analysis. Triggered by keyword in request: {request}");
+                    System.Diagnostics.Debug.WriteLine($"🔍 FULL STORY MODE: Returning complete story content for analysis. Triggered by keyword in request: '{request}'");
+                    System.Diagnostics.Debug.WriteLine($"   Story length: {content.Length} characters");
+                    System.Diagnostics.Debug.WriteLine($"   Using reduced reference materials in system prompt to prevent 400 errors");
+                    
+                    // BULLY FIX: Add token safety check to prevent 400 errors
+                    int estimatedTokens = EstimateTokenCount(content);
+                    if (estimatedTokens > 180000) // Conservative limit to prevent overflow
+                    {
+                        System.Diagnostics.Debug.WriteLine($"⚠️  WARNING: Full story content ({estimatedTokens} tokens) may cause token overflow!");
+                        System.Diagnostics.Debug.WriteLine($"   Falling back to chapter-based analysis to prevent 400 errors");
+                        
+                        // Fall through to chapter-based analysis instead of risking token overflow
+                        needsFullStory = false;
+                    }
+                    else
+                    {
+                        return content;
+                    }
                 }
                 else
                 {
-                    System.Diagnostics.Debug.WriteLine($"Returning full story content because it's small ({content.Length} characters < 2000)");
+                    System.Diagnostics.Debug.WriteLine($"📄 SMALL FILE: Returning full story content because it's small ({content.Length} characters < 2000)");
+                    return content;
                 }
-                return content;
             }
 
             // Split content into lines to find chapter boundaries
@@ -1050,30 +1472,43 @@ When generating new content:
             // Build the content with context
             var result = new StringBuilder();
 
-            // Add a marker if we're not starting from the beginning and there's a previous chapter
-            if (currentChapterIndex > 0 && chapterBoundaries.Count > 1)
+            // Add up to two previous chapters, if they exist
+            int numPreviousToInclude = Math.Min(2, currentChapterIndex);
+            if (numPreviousToInclude > 0)
             {
-                result.AppendLine("... (Previous content omitted) ...");
-                
-                // Add the entire previous chapter
-                var previousChapterStart = chapterBoundaries[currentChapterIndex - 1];
-                var previousChapterEnd = chapterBoundaries[currentChapterIndex] - 1;
-                if (previousChapterEnd >= previousChapterStart)
+                // Add marker if there are more chapters prior to the ones we'll include
+                if (currentChapterIndex > numPreviousToInclude)
                 {
-                    // Get the complete previous chapter content
-                    var previousChapterContent = string.Join("\n", 
-                        lines.Skip(previousChapterStart)
-                             .Take(previousChapterEnd - previousChapterStart + 1));
-                    
-                    if (!string.IsNullOrEmpty(previousChapterContent))
+                    result.AppendLine("... (Previous content omitted) ...");
+                }
+
+                // Include in chronological order: farthest first, then nearest
+                for (int offset = numPreviousToInclude; offset >= 1; offset--)
+                {
+                    var prevIndex = currentChapterIndex - offset;
+                    var prevStart = chapterBoundaries[prevIndex];
+                    var prevEnd = chapterBoundaries[prevIndex + 1] - 1;
+
+                    if (prevEnd >= prevStart)
                     {
-                        result.AppendLine("=== PREVIOUS CHAPTER ===");
-                        result.AppendLine(previousChapterContent);
-                        System.Diagnostics.Debug.WriteLine($"Added complete previous chapter (lines {previousChapterStart}-{previousChapterEnd})");
+                        var prevContent = string.Join("\n",
+                            lines.Skip(prevStart)
+                                 .Take(prevEnd - prevStart + 1));
+
+                        if (!string.IsNullOrEmpty(prevContent))
+                        {
+                            result.AppendLine("=== PREVIOUS CHAPTER ===");
+                            result.AppendLine(prevContent);
+                            System.Diagnostics.Debug.WriteLine($"Added previous chapter index {prevIndex} (lines {prevStart}-{prevEnd})");
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Previous chapter index {prevIndex} was empty");
+                        }
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine("Previous chapter was empty");
+                        System.Diagnostics.Debug.WriteLine($"Invalid previous chapter range: {prevStart}-{prevEnd}");
                     }
                 }
             }
@@ -1090,7 +1525,8 @@ When generating new content:
                 return "Error: Invalid chapter boundary access";
             }
             
-            var chapterEnd = Math.Min(chapterBoundaries[currentChapterIndex + 1], lines.Length - 1);
+            // Exclude the next chapter boundary from current chapter (fix header duplication)
+            var chapterEnd = Math.Min(chapterBoundaries[currentChapterIndex + 1] - 1, lines.Length - 1);
             System.Diagnostics.Debug.WriteLine($"Current chapter spans lines {chapterStart}-{chapterEnd} (lines.Length={lines.Length})");
             
             // Get the complete current chapter content
@@ -1109,81 +1545,52 @@ When generating new content:
             if (!string.IsNullOrEmpty(currentChapterContent))
             {
                 result.AppendLine("\n=== CURRENT CHAPTER ===");
-                // Insert cursor position marker at the appropriate line
-                var currentChapterLines = currentChapterContent.Split('\n');
-                var cursorLineInChapter = currentLineIndex - chapterStart;
-                
-                System.Diagnostics.Debug.WriteLine($"Cursor marker calculation: currentLineIndex={currentLineIndex}, chapterStart={chapterStart}, cursorLineInChapter={cursorLineInChapter}, chapterLines.Length={currentChapterLines.Length}");
-                
-                // Ensure cursorLineInChapter is within bounds
-                cursorLineInChapter = Math.Max(0, Math.Min(cursorLineInChapter, currentChapterLines.Length - 1));
-                
-                System.Diagnostics.Debug.WriteLine($"Cursor marker position after bounds check: {cursorLineInChapter}");
-                
-                // Add the complete chapter content with cursor position marker
-                for (int i = 0; i < currentChapterLines.Length; i++)
-                {
-                    // If we're at the cursor line, add the cursor marker before the line
-                    if (i == cursorLineInChapter)
-                    {
-                        result.AppendLine("<<CURSOR POSITION>>");
-                    }
-                    
-                    // Safety check before accessing array
-                    if (i < currentChapterLines.Length)
-                    {
-                        result.AppendLine(currentChapterLines[i]);
-                    }
-                    else
-                    {
-                        System.Diagnostics.Debug.WriteLine($"❌ ERROR: Trying to access currentChapterLines[{i}] but length is {currentChapterLines.Length}");
-                        break;
-                    }
-                }
-                
-                System.Diagnostics.Debug.WriteLine($"✅ Added complete current chapter with cursor marker at line {cursorLineInChapter} relative to chapter start");
+                result.AppendLine(currentChapterContent);
+                System.Diagnostics.Debug.WriteLine($"✅ Added complete current chapter (no cursor marker included in output)");
             }
             else
             {
                 result.AppendLine("\n=== CURRENT CHAPTER ===");
-                result.AppendLine("<<CURSOR POSITION>>");
                 System.Diagnostics.Debug.WriteLine("Current chapter was empty");
             }
 
-            // Add next chapter if it exists
-            if (currentChapterIndex < chapterBoundaries.Count - 2)
+            // Add up to one subsequent chapter, if it exists
+            int maxNextAvailable = (chapterBoundaries.Count - 2) - currentChapterIndex; // number of chapters after current
+            int numNextToInclude = Math.Min(1, maxNextAvailable);
+            if (numNextToInclude > 0)
             {
-                var nextChapterStart = chapterBoundaries[currentChapterIndex + 1];
-                var nextChapterEnd = chapterBoundaries[currentChapterIndex + 2] - 1;
-                
-                System.Diagnostics.Debug.WriteLine($"Next chapter calculation: currentChapterIndex={currentChapterIndex}, boundaries.Count={chapterBoundaries.Count}");
-                System.Diagnostics.Debug.WriteLine($"Next chapter range: lines {nextChapterStart} to {nextChapterEnd}");
-                
-                if (nextChapterEnd >= nextChapterStart)
+                for (int offset = 1; offset <= numNextToInclude; offset++)
                 {
-                    // Get the complete next chapter content
-                    var nextChapterContent = string.Join("\n",
-                        lines.Skip(nextChapterStart)
-                             .Take(nextChapterEnd - nextChapterStart + 1));
-                    
-                    if (!string.IsNullOrEmpty(nextChapterContent))
+                    var nextStart = chapterBoundaries[currentChapterIndex + offset];
+                    var nextEnd = chapterBoundaries[currentChapterIndex + offset + 1] - 1;
+
+                    System.Diagnostics.Debug.WriteLine($"Next chapter offset {offset} range: lines {nextStart} to {nextEnd}");
+
+                    if (nextEnd >= nextStart)
                     {
-                        result.AppendLine("\n=== NEXT CHAPTER ===");
-                        result.AppendLine(nextChapterContent);
-                        System.Diagnostics.Debug.WriteLine($"✅ Added complete next chapter (lines {nextChapterStart}-{nextChapterEnd})");
+                        var nextContent = string.Join("\n",
+                            lines.Skip(nextStart)
+                                 .Take(nextEnd - nextStart + 1));
+
+                        if (!string.IsNullOrEmpty(nextContent))
+                        {
+                            result.AppendLine("\n=== NEXT CHAPTER ===");
+                            result.AppendLine(nextContent);
+                            System.Diagnostics.Debug.WriteLine($"✅ Added next chapter offset {offset} (lines {nextStart}-{nextEnd})");
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"❌ Next chapter offset {offset} was empty");
+                        }
                     }
                     else
                     {
-                        System.Diagnostics.Debug.WriteLine("❌ Next chapter was empty");
+                        System.Diagnostics.Debug.WriteLine($"❌ Invalid next chapter range for offset {offset}: {nextStart} to {nextEnd}");
                     }
                 }
-                else
-                {
-                    System.Diagnostics.Debug.WriteLine($"❌ Invalid next chapter range: {nextChapterStart} to {nextChapterEnd}");
-                }
-                
-                // Add marker if there are more chapters after this
-                if (currentChapterIndex < chapterBoundaries.Count - 3)
+
+                // Add marker if there are more chapters after the ones included
+                if (maxNextAvailable > numNextToInclude)
                 {
                     result.AppendLine("\n... (Subsequent content omitted) ...");
                     System.Diagnostics.Debug.WriteLine("Added marker for subsequent content");
@@ -1471,4 +1878,4 @@ When generating new content:
             return "No chapter expectations available.";
         }
     }
-} 
+}

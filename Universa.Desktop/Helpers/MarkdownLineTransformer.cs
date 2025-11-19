@@ -13,8 +13,9 @@ namespace Universa.Desktop.Helpers
     public class MarkdownLineTransformer : DocumentColorizingTransformer
     {
         private static readonly Regex HeaderRegex = new Regex(@"^(#{1,6})\s+(.*)$", RegexOptions.Compiled);
-        private static readonly Regex BoldRegex = new Regex(@"\*\*([^*]+)\*\*|__([^_]+)__", RegexOptions.Compiled);
-        private static readonly Regex ItalicRegex = new Regex(@"\*([^*]+)\*|_([^_]+)_", RegexOptions.Compiled);
+        // Updated regex patterns for better bold/italic handling
+        private static readonly Regex BoldRegex = new Regex(@"\*\*(?=\S)([^*]|\*(?!\*))+(?<=\S)\*\*|__(?=\S)([^_]|_(?!_))+(?<=\S)__", RegexOptions.Compiled);
+        private static readonly Regex ItalicRegex = new Regex(@"(?<![\*\\])\*(?=\S)([^*])+(?<=\S)\*(?!\*)|(?<![_\\])_(?=\S)([^_])+(?<=\S)_(?!_)", RegexOptions.Compiled);
         private static readonly Regex CodeRegex = new Regex(@"`([^`]+)`", RegexOptions.Compiled);
         private static readonly Regex LinkRegex = new Regex(@"\[([^\]]*)\]\(([^)]*)\)", RegexOptions.Compiled);
         
@@ -34,15 +35,45 @@ namespace Universa.Desktop.Helpers
             var match = HeaderRegex.Match(lineText);
             if (match.Success)
             {
-                var level = match.Groups[1].Value.Length;
-                var brush = GetHeaderBrush(level);
-                var fontSize = GetHeaderFontSize(level);
+                var lineStartOffset = line.Offset;
+                var headerLevel = match.Groups[1].Value.Length;
                 
-                // Color the entire header line
-                ChangeLinePart(line.Offset, line.EndOffset, element =>
+                // Apply different colors and sizes based on header level
+                Color headerColor;
+                double fontSize = 12;
+                
+                switch (headerLevel)
                 {
-                    element.TextRunProperties.SetForegroundBrush(brush);
-                    element.TextRunProperties.SetFontRenderingEmSize(fontSize);
+                    case 1:
+                        headerColor = Color.FromRgb(46, 134, 171); // #2E86AB
+                        fontSize = 18;
+                        break;
+                    case 2:
+                        headerColor = Color.FromRgb(162, 59, 114); // #A23B72
+                        fontSize = 16;
+                        break;
+                    case 3:
+                        headerColor = Color.FromRgb(241, 143, 1); // #F18F01
+                        fontSize = 14;
+                        break;
+                    case 4:
+                        headerColor = Color.FromRgb(199, 62, 29); // #C73E1D
+                        fontSize = 12;
+                        break;
+                    case 5:
+                        headerColor = Color.FromRgb(89, 46, 131); // #592E83
+                        break;
+                    case 6:
+                        headerColor = Color.FromRgb(74, 74, 74); // #4A4A4A
+                        break;
+                    default:
+                        headerColor = Colors.Black;
+                        break;
+                }
+                
+                ChangeLinePart(lineStartOffset, line.EndOffset, element =>
+                {
+                    element.TextRunProperties.SetForegroundBrush(new SolidColorBrush(headerColor));
                     element.TextRunProperties.SetTypeface(new Typeface(
                         element.TextRunProperties.Typeface.FontFamily,
                         FontStyles.Normal,
@@ -56,7 +87,7 @@ namespace Universa.Desktop.Helpers
         {
             var lineStartOffset = line.Offset;
             
-            // Bold formatting
+            // Apply bold formatting first (higher precedence)
             foreach (Match match in BoldRegex.Matches(lineText))
             {
                 var startOffset = lineStartOffset + match.Index;
@@ -72,10 +103,10 @@ namespace Universa.Desktop.Helpers
                 });
             }
             
-            // Italic formatting
+            // Apply italic formatting, but skip areas already marked as bold
             foreach (Match match in ItalicRegex.Matches(lineText))
             {
-                // Skip if this match is inside a bold match
+                // Check if this italic match is inside a bold match
                 bool insideBold = false;
                 foreach (Match boldMatch in BoldRegex.Matches(lineText))
                 {
@@ -128,32 +159,6 @@ namespace Universa.Desktop.Helpers
                     element.TextRunProperties.SetTextDecorations(TextDecorations.Underline);
                 });
             }
-        }
-        
-        private Brush GetHeaderBrush(int level)
-        {
-            return level switch
-            {
-                1 => new SolidColorBrush(Color.FromRgb(46, 134, 171)),   // Blue
-                2 => new SolidColorBrush(Color.FromRgb(162, 59, 114)),   // Purple
-                3 => new SolidColorBrush(Color.FromRgb(241, 143, 1)),    // Orange
-                4 => new SolidColorBrush(Color.FromRgb(199, 62, 29)),    // Red
-                5 => new SolidColorBrush(Color.FromRgb(89, 46, 131)),    // Dark Purple
-                6 => new SolidColorBrush(Color.FromRgb(74, 74, 74)),     // Gray
-                _ => new SolidColorBrush(Colors.Black)
-            };
-        }
-        
-        private double GetHeaderFontSize(int level)
-        {
-            return level switch
-            {
-                1 => 18.0,
-                2 => 16.0,
-                3 => 14.0,
-                4 => 12.0,
-                _ => 11.0
-            };
         }
     }
 } 

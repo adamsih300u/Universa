@@ -48,9 +48,9 @@ namespace Universa.Desktop.Services
             System.Diagnostics.Debug.WriteLine($"Conversation: ~{conversationTokens} tokens");
             System.Diagnostics.Debug.WriteLine($"Total: ~{systemTokens + conversationTokens} tokens");
             
-            if (_currentProvider == AIProvider.Anthropic && (systemTokens + conversationTokens) > 100000)
+            if ((systemTokens + conversationTokens) > 180000)
             {
-                System.Diagnostics.Debug.WriteLine("⚠️ WARNING: Approaching Anthropic's token limit!");
+                System.Diagnostics.Debug.WriteLine("WARNING: Approaching 200K token response limit!");
             }
         }
 
@@ -235,15 +235,15 @@ namespace Universa.Desktop.Services
             // Process references
             foreach (var reference in references)
             {
-                switch (reference.Type.ToLowerInvariant())
+                switch (reference.Type)
                 {
-                    case "style":
+                    case FileReferenceType.Style:
                         styleLines.Add(reference.Content);
                         break;
-                    case "rules":
+                    case FileReferenceType.Rules:
                         rulesLines.Add(reference.Content);
                         break;
-                    case "outline":
+                    case FileReferenceType.Outline:
                         outlineLines.Add(reference.Content);
                         break;
                 }
@@ -334,29 +334,58 @@ New text:
 [the new content to insert]
 ```
 
-CRITICAL INSTRUCTIONS:
-1. If the user asks about a specific section (rules, outline, style, or story content), focus your response on that section
-2. When suggesting changes:
-   - For REVISIONS: Use 'Original text:' and 'Changed to:' labels
-   - For INSERTIONS: Use 'Insert after:' and 'New text:' labels
-   - Only use text from the CURRENT STORY CONTENT section for original/anchor text
+CRITICAL REVISION REQUIREMENTS:
+- Original text and Insert after must ONLY come from CURRENT STORY CONTENT section
+- NEVER suggest changes to text from: Outline, Rules, or Style Guide sections  
+- Reference materials are for GUIDANCE only - they are NOT content to be edited
+- Only the actual story narrative should be revised or have insertions
+
+CRITICAL INSTRUCTIONS FOR ANCHOR TEXT:
+1. COMPLETE ANCHOR TEXT: When choosing anchor text for insertions:
+   - Include the COMPLETE sentence, paragraph, or dialogue that ends BEFORE where you want to insert
+   - NEVER use partial sentences or incomplete phrases as anchor text
+   - ALWAYS end anchor text at natural boundaries: sentence endings (. ! ?), paragraph breaks (\n\n), or dialogue completions
+   - Include enough context (at least 10-20 words) to ensure unique identification
+
+2. ANCHOR TEXT EXAMPLES:
+   GOOD: He walked slowly to the door and opened it carefully.
+   BAD: He walked slowly to the door
+   
+   GOOD: She whispered, 'I think we should leave now.'
+   BAD: She whispered, 'I think we
+   
+   GOOD: The old castle stood majestically on the hill, its towers reaching toward the stormy sky.
+   BAD: The old castle stood majestically
+
+3. INSERTION PLACEMENT RULES:
+   - Insert new content AFTER complete thoughts, not in the middle
+   - Prefer inserting after paragraph endings for new scenes or major story beats
+   - Insert after sentence endings for additional details or character thoughts
+   - Insert after dialogue completions (including dialogue tags) for new speakers or actions
+
+4. CRITICAL VALIDATION:
+   - The anchor text must be an EXACT match of what appears in the content
+   - Include all punctuation, spacing, and formatting exactly as written
+   - Verify the anchor text ends at a logical stopping point
+   - Never suggest insertions that would interrupt dialogue, quotes, or mid-sentence
+
+5. CONTENT USAGE REQUIREMENTS:
    - Never suggest changes to text from previous messages or conversation history
    - Include the triple backticks exactly as shown
-   - The original/anchor text must be an exact match of what appears in the content
    - Do not include any other text between or inside the code blocks
    - Original text should include ALL original text being recommended for revision
    - Revisions should not match original text exactly, there must be something different
-   - Insertions should specify exactly WHERE the new content should be placed
-3. **REVISION FOCUS**: When providing revisions or insertions, be concise:
+
+6. REVISION FOCUS: When providing revisions or insertions, be concise:
    - Provide the revision blocks with minimal explanation
    - Only add commentary if the user specifically asks for reasoning
    - Focus on the changes themselves, not lengthy analysis
    - If multiple revisions are needed, provide them cleanly in sequence
-4. When providing guidance:
+
+7. GUIDANCE PRINCIPLES:
    - Be specific and reference relevant sections
    - Explain how your suggestions align with the rules and outline
    - Demonstrate understanding of the established style
-5. Always:
    - Match the established writing style
    - Keep the same tone and vocabulary level
    - Maintain consistent narrative perspective

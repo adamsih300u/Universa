@@ -123,7 +123,7 @@ namespace Universa.Desktop.Services
                 promptBuilder.AppendLine("CHAPTER OUTLINE OBJECTIVES (Transform into full scenes):");
                 promptBuilder.AppendLine(args.ChapterSummary);
                 promptBuilder.AppendLine();
-                promptBuilder.AppendLine("⚠️ CRITICAL: The above are GOALS to achieve through original narrative prose.");
+                promptBuilder.AppendLine("CRITICAL: The above are GOALS to achieve through original narrative prose.");
                 promptBuilder.AppendLine("DO NOT copy, expand, or paraphrase outline text. CREATE fresh dialogue, actions, and descriptions that fulfill these objectives.");
                 promptBuilder.AppendLine();
             }

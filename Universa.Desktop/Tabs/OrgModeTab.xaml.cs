@@ -32,12 +32,12 @@ namespace Universa.Desktop.Tabs
         
         private readonly OrgModeService _orgService;
         private readonly ConfigurationProvider _configProvider;
+        private readonly IOrgModeFoldingManager _foldingManager;
+        private readonly IOrgModeUIEventHandler _uiEventHandler;
         private string _filePath;
         private TextDocument _sourceDocument;
         private Timer _autoSaveTimer;
         private Timer _sourceParseTimer;
-        private FoldingManager _foldingManager;
-        private OrgModeFoldingStrategy _foldingStrategy;
         private bool _isDisposed;
         private bool _isProgrammaticallyChangingText;
         private OrgItem _selectedItem;
@@ -117,13 +117,17 @@ namespace Universa.Desktop.Tabs
             }
         }
 
-        public OrgModeTab(string filePath)
+        public OrgModeTab(string filePath, IOrgModeFoldingManager foldingManager = null, IOrgModeUIEventHandler uiEventHandler = null)
         {
             InitializeComponent();
             
             _filePath = filePath;
             _orgService = new OrgModeService(filePath);
             _configProvider = ConfigurationProvider.Instance; // Use the singleton instance
+            
+            // Use dependency injection or create default instances
+            _foldingManager = foldingManager ?? new OrgModeFoldingManager();
+            _uiEventHandler = uiEventHandler ?? new OrgModeUIEventHandler(_foldingManager);
             
             // Initialize AvalonEdit components
             InitializeSourceEditor();
@@ -145,6 +149,12 @@ namespace Universa.Desktop.Tabs
             // Subscribe to service events
             _orgService.ItemChanged += OnItemChanged;
             
+            // Subscribe to UI event handler events
+            _uiEventHandler.TodoStateCycleRequested += OnTodoStateCycleRequested;
+            _uiEventHandler.TagCycleRequested += OnTagCycleRequested;
+            _uiEventHandler.RefileRequested += OnRefileRequested;
+            _uiEventHandler.FoldedHeaderEnterRequested += OnFoldedHeaderEnterRequested;
+            
             // Subscribe to org state configuration changes for automatic updates
             Services.OrgStateConfigurationService.Instance.ConfigurationChanged += OnOrgStateConfigurationChanged;
 
@@ -161,32 +171,16 @@ namespace Universa.Desktop.Tabs
             // Set up the source editor
             SourceEditor.TextArea.TextView.LineTransformers.Add(new OrgModeInlineFormatter());
             
-            // Set up folding
-            _foldingStrategy = new OrgModeFoldingStrategy();
+            // Initialize folding manager
+            _foldingManager.Initialize(SourceEditor);
             
-            // Install folding manager now that document exists
-            if (_foldingManager == null)
-            {
-                _foldingManager = FoldingManager.Install(SourceEditor.TextArea);
-                _foldingStrategy.UpdateFoldings(_foldingManager, SourceEditor.Document);
-            }
-            
-            // Update foldings when document changes
-            SourceEditor.Document.TextChanged += (s, e) =>
-            {
-                if (_foldingManager != null)
-                {
-                    _foldingStrategy.UpdateFoldings(_foldingManager, SourceEditor.Document);
-                }
-            };
+            // Initialize UI event handler
+            _uiEventHandler.Initialize(SourceEditor);
             
             // Wire up events for auto-save and parsing
             _sourceDocument.TextChanged += SourceDocument_TextChanged;
             
-            // Set up keyboard shortcuts
-            SetupKeyboardShortcuts();
-            
-            // Apply settings when editor is loaded (for additional setup if needed)
+            // Apply settings when editor is loaded
             SourceEditor.Loaded += (s, e) => ApplyEditorSettings();
         }
         
@@ -194,402 +188,14 @@ namespace Universa.Desktop.Tabs
         {
             if (_isDisposed) return;
             
-            // Only install folding manager if it doesn't exist and we have a document
-            if (_foldingManager == null && SourceEditor.Document != null)
-            {
-                _foldingManager = FoldingManager.Install(SourceEditor.TextArea);
-                _foldingStrategy.UpdateFoldings(_foldingManager, SourceEditor.Document);
-            }
+            // Settings are now handled by the services
+            // Force update foldings if needed
+            _foldingManager?.ForceUpdateFoldings();
         }
         
-        private void SetupKeyboardShortcuts()
-        {
-            // Use PreviewKeyDown to intercept Enter before AvalonEdit's internal handlers
-            SourceEditor.TextArea.PreviewKeyDown += (s, e) =>
-            {
-                // Enter - Handle new lines, list items, and folded headers FIRST
-                if (e.Key == Key.Enter && !e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Shift))
-                {
-                    System.Diagnostics.Debug.WriteLine($"PreviewKeyDown: Enter key pressed at offset {SourceEditor.CaretOffset}");
-                    
-                    // First check if we're at the end of a folded header line
-                    if (HandleEnterOnFoldedHeader())
-                    {
-                        System.Diagnostics.Debug.WriteLine("HandleEnterOnFoldedHeader succeeded - handling enter");
-                        e.Handled = true;
-                        return;
-                    }
-                    
-                    // The automatic list creation was intrusive. It is now removed.
-                    // The user should have full control over when to create a list.
-                    
-                    System.Diagnostics.Debug.WriteLine("No special Enter handling - letting AvalonEdit handle it");
-                }
-
-                // Backspace - Prevent deletion of folded content
-                if (e.Key == Key.Back)
-                {
-                    System.Diagnostics.Debug.WriteLine($"Backspace key detected. Caret offset: {SourceEditor.CaretOffset}");
-                    var caretOffset = SourceEditor.CaretOffset;
-
-                    if (_foldingManager != null)
-                    {
-                        // Get the line the caret is on.
-                        var line = SourceEditor.Document.GetLineByOffset(caretOffset);
-
-                        // Check if the caret is at the visual end of the line's content.
-                        if (caretOffset == line.EndOffset - line.DelimiterLength)
-                        {
-                            // Now, find a folded section that starts exactly where this line ends (after the delimiter).
-                            var foldingToUnfold = _foldingManager.AllFoldings
-                                .FirstOrDefault(f => f.IsFolded && f.StartOffset == line.EndOffset);
-
-                            if (foldingToUnfold != null)
-                            {
-                                System.Diagnostics.Debug.WriteLine($"Backspace protection: Unfolding section {foldingToUnfold.StartOffset}-{foldingToUnfold.EndOffset} instead of deleting.");
-                                
-                                // Unfold the section instead of deleting it.
-                                foldingToUnfold.IsFolded = false;
-                                
-                                // Mark the event as handled to prevent the default backspace action.
-                                e.Handled = true;
-                            }
-                        }
-                    }
-                }
-            };
-            
-            // TAB on header to cycle folding (Emacs org-mode style)
-            SourceEditor.TextArea.KeyDown += (s, e) =>
-            {
-                // Ctrl+Shift+[ - Collapse all foldings
-                if (e.Key == Key.OemOpenBrackets && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control | ModifierKeys.Shift))
-                {
-                    CollapseAllFoldings();
-                    e.Handled = true;
-                    return;
-                }
-                
-                // Ctrl+Shift+] - Expand all foldings
-                if (e.Key == Key.OemCloseBrackets && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control | ModifierKeys.Shift))
-                {
-                    ExpandAllFoldings();
-                    e.Handled = true;
-                    return;
-                }
-                
-                // Ctrl+[ - Collapse current folding
-                if (e.Key == Key.OemOpenBrackets && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control))
-                {
-                    CollapseCurrentFolding();
-                    e.Handled = true;
-                    return;
-                }
-                
-                // Ctrl+] - Expand current folding
-                if (e.Key == Key.OemCloseBrackets && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control))
-                {
-                    ExpandCurrentFolding();
-                    e.Handled = true;
-                    return;
-                }
-                
-                // TAB on header to toggle folding (Emacs org-mode style)
-                if (e.Key == Key.Tab && !e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Shift))
-                {
-                    var line = SourceEditor.Document.GetLineByOffset(SourceEditor.CaretOffset);
-                    var lineText = SourceEditor.Document.GetText(line);
-                    
-                    // Check if cursor is on a header line
-                    if (System.Text.RegularExpressions.Regex.IsMatch(lineText, @"^\s*\*+\s+"))
-                    {
-                        TryToggleFoldingAtCursor(true);
-                        e.Handled = true;
-                    }
-                    // Check if cursor is on a list item - indent it
-                    else if (OrgModeListSupport.IndentListItem(SourceEditor, true))
-                    {
-                        e.Handled = true;
-                    }
-                    // For regular text lines, insert a tab character (consistent with MarkdownTab behavior)
-                    else
-                    {
-                        SourceEditor.Document.Insert(SourceEditor.CaretOffset, "    "); // 4 spaces like MarkdownTab
-                        e.Handled = true;
-                    }
-                }
-                else if (e.Key == Key.Tab && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Shift))
-                {
-                    // Shift+TAB cycles backwards through folding states or outdents lists
-                    var line = SourceEditor.Document.GetLineByOffset(SourceEditor.CaretOffset);
-                    var lineText = SourceEditor.Document.GetText(line);
-                    
-                    if (System.Text.RegularExpressions.Regex.IsMatch(lineText, @"^\s*\*+\s+"))
-                    {
-                        if (TryToggleFoldingAtCursor(false))
-                        {
-                            e.Handled = true;
-                        }
-                    }
-                    // Check if cursor is on a list item - outdent it
-                    else if (OrgModeListSupport.IndentListItem(SourceEditor, false))
-                    {
-                        e.Handled = true;
-                    }
-                    // For regular text lines, handle Shift+Tab (remove indentation)
-                    else
-                    {
-                        var caretOffset = SourceEditor.CaretOffset;
-                        var currentLine = SourceEditor.Document.GetLineByOffset(caretOffset);
-                        var currentLineText = SourceEditor.Document.GetText(currentLine);
-                        
-                        // Remove up to 4 spaces at the beginning of the line
-                        if (currentLineText.StartsWith("    "))
-                        {
-                            SourceEditor.Document.Remove(currentLine.Offset, 4);
-                        }
-                        else if (currentLineText.StartsWith("   "))
-                        {
-                            SourceEditor.Document.Remove(currentLine.Offset, 3);
-                        }
-                        else if (currentLineText.StartsWith("  "))
-                        {
-                            SourceEditor.Document.Remove(currentLine.Offset, 2);
-                        }
-                        else if (currentLineText.StartsWith(" "))
-                        {
-                            SourceEditor.Document.Remove(currentLine.Offset, 1);
-                        }
-                        e.Handled = true;
-                    }
-                }
-                
-                // Ctrl+Shift+C - Toggle checkbox (non-conflicting with copy)
-                if (e.Key == Key.C && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control | ModifierKeys.Shift))
-                {
-                    if (OrgModeListSupport.ToggleCheckbox(SourceEditor))
-                    {
-                        e.Handled = true;
-                    }
-                }
-                
-                // Ctrl+Shift++ for cycling TODO states
-                if ((e.Key == Key.OemPlus || e.Key == Key.Add) && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control | ModifierKeys.Shift))
-                {
-                    if (CycleTodoStateAtCursor())
-                    {
-                        e.Handled = true;
-                    }
-                    return;
-                }
-                
-                // Ctrl+W or Ctrl+R for refile item (org-mode standard)
-                if ((e.Key == Key.W || e.Key == Key.R) && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control))
-                {
-                    // CRITICAL FIX: Sync editor content to service before getting item
-                    // This ensures that any unsaved edits in the editor are reflected in the service's items
-                    try
-                    {
-                        // Use GetAwaiter().GetResult() for synchronous execution in UI context
-                        SyncSourceToService().GetAwaiter().GetResult();
-                        System.Diagnostics.Debug.WriteLine("GetOrgItemAtCursor: Synced editor content to service before refile");
-                    }
-                    catch (Exception syncEx)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"GetOrgItemAtCursor: Sync failed: {syncEx.Message}");
-                    }
-                    
-                    var orgItem = GetOrgItemAtCursor();
-                    if (orgItem != null)
-                    {
-                        // Set the selected item to the one at cursor, then refile
-                        SelectedItem = orgItem;
-                        RefileItem_Click(null, null); // UI operations must run on UI thread
-                        e.Handled = true;
-                    }
-                    else if (SelectedItem != null)
-                    {
-                        // Fallback to selected item
-                        RefileItem_Click(null, null); // UI operations must run on UI thread
-                        e.Handled = true;
-                    }
-                    return;
-                }
-
-                // Ctrl+Shift+T for tag cycling (similar to Emacs org-mode C-c C-q)
-                if (e.Key == Key.T && e.KeyboardDevice.Modifiers.HasFlag(ModifierKeys.Control | ModifierKeys.Shift))
-                {
-                    if (CycleTagsAtCursor())
-                    {
-                        e.Handled = true;
-                    }
-                    return;
-                }
-                
-
-            };
-        }
+        // Keyboard shortcuts now handled by IOrgModeUIEventHandler service
         
-        private bool TryToggleFoldingAtCursor(bool expand = true)
-        {
-            var line = SourceEditor.Document.GetLineByOffset(SourceEditor.CaretOffset);
-            var lineText = SourceEditor.Document.GetText(line);
-            
-            // Check if current line is a header
-            if (System.Text.RegularExpressions.Regex.IsMatch(lineText, @"^\s*\*+\s+"))
-            {
-                var folding = _foldingManager.GetFoldingsAt(line.Offset).FirstOrDefault();
-                if (folding != null)
-                {
-                    folding.IsFolded = expand ? !folding.IsFolded : false;
-                    return true;
-                }
-            }
-            return false;
-        }
-        
-        private void CollapseAllFoldings()
-        {
-            if (_foldingManager != null)
-            {
-                foreach (var folding in _foldingManager.AllFoldings)
-                {
-                    folding.IsFolded = true;
-                }
-            }
-        }
-        
-        private void ExpandAllFoldings()
-        {
-            if (_foldingManager != null)
-            {
-                foreach (var folding in _foldingManager.AllFoldings)
-                {
-                    folding.IsFolded = false;
-                }
-            }
-        }
-        
-        private void CollapseCurrentFolding()
-        {
-            if (_foldingManager != null && SourceEditor != null)
-            {
-                var folding = FindFoldingForCurrentPosition();
-                if (folding != null)
-                {
-                    folding.IsFolded = true;
-                }
-            }
-        }
-        
-        private void ExpandCurrentFolding()
-        {
-            if (_foldingManager != null && SourceEditor != null)
-            {
-                var folding = FindFoldingForCurrentPosition();
-                if (folding != null)
-                {
-                    folding.IsFolded = false;
-                }
-            }
-        }
-        
-        private FoldingSection FindFoldingForCurrentPosition()
-        {
-            if (_foldingManager == null || SourceEditor == null)
-                return null;
-                
-            var caretOffset = SourceEditor.CaretOffset;
-            var line = SourceEditor.Document.GetLineByOffset(caretOffset);
-            var lineText = SourceEditor.Document.GetText(line);
-            
-            // Check if current line is a header
-            if (System.Text.RegularExpressions.Regex.IsMatch(lineText, @"^\s*\*+\s+"))
-            {
-                // For header lines, find folding that starts after this line
-                var lineEnd = line.EndOffset;
-                return _foldingManager.AllFoldings
-                    .Where(f => f.StartOffset >= lineEnd && f.StartOffset <= lineEnd + 50) // Small tolerance
-                    .OrderBy(f => f.StartOffset)
-                    .FirstOrDefault();
-            }
-            else
-            {
-                // For non-header lines, find containing folding
-                return _foldingManager.GetFoldingsAt(caretOffset).FirstOrDefault() ??
-                       _foldingManager.AllFoldings
-                           .Where(f => f.StartOffset <= caretOffset && f.EndOffset >= caretOffset)
-                           .OrderByDescending(f => f.StartOffset) // Get the innermost folding
-                           .FirstOrDefault();
-            }
-        }
-        
-        /// <summary>
-        /// Handles Enter key when positioned at the end of a folded header line or after folded content
-        /// </summary>
-        private bool HandleEnterOnFoldedHeader()
-        {
-            if (_foldingManager == null || SourceEditor == null)
-            {
-                System.Diagnostics.Debug.WriteLine("HandleEnterOnFoldedHeader: No folding manager or editor");
-                return false;
-            }
-                
-            var caretOffset = SourceEditor.CaretOffset;
-            var line = SourceEditor.Document.GetLineByOffset(caretOffset);
-            var lineText = SourceEditor.Document.GetText(line);
-            
-            System.Diagnostics.Debug.WriteLine($"HandleEnterOnFoldedHeader: Caret at {caretOffset}, line text: '{lineText}'");
-            
-            // Check if current line is a header
-            var headerMatch = System.Text.RegularExpressions.Regex.Match(lineText, @"^(\s*)(\*+)\s+(.*)$");
-            if (!headerMatch.Success)
-            {
-                System.Diagnostics.Debug.WriteLine("HandleEnterOnFoldedHeader: Current line is not a header");
-                return false;
-            }
-            
-            System.Diagnostics.Debug.WriteLine($"HandleEnterOnFoldedHeader: FOUND HEADER! Stars: '{headerMatch.Groups[2].Value}' Title: '{headerMatch.Groups[3].Value}'");
-            
-            // Find any folded section that starts right after this line
-            var allFoldings = _foldingManager.AllFoldings.Where(f => f.IsFolded).ToList();
-            var lineEnd = line.EndOffset;
-            
-            var associatedFolding = allFoldings.FirstOrDefault(f => f.StartOffset == lineEnd);
-                
-            if (associatedFolding != null)
-            {
-                _isProgrammaticallyChangingText = true;
-                try
-                {
-                    System.Diagnostics.Debug.WriteLine($"HandleEnterOnFoldedHeader: Found associated folding {associatedFolding.StartOffset}-{associatedFolding.EndOffset}");
-
-                    // Unfold the region before inserting, to avoid AvalonEdit conflicts
-                    associatedFolding.IsFolded = false;
-
-                    // Insert a newline *after* the content that was folded
-                    var insertPosition = associatedFolding.EndOffset;
-                    SourceEditor.Document.Insert(insertPosition, Environment.NewLine);
-                    SourceEditor.CaretOffset = insertPosition + Environment.NewLine.Length;
-
-                    System.Diagnostics.Debug.WriteLine($"HandleEnterOnFoldedHeader: Inserted newline at {insertPosition}, cursor at {SourceEditor.CaretOffset}");
-                }
-                finally
-                {
-                    _isProgrammaticallyChangingText = false;
-                }
-                
-                // Manually trigger the updates now that the programmatic change is complete.
-                UpdateFolding();
-                _sourceParseTimer.Stop();
-                _sourceParseTimer.Start();
-
-                return true;
-            }
-            
-            System.Diagnostics.Debug.WriteLine("HandleEnterOnFoldedHeader: No folded section after this header");
-            return false;
-        }
+        // Folding methods now handled by IOrgModeFoldingManager service
 
         
         private void SourceDocument_TextChanged(object sender, EventArgs e)
@@ -602,20 +208,10 @@ namespace Universa.Desktop.Tabs
                 return;
             }
             
-            // Update folding
-            UpdateFolding();
-            
+            // Folding updates are now handled automatically by the folding manager
             // Debounce parsing
             _sourceParseTimer.Stop();
             _sourceParseTimer.Start();
-        }
-        
-        private void UpdateFolding()
-        {
-            if (_foldingManager != null && _foldingStrategy != null)
-            {
-                _foldingStrategy.UpdateFoldings(_foldingManager, _sourceDocument);
-            }
         }
 
         private async Task LoadFile()
@@ -690,6 +286,27 @@ namespace Universa.Desktop.Tabs
             IsModified = true;
             // Remove auto-save timer - let user control when to save
             // StartAutoSaveTimer();
+        }
+        
+        // Event handlers for UI events
+        private void OnTodoStateCycleRequested(object sender, TodoStateCycleEventArgs e)
+        {
+            e.Handled = CycleTodoStateAtCursor();
+        }
+        
+        private void OnTagCycleRequested(object sender, TagCycleEventArgs e)
+        {
+            e.Handled = CycleTagsAtCursor();
+        }
+        
+        private void OnRefileRequested(object sender, EventArgs e)
+        {
+            RefileItem_Click(null, null);
+        }
+        
+        private void OnFoldedHeaderEnterRequested(object sender, FoldedHeaderEnterEventArgs e)
+        {
+            e.Handled = _foldingManager.HandleEnterOnFoldedHeader();
         }
 
         private void StartAutoSaveTimer()
@@ -1341,14 +958,14 @@ namespace Universa.Desktop.Tabs
 
         // Event handlers for UI buttons (Save/SaveAs removed - now handled by MainWindow)
 
-        private void ExpandAll_Click(object sender, RoutedEventArgs e)
+                private void ExpandAll_Click(object sender, RoutedEventArgs e)
         {
-            ExpandAllFoldings();
+            _foldingManager?.ExpandAll();
         }
-
+        
         private void CollapseAll_Click(object sender, RoutedEventArgs e)
         {
-            CollapseAllFoldings();
+            _foldingManager?.CollapseAll();
         }
 
         private async void ShowLinksDialog(OrgItem item)
@@ -1489,6 +1106,15 @@ namespace Universa.Desktop.Tabs
                 // Unsubscribe from org state configuration changes
                 Services.OrgStateConfigurationService.Instance.ConfigurationChanged -= OnOrgStateConfigurationChanged;
                 
+                // Unsubscribe from UI event handler events
+                if (_uiEventHandler != null)
+                {
+                    _uiEventHandler.TodoStateCycleRequested -= OnTodoStateCycleRequested;
+                    _uiEventHandler.TagCycleRequested -= OnTagCycleRequested;
+                    _uiEventHandler.RefileRequested -= OnRefileRequested;
+                    _uiEventHandler.FoldedHeaderEnterRequested -= OnFoldedHeaderEnterRequested;
+                }
+                
                 // Dispose timers (auto-save timer removed, but handle gracefully if it exists)
                 if (_autoSaveTimer != null)
                 {
@@ -1503,13 +1129,10 @@ namespace Universa.Desktop.Tabs
                 _stateCyclingDebounceTimer?.Stop();
                 _stateCyclingDebounceTimer?.Dispose();
                 
-                // Uninstall folding manager
-                if (_foldingManager != null)
-                {
-                    FoldingManager.Uninstall(_foldingManager);
-                    _foldingManager = null;
-                }
+                // Dispose services
+                _foldingManager?.Dispose();
                 
+                SourceEditor = null;
                 _isDisposed = true;
             }
             catch (Exception ex)

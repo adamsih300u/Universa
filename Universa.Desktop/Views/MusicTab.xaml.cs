@@ -18,6 +18,7 @@ using System.IO;
 using System.Windows.Media;
 using System.Collections.Specialized;
 using System.Windows.Markup;
+using SubsonicTrackInfo = Universa.Desktop.Services.TrackInfo;
 using System.Text;
 using System.Windows.Controls.Primitives;  // For Thumb
 using System.Windows.Media.Animation;  // For animations
@@ -47,9 +48,9 @@ namespace Universa.Desktop.Views
         private readonly MediaPlayerManager _mediaPlayerManager;
         private MusicTabViewModel _viewModel;
         private UserControl _navigator;
-        private TrackInfo _currentTrack;
+        private SubsonicTrackInfo _currentTrack;
         private TimeSpan _currentPosition;
-        private List<TrackInfo> _trackList;
+        private List<SubsonicTrackInfo> _trackList;
         private bool _isDragging = false;
         private TreeViewItem _lastHighlightedItem;
         private Point _dragStartPoint;
@@ -81,7 +82,7 @@ namespace Universa.Desktop.Views
 
         public MusicTabViewModel ViewModel => _viewModel;
 
-        public TrackInfo CurrentTrack
+        public SubsonicTrackInfo CurrentTrack
         {
             get => _currentTrack;
             private set
@@ -101,7 +102,7 @@ namespace Universa.Desktop.Views
             }
         }
 
-        public List<TrackInfo> TrackList
+        public List<SubsonicTrackInfo> TrackList
         {
             get => _trackList;
             private set

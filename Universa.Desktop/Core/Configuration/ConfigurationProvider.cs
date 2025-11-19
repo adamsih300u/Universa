@@ -98,6 +98,70 @@ namespace Universa.Desktop.Core.Configuration
         }
         #endregion
 
+        #region WebDAV Sync Settings
+        public string WebDavServerUrl
+        {
+            get => _configManager.Get<string>(ConfigurationKeys.WebDav.ServerUrl);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.WebDav.ServerUrl, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string WebDavUsername
+        {
+            get => _configManager.Get<string>(ConfigurationKeys.WebDav.Username);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.WebDav.Username, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string WebDavPassword
+        {
+            get => _configManager.Get<string>(ConfigurationKeys.WebDav.Password);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.WebDav.Password, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string WebDavRemoteFolder
+        {
+            get => _configManager.Get<string>(ConfigurationKeys.WebDav.RemoteFolder);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.WebDav.RemoteFolder, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public bool WebDavAutoSync
+        {
+            get => _configManager.Get<bool>(ConfigurationKeys.WebDav.AutoSync);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.WebDav.AutoSync, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public int WebDavSyncIntervalMinutes
+        {
+            get => _configManager.Get<int>(ConfigurationKeys.WebDav.IntervalMinutes, 15);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.WebDav.IntervalMinutes, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public DateTime? LastWebDavSyncTime { get; set; }
+        #endregion
+
         #region Weather Settings
         public string WeatherApiKey
         {
@@ -291,6 +355,16 @@ namespace Universa.Desktop.Core.Configuration
             set
             {
                 _configManager.Set(ConfigurationKeys.AI.ChatEnabled, value);
+                OnPropertyChanged();
+            }
+        }
+
+        public string DefaultChatPersona
+        {
+            get => _configManager.Get<string>(ConfigurationKeys.AI.DefaultChatPersona);
+            set
+            {
+                _configManager.Set(ConfigurationKeys.AI.DefaultChatPersona, value);
                 OnPropertyChanged();
             }
         }

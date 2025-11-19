@@ -78,6 +78,7 @@ namespace Universa.Desktop.Views
         private readonly TTSManager _ttsManager;
         private readonly WeatherManager _weatherManager;
         private readonly MediaControlsManager _mediaControlsManager;
+        private readonly IWebDavSyncService _webDavSyncService;
         private bool _isLibraryCollapsed = false;
         private bool _isChatCollapsed = false;
         private double _lastLibraryWidth = 250;
@@ -224,6 +225,23 @@ namespace Universa.Desktop.Views
 
             // Initialize weather manager
             _weatherManager = new WeatherManager(WeatherDisplay, MoonPhaseDisplay, MoonPhaseDescription, _configService);
+            
+            // Initialize WebDAV sync service
+            _webDavSyncService = ServiceLocator.Instance.GetService<IWebDavSyncService>();
+            if (_webDavSyncService != null)
+            {
+                _webDavSyncService.SyncStatusChanged += OnWebDavSyncStatusChanged;
+                _webDavSyncService.FileDownloaded += OnWebDavFileDownloaded;
+                
+                // Start auto-sync if enabled
+                if (_configService.Provider.WebDavAutoSync)
+                {
+                    _webDavSyncService.StartAutoSync();
+                }
+                
+                // Update initial status
+                UpdateWebDavSyncStatus(_webDavSyncService.CurrentStatus, null, _webDavSyncService.LastSyncTime);
+            }
             
             // Initialize commands
             CloseTabCommand = new RelayCommand(tabItem =>
@@ -424,7 +442,7 @@ namespace Universa.Desktop.Views
             }
             
             // Notify ChatSidebarViewModel about tab closing
-            var chatSidebar = FindName("chatSidebar") as Views.ChatSidebar;
+            var chatSidebar = FindName("ChatSidebar") as ChatSidebar;
             if (chatSidebar?.DataContext is ViewModels.ChatSidebarViewModel chatVM)
             {
                 chatVM.HandleEditorTabClosed(tabItem.Content);
@@ -710,6 +728,89 @@ namespace Universa.Desktop.Views
         private void OpenGlobalAgendaTab_Click(object sender, RoutedEventArgs e)
         {
             OpenGlobalAgendaTab();
+        }
+
+        private async void WebDavSync_Click(object sender, RoutedEventArgs e)
+        {
+            if (_webDavSyncService == null)
+            {
+                MessageBox.Show("WebDAV sync service is not configured.", "Sync Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            try
+            {
+                await _webDavSyncService.SynchronizeAsync();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Sync error: {ex.Message}", "Sync Error", 
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void OnWebDavSyncStatusChanged(object sender, WebDavSyncStatusEventArgs e)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                UpdateWebDavSyncStatus(e.Status, e.Message, e.LastSyncTime);
+            });
+        }
+
+        private void OnWebDavFileDownloaded(object sender, FileDownloadedEventArgs e)
+        {
+            // Refresh the editor tab if it's open for the downloaded file
+            Dispatcher.Invoke(() =>
+            {
+                System.Diagnostics.Debug.WriteLine($"[WebDAV] File downloaded: {e.LocalPath}");
+                System.Diagnostics.Debug.WriteLine($"[WebDAV] Checking if tab is open for refresh...");
+                RefreshOpenFileTab(e.LocalPath);
+            });
+        }
+
+        private void UpdateWebDavSyncStatus(WebDavSyncStatus status, string message, DateTime? lastSyncTime)
+        {
+            if (WebDavSyncStatusIndicator == null || WebDavSyncStatusText == null)
+                return;
+
+            switch (status)
+            {
+                case WebDavSyncStatus.Idle:
+                    WebDavSyncStatusIndicator.Fill = new SolidColorBrush(Colors.Gray);
+                    WebDavSyncStatusText.Text = lastSyncTime.HasValue 
+                        ? $"Last sync: {lastSyncTime.Value:HH:mm}" 
+                        : "Idle";
+                    WebDavSyncButton.IsEnabled = true;
+                    break;
+
+                case WebDavSyncStatus.Syncing:
+                    WebDavSyncStatusIndicator.Fill = new SolidColorBrush(Colors.Orange);
+                    WebDavSyncStatusText.Text = "Syncing...";
+                    WebDavSyncButton.IsEnabled = false;
+                    break;
+
+                case WebDavSyncStatus.Success:
+                    WebDavSyncStatusIndicator.Fill = new SolidColorBrush(Colors.Green);
+                    WebDavSyncStatusText.Text = lastSyncTime.HasValue 
+                        ? $"Synced: {lastSyncTime.Value:HH:mm}" 
+                        : "Success";
+                    WebDavSyncButton.IsEnabled = true;
+                    break;
+
+                case WebDavSyncStatus.Error:
+                    WebDavSyncStatusIndicator.Fill = new SolidColorBrush(Colors.Red);
+                    WebDavSyncStatusText.Text = string.IsNullOrEmpty(message) ? "Error" : "Error";
+                    WebDavSyncStatusText.ToolTip = message;
+                    WebDavSyncButton.IsEnabled = true;
+                    break;
+
+                case WebDavSyncStatus.Conflicted:
+                    WebDavSyncStatusIndicator.Fill = new SolidColorBrush(Colors.Yellow);
+                    WebDavSyncStatusText.Text = "Conflicts";
+                    WebDavSyncButton.IsEnabled = true;
+                    break;
+            }
         }
 
         public void OpenOverviewTab()
@@ -1185,7 +1286,37 @@ namespace Universa.Desktop.Views
                     MainTabControl.SelectedItem = tabItem;
                     break;
                 case "audiobookshelf":
-                    MessageBox.Show("Audiobookshelf support coming soon!", "Not Implemented");
+                    var audiobookshelfConfig = _configService.Provider;
+                    var audiobookshelfDisplayName = !string.IsNullOrEmpty(audiobookshelfConfig.AudiobookshelfName) ? 
+                        audiobookshelfConfig.AudiobookshelfName : "Audiobookshelf";
+                    
+                    // Check if configuration is available
+                    if (string.IsNullOrEmpty(audiobookshelfConfig.AudiobookshelfUrl) ||
+                        string.IsNullOrEmpty(audiobookshelfConfig.AudiobookshelfUsername) ||
+                        string.IsNullOrEmpty(audiobookshelfConfig.AudiobookshelfPassword))
+                    {
+                        MessageBox.Show("Audiobookshelf is not configured. Please configure it in Settings first.", 
+                            "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Information);
+                        break;
+                    }
+                    
+                    try
+                    {
+                        var audiobookshelfService = ServiceLocator.Instance.GetRequiredService<IAudiobookshelfService>();
+                        var audiobookshelfTab = new AudiobookshelfTab(audiobookshelfService);
+                        var audiobookshelfTabItem = new TabItem
+                        {
+                            Header = audiobookshelfDisplayName,
+                            Content = audiobookshelfTab
+                        };
+                        MainTabControl.Items.Add(audiobookshelfTabItem);
+                        MainTabControl.SelectedItem = audiobookshelfTabItem;
+                    }
+                    catch (Exception ex)
+                    {
+                        MessageBox.Show($"Error opening Audiobookshelf: {ex.Message}", "Error", 
+                            MessageBoxButton.OK, MessageBoxImage.Error);
+                    }
                     break;
                 default:
                     MessageBox.Show($"Unknown media service: {serviceName}", "Error");
@@ -1618,9 +1749,9 @@ namespace Universa.Desktop.Views
                 Debug.WriteLine("MainWindow_Closing: Saving chat history...");
                 
                 // Save chat history
-                if (ChatSidebar?.ViewModel != null)
+                if (ChatSidebar?.DataContext is ViewModels.ChatSidebarViewModel chatVM)
                 {
-                    ChatSidebar.ViewModel.SaveState();
+                    chatVM.SaveState();
                     Debug.WriteLine("MainWindow_Closing: Chat history saved successfully");
                 }
                 else

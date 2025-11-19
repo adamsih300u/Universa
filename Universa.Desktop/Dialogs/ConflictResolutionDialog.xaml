@@ -1,0 +1,124 @@
+<Window x:Class="Universa.Desktop.Dialogs.ConflictResolutionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Sync Conflict Detected"
+        Width="600"
+        Height="400"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        Background="{DynamicResource WindowBackgroundBrush}"
+        Foreground="{DynamicResource ForegroundBrush}">
+    
+    <Window.Resources>
+        <Style TargetType="Button">
+            <Setter Property="Padding" Value="15,8"/>
+            <Setter Property="Margin" Value="5"/>
+            <Setter Property="MinWidth" Value="120"/>
+        </Style>
+    </Window.Resources>
+    
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
+            <TextBlock Text="⚠️" FontSize="32" Margin="0,0,10,0"/>
+            <StackPanel>
+                <TextBlock Text="Sync Conflict Detected" FontSize="18" FontWeight="Bold"/>
+                <TextBlock Text="Both local and remote versions were modified" 
+                          Opacity="0.7" 
+                          Margin="0,5,0,0"/>
+            </StackPanel>
+        </StackPanel>
+        
+        <!-- File Info -->
+        <Border Grid.Row="1" 
+                Background="{DynamicResource ControlBackgroundBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="12"
+                Margin="0,0,0,15">
+            <StackPanel>
+                <TextBlock Text="File:" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                <TextBlock x:Name="FilePathText" 
+                          Text="{Binding FilePath}"
+                          FontFamily="Consolas"
+                          TextWrapping="Wrap"
+                          Margin="0,0,0,15"/>
+                
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Text="📄 Local Version" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <TextBlock Text="{Binding LocalModifiedDisplay}" Opacity="0.8"/>
+                    </StackPanel>
+                    
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                        <TextBlock Text="☁️ Remote Version" FontWeight="SemiBold" Margin="0,0,0,5"/>
+                        <TextBlock Text="{Binding RemoteModifiedDisplay}" Opacity="0.8"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+        
+        <!-- Description -->
+        <TextBlock Grid.Row="2" 
+                   TextWrapping="Wrap"
+                   Opacity="0.8"
+                   Margin="0,0,0,15">
+            <Run Text="Choose how to resolve this conflict:"/>
+            <LineBreak/><LineBreak/>
+            <Run Text="• Keep Local: Upload your local version (remote changes will be lost)"/>
+            <LineBreak/>
+            <Run Text="• Keep Remote: Download the remote version (local changes will be lost)"/>
+            <LineBreak/>
+            <Run Text="• Keep Both: Save the remote version as a .conflict file"/>
+            <LineBreak/>
+            <Run Text="• Skip: Don't sync this file right now"/>
+        </TextBlock>
+        
+        <!-- Apply to All Checkbox -->
+        <CheckBox Grid.Row="3" 
+                  x:Name="ApplyToAllCheckBox"
+                  Content="Apply this choice to all remaining conflicts"
+                  Margin="0,0,0,15"/>
+        
+        <!-- Buttons -->
+        <WrapPanel Grid.Row="4" 
+                   HorizontalAlignment="Center"
+                   Orientation="Horizontal">
+            <Button Content="Keep Local" 
+                    Click="KeepLocal_Click"
+                    ToolTip="Upload local version to server"/>
+            <Button Content="Keep Remote" 
+                    Click="KeepRemote_Click"
+                    ToolTip="Download remote version from server"/>
+            <Button Content="Keep Both (Recommended)" 
+                    Click="KeepBoth_Click"
+                    FontWeight="SemiBold"
+                    ToolTip="Save remote as .conflict file"/>
+            <Button Content="Skip" 
+                    Click="Skip_Click"
+                    ToolTip="Don't sync this file"/>
+        </WrapPanel>
+    </Grid>
+</Window>
+
+
+
+
+
+
+
+

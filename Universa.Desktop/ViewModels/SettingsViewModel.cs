@@ -66,8 +66,10 @@ namespace Universa.Desktop.ViewModels
             UpdateMatrixPasswordCommand = new RelayCommand<string>(UpdateMatrixPassword);
             UpdateAudiobookshelfPasswordCommand = new RelayCommand<string>(UpdateAudiobookshelfPassword);
             UpdateSyncPasswordCommand = new RelayCommand<string>(UpdateSyncPassword);
+            UpdateWebDavPasswordCommand = new RelayCommand<string>(UpdateWebDavPassword);
             UpdateOpenRouterKeyCommand = new RelayCommand<string>(UpdateOpenRouterKey);
             FetchOpenRouterModelsCommand = new RelayCommand(_ => FetchOpenRouterModels());
+            TestWebDavConnectionCommand = new RelayCommand(_ => TestWebDavConnection());
             BrowseCommand = new RelayCommand(BrowseFolder);
             BrowseFileCommand = new RelayCommand(BrowseFile);
             BrowseBackupFolderCommand = new RelayCommand(BrowseBackupFolder);
@@ -131,6 +133,8 @@ namespace Universa.Desktop.ViewModels
         public ICommand UpdateMatrixPasswordCommand { get; }
         public ICommand UpdateAudiobookshelfPasswordCommand { get; }
         public ICommand UpdateSyncPasswordCommand { get; }
+        public ICommand UpdateWebDavPasswordCommand { get; }
+        public ICommand TestWebDavConnectionCommand { get; }
         public ICommand UpdateOpenRouterKeyCommand { get; }
         public ICommand FetchOpenRouterModelsCommand { get; }
         public ICommand BrowseCommand { get; }
@@ -379,6 +383,19 @@ namespace Universa.Desktop.ViewModels
             }
         }
 
+        public string DefaultChatPersona
+        {
+            get => _config.DefaultChatPersona;
+            set
+            {
+                if (_config.DefaultChatPersona != value)
+                {
+                    _config.DefaultChatPersona = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
         // Jellyfin Settings
         public string JellyfinName
         {
@@ -497,6 +514,74 @@ namespace Universa.Desktop.ViewModels
                 if (_config.SyncIntervalMinutes != value)
                 {
                     _config.SyncIntervalMinutes = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        // WebDAV Sync Settings
+        public string WebDavServerUrl
+        {
+            get => _config.WebDavServerUrl;
+            set
+            {
+                if (_config.WebDavServerUrl != value)
+                {
+                    _config.WebDavServerUrl = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string WebDavUsername
+        {
+            get => _config.WebDavUsername;
+            set
+            {
+                if (_config.WebDavUsername != value)
+                {
+                    _config.WebDavUsername = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public string WebDavPassword => _config.WebDavPassword;
+
+        public string WebDavRemoteFolder
+        {
+            get => _config.WebDavRemoteFolder;
+            set
+            {
+                if (_config.WebDavRemoteFolder != value)
+                {
+                    _config.WebDavRemoteFolder = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public bool WebDavAutoSync
+        {
+            get => _config.WebDavAutoSync;
+            set
+            {
+                if (_config.WebDavAutoSync != value)
+                {
+                    _config.WebDavAutoSync = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public int WebDavSyncIntervalMinutes
+        {
+            get => _config.WebDavSyncIntervalMinutes;
+            set
+            {
+                if (_config.WebDavSyncIntervalMinutes != value)
+                {
+                    _config.WebDavSyncIntervalMinutes = value;
                     OnPropertyChanged();
                 }
             }
@@ -1224,6 +1309,40 @@ namespace Universa.Desktop.ViewModels
             _config.Save();
         }
 
+        public void UpdateWebDavPassword(string password)
+        {
+            _config.WebDavPassword = password;
+            _config.Save();
+        }
+
+        private async void TestWebDavConnection()
+        {
+            try
+            {
+                var client = new WebDavClient(
+                    _config.WebDavServerUrl,
+                    _config.WebDavUsername,
+                    _config.WebDavPassword
+                );
+
+                var connected = await client.TestConnectionAsync();
+                client.Dispose();
+
+                if (connected)
+                {
+                    _dialogService.ShowMessage("WebDAV connection successful!", "Success");
+                }
+                else
+                {
+                    _dialogService.ShowError("Failed to connect to WebDAV server. Please check your settings.", "Connection Failed");
+                }
+            }
+            catch (Exception ex)
+            {
+                _dialogService.ShowError($"Error testing WebDAV connection: {ex.Message}", "Error");
+            }
+        }
+
         private void CloseWindow()
         {
             var window = System.Windows.Application.Current.Windows.OfType<Window>().FirstOrDefault(w => w.DataContext == this);
@@ -1335,6 +1454,7 @@ namespace Universa.Desktop.ViewModels
                 OllamaUrl = _config.OllamaUrl;
                 OllamaModel = _config.OllamaModel;
                 EnableAIChat = _config.EnableAIChat;
+                DefaultChatPersona = _config.DefaultChatPersona;
 
                 // Load saved OpenRouter models if any
                 LoadOpenRouterModels();
@@ -1388,7 +1508,8 @@ namespace Universa.Desktop.ViewModels
 
             try
             {
-                var service = new OpenRouterService(_config.OpenRouterApiKey);
+                // For settings UI, load all models so user can select from them
+                var service = new OpenRouterService(_config.OpenRouterApiKey, enabledModels: new List<string>());
                 var models = await service.GetAvailableModels();
                 var savedModels = _config.OpenRouterModels ?? new List<string>();
 
@@ -1419,7 +1540,8 @@ namespace Universa.Desktop.ViewModels
 
             try
             {
-                var service = new OpenRouterService(_config.OpenRouterApiKey);
+                // For settings UI, load all models so user can select from them
+                var service = new OpenRouterService(_config.OpenRouterApiKey, enabledModels: new List<string>());
                 var models = await service.GetAvailableModels();
                 var savedModels = _config.OpenRouterModels ?? new List<string>();
 
@@ -1486,6 +1608,9 @@ namespace Universa.Desktop.ViewModels
                     break;
                 case "SyncPassword":
                     _config.SyncPassword = value;
+                    break;
+                case "WebDavPassword":
+                    _config.WebDavPassword = value;
                     break;
                 case "MatrixPassword":
                     _config.MatrixPassword = value;

@@ -56,10 +56,19 @@ namespace Universa.Desktop.ViewModels
 
         private readonly ChatHistoryService _chatHistoryService;
         private DispatcherTimer _autoSaveTimer;
+        private DispatcherTimer _memoryMonitorTimer;
+
+        // SPLENDID: Debounced streaming support to prevent UI jumping
+        private DispatcherTimer _streamingDebounceTimer;
+        private string _pendingStreamContent;
+        private Models.ChatMessage _currentStreamingMessage;
+        private ChatTabViewModel _currentStreamingTab;
+        private readonly object _streamingLock = new object();
 
         private Dictionary<Views.MarkdownTabAvalon, ChatTabViewModel> _markdownTabAssociations = new Dictionary<Views.MarkdownTabAvalon, ChatTabViewModel>();
+        private Views.MainWindow _mainWindow; // Store reference for proper cleanup
 
-        public ScrollViewer ChatScrollViewer { get; set; }
+        public Action ScrollToBottomAction { get; set; }
 
         public bool IsBusy
         {
@@ -97,17 +106,12 @@ namespace Universa.Desktop.ViewModels
             {
                 if (_selectedTab != value)
                 {
-                    // Save current scroll position before switching tabs
-                    if (_selectedTab != null && ChatScrollViewer != null)
-                    {
-                        _selectedTab.CurrentScrollPosition = ChatScrollViewer.VerticalOffset;
-                        System.Diagnostics.Debug.WriteLine($"Saved scroll position for tab '{_selectedTab.Name}': {_selectedTab.CurrentScrollPosition}");
-                    }
-                    
                     // Save current input text to the previous tab before switching
                     if (_selectedTab != null)
                     {
                         _selectedTab.InputText = InputText;
+                        // Unsubscribe from old tab's property changes
+                        _selectedTab.PropertyChanged -= OnSelectedTabPropertyChanged;
                     }
                     
                     _selectedTab = value;
@@ -115,23 +119,36 @@ namespace Universa.Desktop.ViewModels
                     // When tab changes, update input text and messages
                     if (_selectedTab != null)
                     {
-                        // Always directly reference the tab's Messages collection
+                        // SPLENDID: Always directly reference the tab's Messages collection and force UI refresh
                         Messages = _selectedTab.IsContextMode ? 
                             _selectedTab.Messages : 
                             _selectedTab.ChatModeMessages;
                         InputText = _selectedTab.InputText;
                         // Update UI to reflect this tab's settings
+                        OnPropertyChanged(nameof(Messages));
                         OnPropertyChanged(nameof(IsContextMode));
                         OnPropertyChanged(nameof(SelectedModel));
+                        
+                        // BULLY: Critical fix for per-tab chain isolation
+                        // Notify UI that chain-related properties have changed for the new tab
+                        OnPropertyChanged("SelectedTab.AvailableChains");
+                        OnPropertyChanged("SelectedTab.SelectedChain");
+                        
+                        // Subscribe to new tab's property changes for real-time updates
+                        _selectedTab.PropertyChanged += OnSelectedTabPropertyChanged;
                         
                         // Update markdown tab associations for the current editor
                         UpdateMarkdownTabAssociationForCurrentTab();
                         
-                        // Restore scroll position after a short delay to allow UI to update
-                        System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+                        // SPLENDID: Conditionally scroll when switching tabs - only if no messages yet or switching to a tab with recent activity
+                        if (_selectedTab.Messages.Count == 0 || 
+                            (_selectedTab.Messages.Count > 0 && _selectedTab.Messages.Last().Timestamp > DateTime.Now.AddMinutes(-5)))
                         {
-                            RestoreScrollPosition();
-                        }), System.Windows.Threading.DispatcherPriority.Background);
+                            System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+                            {
+                                ScrollToBottom();
+                            }), System.Windows.Threading.DispatcherPriority.Background);
+                        }
                     }
                     
                     OnPropertyChanged();
@@ -149,6 +166,8 @@ namespace Universa.Desktop.ViewModels
         public ICommand CloseTabCommand { get; private set; }
 
         public ICommand ClearHistoryCommand { get; private set; }
+
+        public ICommand UnlockTabCommand { get; private set; }
 
         public ObservableCollection<Models.ChatMessage> Messages
         {
@@ -205,16 +224,7 @@ namespace Universa.Desktop.ViewModels
                                     ModelName = value.Name,
                                     Provider = value.Provider
                                 };
-                                Messages.Add(systemMessage);
-                                
-                                // If in chat mode, update chat mode messages and recreate the service
-                                if (!IsContextMode)
-                                {
-                                                                _chatModeMessages.Add(systemMessage);
-                            var apiKey = GetApiKey(value.Provider);
-                            // Create a new instance for this tab instead of using singleton  
-                            SelectedTab.Service = new GeneralChatService(apiKey, value.Name, value.Provider, value.IsThinkingMode);
-                                }
+                                SelectedTab.AddMessage(systemMessage);
                             }
                         }
                     }
@@ -241,16 +251,7 @@ namespace Universa.Desktop.ViewModels
                                 ModelName = value.Name,
                                 Provider = value.Provider
                             };
-                            Messages.Add(systemMessage);
-                            
-                            // If in chat mode, update chat mode messages and recreate the service
-                            if (!IsContextMode)
-                            {
-                                _chatModeMessages.Add(systemMessage);
-                                var apiKey = GetApiKey(value.Provider);
-                                // Create a new instance for this tab instead of using singleton
-                                SelectedTab.Service = new GeneralChatService(apiKey, value.Name, value.Provider, value.IsThinkingMode);
-                            }
+                            SelectedTab?.AddMessage(systemMessage);
                         }
                     }
                 }
@@ -300,6 +301,7 @@ namespace Universa.Desktop.ViewModels
         }
 
         public ICommand SendCommand { get; private set; }
+        public ICommand SendOrStopCommand { get; private set; }
         public ICommand ToggleModeCommand { get; private set; }
         public ICommand VerifyDeviceCommand { get; private set; }
         public ICommand RetryCommand { get; private set; }
@@ -350,17 +352,34 @@ namespace Universa.Desktop.ViewModels
             _autoSaveTimer.Tick += (s, e) => SaveTabs();
             _autoSaveTimer.Start();
             
-            // Initialize commands
-            SendCommand = new RelayCommand(async _ => await SendMessageAsync());
+            // Setup memory monitoring timer
+            _memoryMonitorTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMinutes(5) // Check memory every 5 minutes
+            };
+            _memoryMonitorTimer.Tick += MonitorMemoryUsage;
+            _memoryMonitorTimer.Start();
+            
+            // BULLY: Initialize streaming debounce timer for smooth UI updates
+            _streamingDebounceTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(150) // Update UI every 150ms max during streaming
+            };
+            _streamingDebounceTimer.Tick += OnStreamingDebounceTimerTick;
+            
+            // SPLENDID: Initialize commands with proper async support
+            SendCommand = new AsyncRelayCommand(async () => await SendMessageAsync());
+            SendOrStopCommand = new AsyncRelayCommand(async () => await SendOrStopAsync());
             ToggleModeCommand = new RelayCommand(_ => UpdateMode());
-            VerifyDeviceCommand = new RelayCommand(async _ => await VerifyDeviceAsync());
-            RetryCommand = new RelayCommand(async param => await RetryMessageAsync(param as Models.ChatMessage));
-            StopThinkingCommand = new RelayCommand(param => StopThinking(param as Models.ChatMessage));
+            VerifyDeviceCommand = new AsyncRelayCommand(async () => await VerifyDeviceAsync());
+            RetryCommand = new RelayCommand<Models.ChatMessage>(param => _ = RetryMessageAsync(param));
+            StopThinkingCommand = new RelayCommand<Models.ChatMessage>(param => StopThinking(param));
             
             // New commands for tabs
             AddTabCommand = new RelayCommand(_ => AddNewTab());
             CloseTabCommand = new RelayCommand(param => CloseTab(param as ChatTabViewModel));
             ClearHistoryCommand = new RelayCommand(_ => ClearHistory());
+            UnlockTabCommand = new RelayCommand(param => UnlockTab(param as ChatTabViewModel));
 
             // Subscribe to messages collection changes
             _messages.CollectionChanged += Messages_CollectionChanged;
@@ -371,6 +390,39 @@ namespace Universa.Desktop.ViewModels
             {
                 mainWindow.StateChanged += MainWindow_StateChanged;
                 mainWindow.SizeChanged += MainWindow_SizeChanged;
+                
+                // BULLY FIX: Subscribe to MainTabControl selection changes for file type detection
+                if (mainWindow is Views.MainWindow universaMainWindow)
+                {
+                    _mainWindow = universaMainWindow; // Store reference for cleanup
+                    
+                    if (universaMainWindow.MainTabControl != null)
+                    {
+                        universaMainWindow.MainTabControl.SelectionChanged += MainTabControl_SelectionChanged;
+                        Debug.WriteLine("ChatSidebarViewModel: Successfully subscribed to MainTabControl.SelectionChanged");
+                    }
+                    else
+                    {
+                        // MainTabControl might not be loaded yet, try again after window is loaded
+                        universaMainWindow.Loaded += (s, e) =>
+                        {
+                            if (universaMainWindow.MainTabControl != null)
+                            {
+                                universaMainWindow.MainTabControl.SelectionChanged += MainTabControl_SelectionChanged;
+                                Debug.WriteLine("ChatSidebarViewModel: Successfully subscribed to MainTabControl.SelectionChanged (after window loaded)");
+                            }
+                            else
+                            {
+                                Debug.WriteLine("ChatSidebarViewModel: MainTabControl still null after window loaded");
+                            }
+                        };
+                        Debug.WriteLine("ChatSidebarViewModel: MainTabControl not ready, will subscribe after window loads");
+                    }
+                }
+                else
+                {
+                    Debug.WriteLine("ChatSidebarViewModel: Could not cast to Views.MainWindow");
+                }
             }
 
             // Load saved tabs or create initial tab if none exist
@@ -396,12 +448,19 @@ namespace Universa.Desktop.ViewModels
             {
                 try
                 {
+                    Debug.WriteLine($"OnModelsChanged: Event received with {models.Count} models");
+                    foreach (var model in models)
+                    {
+                        Debug.WriteLine($"  - {model.DisplayName} ({model.Provider}: {model.Name})");
+                    }
+                    
                     Debug.WriteLine("OnModelsChanged: Refreshing available models");
                     AvailableModels.Clear();
                     foreach (var model in models)
                     {
                         AvailableModels.Add(model);
                     }
+                    Debug.WriteLine($"OnModelsChanged: Added {AvailableModels.Count} models to collection");
 
                     // Restore last used model if available
                     if (!string.IsNullOrEmpty(Configuration.Instance.LastUsedModel))
@@ -547,6 +606,58 @@ namespace Universa.Desktop.ViewModels
                         
                         // Update the association with the current chat tab
                         UpdateMarkdownTabAssociationForCurrentTab();
+                        
+                        // BULLY FIX: Immediately detect file type and update chain dropdown
+                        // Use Dispatcher to stay on UI thread for accessing AvalonEdit content  
+                        Application.Current.Dispatcher.BeginInvoke(new Action(async () =>
+                        {
+                            try
+                            {
+                                Debug.WriteLine($"Tab switch - attempting to get content for: {newMarkdownTab.FilePath}");
+                                string content = await GetCurrentContent();
+                                Debug.WriteLine($"Tab switch - got content length: {content?.Length ?? 0} for file: {newMarkdownTab.FilePath}");
+                                
+                                if (!string.IsNullOrEmpty(content))
+                                {
+                                    string detectedFileType = DetectFileType(content, newMarkdownTab.FilePath);
+                                    Debug.WriteLine($"Tab switch detected file type: '{detectedFileType ?? "null"}' for file: {newMarkdownTab.FilePath}");
+                                    
+                                    // Show frontmatter snippet for debugging
+                                    if (content.StartsWith("---"))
+                                    {
+                                        int endIndex = content.IndexOf("\n---", 3);
+                                        if (endIndex > 0)
+                                        {
+                                            string frontmatter = content.Substring(0, Math.Min(endIndex + 4, 200));
+                                            Debug.WriteLine($"Frontmatter found: {frontmatter}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        Debug.WriteLine("No frontmatter found (file doesn't start with ---)");
+                                    }
+                                    
+                                    // Update immediately since we're already on UI thread
+                                    if (SelectedTab != null)
+                                    {
+                                        Debug.WriteLine($"Updating SelectedTab '{SelectedTab.Name}' with file type: {detectedFileType ?? "null"}");
+                                        SelectedTab.UpdateFileType(detectedFileType);
+                                    }
+                                    else
+                                    {
+                                        Debug.WriteLine("SelectedTab is null, cannot update file type");
+                                    }
+                                }
+                                else
+                                {
+                                    Debug.WriteLine("No content available, cannot detect file type");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Error detecting file type on tab switch: {ex.Message}");
+                            }
+                        }), System.Windows.Threading.DispatcherPriority.Background);
                     }
                 }
             }
@@ -611,8 +722,14 @@ namespace Universa.Desktop.ViewModels
         {
             try
             {
-                Debug.WriteLine("Refreshing available AI models...");
+                Debug.WriteLine("RefreshModels: Starting model refresh...");
                 var models = await _modelProvider.GetModels();
+                
+                Debug.WriteLine($"RefreshModels: Retrieved {models.Count} models from provider");
+                foreach (var model in models)
+                {
+                    Debug.WriteLine($"  - {model.DisplayName} ({model.Provider}: {model.Name})");
+                }
                 
                 // Update models on UI thread
                 Application.Current.Dispatcher.Invoke(() =>
@@ -623,19 +740,30 @@ namespace Universa.Desktop.ViewModels
                         AvailableModels.Add(model);
                     }
 
+                    Debug.WriteLine($"RefreshModels: Added {AvailableModels.Count} models to AvailableModels collection");
+
                     // If we have models but none selected, select the first one
                     if (AvailableModels.Any() && SelectedModel == null)
                     {
                         SelectedModel = AvailableModels.First();
+                        Debug.WriteLine($"RefreshModels: Auto-selected first model: {SelectedModel.DisplayName}");
+                    }
+                    else if (SelectedModel != null)
+                    {
+                        Debug.WriteLine($"RefreshModels: Current SelectedModel: {SelectedModel.DisplayName}");
+                    }
+                    else
+                    {
+                        Debug.WriteLine("RefreshModels: No models available and SelectedModel is null");
                     }
                     
-                    Debug.WriteLine($"Loaded {AvailableModels.Count} models");
+                    Debug.WriteLine($"RefreshModels: Final AvailableModels count: {AvailableModels.Count}");
                 });
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error refreshing models: {ex.Message}");
-                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
+                Debug.WriteLine($"RefreshModels: Error refreshing models: {ex.Message}");
+                Debug.WriteLine($"RefreshModels: Stack trace: {ex.StackTrace}");
             }
         }
 
@@ -643,34 +771,9 @@ namespace Universa.Desktop.ViewModels
         {
             if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
             {
-                bool shouldAutoScroll = false;
-                
-                // Check if user is near the bottom before auto-scrolling
-                if (ChatScrollViewer != null)
-                {
-                    var scrollableHeight = ChatScrollViewer.ScrollableHeight;
-                    var currentOffset = ChatScrollViewer.VerticalOffset;
-                    var threshold = 50; // pixels from bottom
-                    
-                    // Auto-scroll only if user is near the bottom or if this is the first message
-                    shouldAutoScroll = (scrollableHeight == 0) || // No scrollable content yet
-                                     (scrollableHeight - currentOffset <= threshold); // Near bottom
-                }
-                else
-                {
-                    shouldAutoScroll = true; // Default to auto-scroll if no scroll viewer
-                }
-                
-                if (shouldAutoScroll)
-                {
-                    // Scroll to the bottom of the chat view when new messages are added
-                    ChatScrollViewer?.ScrollToEnd();
-                }
-                else
-                {
-                    // Save the current position so we don't lose it
-                    SaveCurrentScrollPosition();
-                }
+                // SPLENDID: Use conditional scroll that respects user position rather than always forcing scroll
+                // The ChatSidebar UI will handle the scroll position detection
+                ScrollToBottomAction?.Invoke();
                 
                 // Save chat history after each new message
                 SaveState();
@@ -685,12 +788,7 @@ namespace Universa.Desktop.ViewModels
                 var currentTab = SelectedTab;
                 if (currentTab == null) return;
                 
-                // Save current scroll position before switching modes
-                if (ChatScrollViewer != null)
-                {
-                    currentTab.CurrentScrollPosition = ChatScrollViewer.VerticalOffset;
-                    System.Diagnostics.Debug.WriteLine($"Saved scroll position for mode switch in tab '{currentTab.Name}': {currentTab.CurrentScrollPosition}");
-                }
+                // No need to save scroll position - we'll scroll to bottom after mode switch
                 
                 bool isContextMode = currentTab.IsContextMode;
                 
@@ -721,9 +819,10 @@ namespace Universa.Desktop.ViewModels
                     {
                         var apiKey = GetApiKey(selectedModel.Provider);
                         Debug.WriteLine($"Creating new GeneralChatService with provider: {selectedModel.Provider}");
-                        var service = new GeneralChatService(apiKey, selectedModel.Name, selectedModel.Provider, selectedModel.IsThinkingMode);
+                        var persona = GetEffectivePersona();
+                        var service = new GeneralChatService(apiKey, selectedModel.Name, selectedModel.Provider, selectedModel.IsThinkingMode, persona);
                         
-                        // Initialize with previous messages
+                        // Initialize with previous messages, preserving reasoning for context
                         if (currentTab.ChatModeMessages.Count > 0)
                         {
                             bool systemMessageAdded = false;
@@ -740,7 +839,15 @@ namespace Universa.Desktop.ViewModels
                                 }
                                 else if (msg.Role == "assistant")
                                 {
-                                    service.AddAssistantMessage(msg.Content);
+                                    // Preserve reasoning_details for chain-of-thought context
+                                    if (!string.IsNullOrEmpty(msg.Reasoning) || msg.ReasoningDetails != null)
+                                    {
+                                        service.AddAssistantMessage(msg.Content, msg.Reasoning, msg.ReasoningDetails);
+                                    }
+                                    else
+                                    {
+                                        service.AddAssistantMessage(msg.Content);
+                                    }
                                 }
                             }
                         }
@@ -754,11 +861,17 @@ namespace Universa.Desktop.ViewModels
                 OnPropertyChanged(nameof(Messages));
                 OnPropertyChanged(nameof(IsContextMode));
                 
-                // Restore scroll position after UI updates
-                System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+                // SPLENDID: Conditionally scroll after mode change - let user stay at their current position if viewing older messages
+                // Only auto-scroll if switching to a mode with recent activity
+                var activeMessages = currentTab.IsContextMode ? currentTab.Messages : currentTab.ChatModeMessages;
+                if (activeMessages.Count == 0 || 
+                    (activeMessages.Count > 0 && activeMessages.Last().Timestamp > DateTime.Now.AddMinutes(-5)))
                 {
-                    RestoreScrollPosition();
-                }), System.Windows.Threading.DispatcherPriority.Background);
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+                    {
+                        ScrollToBottom();
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
             }
             catch (Exception ex)
             {
@@ -805,435 +918,334 @@ namespace Universa.Desktop.ViewModels
         {
             try
             {
-                // Make absolutely sure we have a selected tab
-                if (SelectedTab == null)
+                var apiKey = GetApiKey(SelectedModel.Provider);
+                if (string.IsNullOrEmpty(apiKey))
                 {
-                    Debug.WriteLine("GetOrCreateService: SelectedTab is null, cannot create service");
-                    return null;
+                    throw new InvalidOperationException($"No API key found for provider {SelectedModel.Provider}");
+                }
+                
+                // If we already have a service and context doesn't require refresh, return it
+                if (SelectedTab.Service != null && !SelectedTab.ContextRequiresRefresh)
+                {
+                    return SelectedTab.Service;
                 }
 
-                Debug.WriteLine($"GetOrCreateService: Tab name: {SelectedTab.Name}, IsContextMode: {SelectedTab.IsContextMode}");
+                bool isTabContextMode = SelectedTab.IsContextMode;
 
-                // CRITICAL FIX: Check the tab's own service first, not the global _currentService
-                if (SelectedTab.Service != null)
+                if (!isTabContextMode)
                 {
-                    try
-                    {
-                        // Use the ThrowIfDisposed method indirectly by calling a harmless method
-                        await SelectedTab.Service.UpdateContextAsync(string.Empty);
-                        Debug.WriteLine($"Reusing existing service instance for tab: {SelectedTab.Name}");
-                        return SelectedTab.Service;
-                    }
-                    catch (ObjectDisposedException)
-                    {
-                        // Service is disposed, continue to create a new one
-                        Debug.WriteLine($"Tab's service is disposed, creating a new one for tab: {SelectedTab.Name}");
-                        // Clear the reference to avoid reusing the disposed service
-                        SelectedTab.Service = null;
-                    }
+                    // Simple chat mode - create basic service
+                    var persona = GetEffectivePersona();
+                    SelectedTab.Service = new GeneralChatService(apiKey, SelectedModel.Name, SelectedModel.Provider, false, persona);
+                    SelectedTab.ContextRequiresRefresh = false;
+                    return SelectedTab.Service;
                 }
 
-                // Get the API key and other parameters
-                var apiKey = GetApiKey(SelectedTab.SelectedModel?.Provider ?? AIProvider.OpenAI);
-                var modelName = SelectedTab.SelectedModel?.Name ?? "gpt-4";
-                var provider = SelectedTab.SelectedModel?.Provider ?? AIProvider.OpenAI;
-                var isThinkingMode = SelectedTab.SelectedModel?.IsThinkingMode ?? false;
-
-                // IMPORTANT: Use the tab's context mode, not the global property
-                var isTabContextMode = SelectedTab.IsContextMode;
-                Debug.WriteLine($"Using tab's context mode: {isTabContextMode}");
-
-                // Get the current markdown tab from the main window directly
-                IFileTab currentMarkdownTab = GetCurrentMarkdownTab();
-                Debug.WriteLine($"Current markdown tab: {currentMarkdownTab?.FilePath ?? "null"}");
-
-                // If we're in context mode and have a markdown tab, create a specialized service
-                if (isTabContextMode && currentMarkdownTab != null)
+                // SPLENDID: Check if tab is locked to a specific file and chain
+                if (SelectedTab.IsLocked)
                 {
-                    var filePath = currentMarkdownTab.FilePath;
-                    var content = await GetCurrentContent();
+                    System.Diagnostics.Debug.WriteLine($"Using locked association - File: {SelectedTab.LockedFilePath}, Chain: {SelectedTab.LockedChainType}");
                     
-                    Debug.WriteLine($"Processing markdown tab with file path: {filePath}");
+                    // Use the locked file path and chain type
+                    string lockedFilePath = SelectedTab.LockedFilePath;
+                    ChainType chainType = SelectedTab.LockedChainType.Value;
                     
-                    // Check for outline files first
-                    bool isOutline = IsOutlineFile(content, filePath);
-                    Debug.WriteLine($"IsOutlineFile result: {isOutline}");
-                    
-                    if (isOutline)
+                    // Read content from the locked file
+                    string lockedContent = string.Empty;
+                    if (System.IO.File.Exists(lockedFilePath))
                     {
-                        Debug.WriteLine("Creating OutlineWritingBeta service for outline file");
+                        lockedContent = await System.IO.File.ReadAllTextAsync(lockedFilePath);
+                    }
+                    
+                    string lockedLibraryPath = DetermineAppropriateLibraryPath(lockedFilePath, lockedContent);
+                    
+                    // Create service based on locked chain type
+                    var lockedService = await CreateServiceByChain(chainType, apiKey, SelectedModel.Name, SelectedModel.Provider, lockedFilePath, lockedLibraryPath, lockedContent, SelectedTab.AssociatedEditor);
+                    
+                    if (lockedService != null)
+                    {
+                        SelectedTab.Service = lockedService;
+                        SelectedTab.ContextRequiresRefresh = false;
                         
-                        try
+                        // Set up event handlers for specialized services
+                        if (lockedService is FictionWritingBeta fictionBeta)
                         {
-                            // CRITICAL: Determine the correct library path that will handle relative path references
-                            string libraryPath = DetermineAppropriateLibraryPath(filePath, content);
-                            Debug.WriteLine($"Using determined library path: {libraryPath}");
-                            
-                            // Create OutlineWritingBeta service with the properly determined library path
-                            var outlineService = await OutlineWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
-                            SelectedTab.Service = outlineService;
-                            
-                            // Update the content immediately
-                            await SelectedTab.Service.UpdateContextAsync(content);
-                            
-                            // Set cursor position if it's an OutlineWritingBeta
-                            if (SelectedTab.Service is OutlineWritingBeta outlineBeta)
-                            {
-                                outlineBeta.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
-                                Debug.WriteLine($"Updated cursor position to: {currentMarkdownTab.LastKnownCursorPosition}");
-                                
-                                // Subscribe to retry events
-                                outlineBeta.OnRetryingOverloadedRequest += RetryEventHandler;
-                            }
-                            
-                            Debug.WriteLine("Successfully created OutlineWritingBeta service");
+                            fictionBeta.OnRetryingOverloadedRequest += RetryEventHandler;
                         }
-                        catch (Exception ex)
+                        else if (lockedService is OutlineWritingBeta outlineBeta)
                         {
-                            Debug.WriteLine($"Error creating OutlineWritingBeta service: {ex}");
-                            Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                            
-                            // Fallback to general chat service
-                            Debug.WriteLine("Falling back to GeneralChatService due to OutlineWritingBeta creation failure");
-                            SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode);
-                            await SelectedTab.Service.UpdateContextAsync(content);
+                            outlineBeta.OnRetryingOverloadedRequest += RetryEventHandler;
                         }
+                        else if (lockedService is ProofreadingBeta proofreadingBeta)
+                        {
+                            proofreadingBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                        }
+                        else if (lockedService is StoryAnalysisBeta storyAnalysisBeta)
+                        {
+                            storyAnalysisBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                        }
+                        
+                        return lockedService;
                     }
                     else
                     {
-                        // Check for non-fiction files second
-                        bool isNonFiction = IsNonFictionFile(content, filePath);
-                        Debug.WriteLine($"IsNonFictionFile result: {isNonFiction}");
-                        
-                        if (isNonFiction)
-                        {
-                            Debug.WriteLine("Creating NonFictionWritingBeta service for non-fiction file");
-                            
-                            try
-                            {
-                                // CRITICAL: Determine the correct library path that will handle relative path references
-                                string libraryPath = DetermineAppropriateLibraryPath(filePath, content);
-                                Debug.WriteLine($"Using determined library path: {libraryPath}");
-                                
-                                // Create NonFictionWritingBeta service with the properly determined library path
-                                var nonfictionService = await NonFictionWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
-                                SelectedTab.Service = nonfictionService;
-                                
-                                // Update the content immediately
-                                await SelectedTab.Service.UpdateContextAsync(content);
-                                
-                                // Set cursor position if it's a NonFictionWritingBeta
-                                if (SelectedTab.Service is NonFictionWritingBeta nonfictionBeta)
-                                {
-                                    nonfictionBeta.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
-                                    Debug.WriteLine($"Updated cursor position to: {currentMarkdownTab.LastKnownCursorPosition}");
-                                    
-                                    // Subscribe to retry events
-                                    nonfictionBeta.OnRetryingOverloadedRequest += RetryEventHandler;
-                                }
-                                
-                                Debug.WriteLine("Successfully created NonFictionWritingBeta service");
-                            }
-                            catch (Exception ex)
-                            {
-                                Debug.WriteLine($"Error creating NonFictionWritingBeta service: {ex}");
-                                Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                                
-                                // Fallback to general chat service
-                                Debug.WriteLine("Falling back to GeneralChatService due to NonFictionWritingBeta creation failure");
-                                SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode);
-                                await SelectedTab.Service.UpdateContextAsync(content);
-                            }
-                        }
-                        else
-                        {
-                            // Check for fiction files third
-                            bool isFiction = IsFictionFile(content, filePath);
-                            Debug.WriteLine($"IsFictionFile result: {isFiction}");
-                            
-                            if (isFiction)
-                            {
-                                Debug.WriteLine("Creating FictionWritingBeta service for fiction file");
-                                
-                                try
-                                {
-                                    // CRITICAL: Determine the correct library path that will handle relative path references
-                                    string libraryPath = DetermineAppropriateLibraryPath(filePath, content);
-                                    Debug.WriteLine($"Using determined library path: {libraryPath}");
-                                    
-                                    // Create FictionWritingBeta service with the properly determined library path
-                                    var fictionService = await FictionWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
-                                    SelectedTab.Service = fictionService;
-                                    
-                                    // Update the content immediately
-                                    await SelectedTab.Service.UpdateContextAsync(content);
-                                    
-                                    // Set cursor position if it's a FictionWritingBeta
-                                    if (SelectedTab.Service is FictionWritingBeta fictionBeta)
-                                    {
-                                        fictionBeta.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
-                                        Debug.WriteLine($"Updated cursor position to: {currentMarkdownTab.LastKnownCursorPosition}");
-                                        
-                                        // Subscribe to retry events
-                                        fictionBeta.OnRetryingOverloadedRequest += RetryEventHandler;
-                                    }
-                                    
-                                    Debug.WriteLine("Successfully created FictionWritingBeta service");
-                                }
-                                catch (Exception ex)
-                                {
-                                    Debug.WriteLine($"Error creating FictionWritingBeta service: {ex}");
-                                    Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                                    
-                                    // Fallback to general chat service
-                                    Debug.WriteLine("Falling back to GeneralChatService due to FictionWritingBeta creation failure");
-                                    SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode);
-                                    await SelectedTab.Service.UpdateContextAsync(content);
-                                }
-                            }
-                            else
-                            {
-                                // Check for rules files fourth
-                                bool isRules = IsRulesFile(content, filePath);
-                                Debug.WriteLine($"IsRulesFile result: {isRules}");
-                                
-                                if (isRules)
-                                {
-                                    Debug.WriteLine("Creating RulesWritingBeta service for rules file");
-                                    
-                                    try
-                                    {
-                                        // CRITICAL: Determine the correct library path that will handle relative path references
-                                        string libraryPath = DetermineAppropriateLibraryPath(filePath, content);
-                                        Debug.WriteLine($"Using determined library path: {libraryPath}");
-                                        
-                                        // Create RulesWritingBeta service with the properly determined library path
-                                        var rulesService = await RulesWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
-                                        SelectedTab.Service = rulesService;
-                                        
-                                        // Update the content immediately
-                                        await SelectedTab.Service.UpdateContextAsync(content);
-                                        
-                                        Debug.WriteLine($"Successfully created RulesWritingBeta service");
-                                    }
-                                    catch (Exception ex)
-                                    {
-                                        Debug.WriteLine($"Error creating RulesWritingBeta service: {ex.Message}");
-                                        Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                                        // Create a general context service as fallback
-                                        Debug.WriteLine("Falling back to GeneralChatService due to RulesWritingBeta creation failure");
-                                        SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode);
-                                        await SelectedTab.Service.UpdateContextAsync(content);
-                                    }
-                                }
-                                else
-                                {
-                                    // Check for non-fiction files fifth
-                                    bool isNonFictionFile = IsNonFictionFile(content, filePath);
-                                    Debug.WriteLine($"IsNonFictionFile result: {isNonFictionFile}");
-                                    
-                                    if (isNonFictionFile)
-                                    {
-                                        Debug.WriteLine("Creating NonFictionWritingBeta service for non-fiction file");
-                                        
-                                        try
-                                        {
-                                            // CRITICAL: Determine the correct library path that will handle relative path references
-                                            string libraryPath = DetermineAppropriateLibraryPath(filePath, content);
-                                            Debug.WriteLine($"Using determined library path: {libraryPath}");
-                                            
-                                            // Create NonFictionWritingBeta service with the properly determined library path
-                                            var nonFictionService = await NonFictionWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
-                                            SelectedTab.Service = nonFictionService;
-                                            
-                                            // Update the content immediately
-                                            await SelectedTab.Service.UpdateContextAsync(content);
-                                            
-                                            Debug.WriteLine($"Successfully created NonFictionWritingBeta service");
-                                        }
-                                        catch (Exception ex)
-                                        {
-                                            Debug.WriteLine($"Error creating NonFictionWritingBeta service: {ex.Message}");
-                                            Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-                                            // Create a general context service as fallback
-                                            Debug.WriteLine("Falling back to GeneralChatService due to NonFictionWritingBeta creation failure");
-                                            SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode);
-                                            await SelectedTab.Service.UpdateContextAsync(content);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        Debug.WriteLine("Creating GeneralChatService for non-outline, non-fiction, non-rules, non-nonfiction markdown file");
-                                        SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode);
-                                        await SelectedTab.Service.UpdateContextAsync(content);
-                                    }
-                                }
-                            }
-                        }
+                        // Fallback to general chat if locked service creation fails
+                        var persona = GetEffectivePersona();
+                        SelectedTab.Service = new GeneralChatService(apiKey, SelectedModel.Name, SelectedModel.Provider, false, persona);
+                        SelectedTab.ContextRequiresRefresh = false;
+                        return SelectedTab.Service;
                     }
+                }
+
+                // Context mode - need to determine file type and create specialized service
+                var currentMarkdownTab = GetCurrentMarkdownTab();
+                if (currentMarkdownTab?.FilePath == null)
+                {
+                    // No file context, use general chat
+                    var persona = GetEffectivePersona();
+                    SelectedTab.Service = new GeneralChatService(apiKey, SelectedModel.Name, SelectedModel.Provider, false, persona);
+                    SelectedTab.ContextRequiresRefresh = false;
+                    return SelectedTab.Service;
+                }
+
+                string filePath = currentMarkdownTab.FilePath;
+                string content = await GetCurrentContent();
+                string libraryPath = DetermineAppropriateLibraryPath(filePath, content);
+
+                System.Diagnostics.Debug.WriteLine($"GetOrCreateService: Creating service for file '{filePath}' with library path '{libraryPath}'");
+
+                // SPLENDID: Skip file type detection for locked tabs - they maintain their locked chain
+                if (!SelectedTab.IsLocked)
+                {
+                    // Detect file type and update the tab
+                    string detectedFileType = DetectFileType(content, filePath);
+                    SelectedTab.UpdateFileType(detectedFileType);
+                    
+                    System.Diagnostics.Debug.WriteLine($"Detected file type: {detectedFileType}, Selected chain: {SelectedTab.SelectedChain?.DisplayName}");
                 }
                 else
                 {
-                    // Create a general chat service for non-context mode or non-markdown tabs
-                    Debug.WriteLine($"Creating GeneralChatService for {(isTabContextMode ? "context mode without markdown tab" : "non-context mode")}");
-                    
-                    // CRITICAL FIX: Create a NEW instance for each tab instead of using singleton
-                    SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode);
-                    
-                    // If we have content from another context, update it
-                    if (isTabContextMode)
-                    {
-                        var content = await GetCurrentContent();
-                        if (!string.IsNullOrEmpty(content))
-                        {
-                            await SelectedTab.Service.UpdateContextAsync(content);
-                        }
-                    }
+                    System.Diagnostics.Debug.WriteLine($"Tab is locked - skipping file type detection, maintaining chain: {SelectedTab.LockedChainType}");
                 }
 
-                // The service is already stored in the tab
-                Debug.WriteLine($"Service created and stored in tab: {SelectedTab.Name}");
+                // If no chain is selected, default to Chat
+                if (SelectedTab.SelectedChain == null)
+                {
+                    var persona = GetEffectivePersona();
+                    SelectedTab.Service = new GeneralChatService(apiKey, SelectedModel.Name, SelectedModel.Provider, false, persona);
+                    SelectedTab.ContextRequiresRefresh = false;
+                    return SelectedTab.Service;
+                }
+
+                // Create service based on selected chain
+                var service = await CreateServiceByChain(SelectedTab.SelectedChain.Type, apiKey, SelectedModel.Name, SelectedModel.Provider, filePath, libraryPath, content, currentMarkdownTab);
+                
+                if (service != null)
+                {
+                    SelectedTab.Service = service;
+                    SelectedTab.ContextRequiresRefresh = false;
+                    
+                    // SPLENDID: Lock the tab to this file and chain if it's not a General Chat
+                    if (SelectedTab.SelectedChain.Type != ChainType.Chat && !SelectedTab.IsLocked)
+                    {
+                        SelectedTab.LockToFileAndChain(filePath, SelectedTab.SelectedChain.Type);
+                        System.Diagnostics.Debug.WriteLine($"Auto-locked chat tab to file '{filePath}' with chain '{SelectedTab.SelectedChain.Type}'");
+                    }
+                    
+                    // Set up event handlers for specialized services
+                    if (service is FictionWritingBeta fictionBeta)
+                    {
+                        fictionBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                    }
+                    else if (service is OutlineWritingBeta outlineBeta)
+                    {
+                        outlineBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                    }
+                    else if (service is ProofreadingBeta proofreadingBeta)
+                    {
+                        proofreadingBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                    }
+                    else if (service is StoryAnalysisBeta storyAnalysisBeta)
+                    {
+                        storyAnalysisBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                    }
+                    
+                    return service;
+                }
+                else
+                {
+                    // Fallback to general chat
+                    var persona = GetEffectivePersona();
+                    SelectedTab.Service = new GeneralChatService(apiKey, SelectedModel.Name, SelectedModel.Provider, false, persona);
+                    SelectedTab.ContextRequiresRefresh = false;
+                    return SelectedTab.Service;
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error creating service: {ex}");
+                
+                // Fallback to general chat service
+                var apiKey = GetApiKey(SelectedModel.Provider);
+                var persona = GetEffectivePersona();
+                SelectedTab.Service = new GeneralChatService(apiKey, SelectedModel.Name, SelectedModel.Provider, false, persona);
+                SelectedTab.ContextRequiresRefresh = false;
                 return SelectedTab.Service;
             }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error creating service: {ex}");
-                throw;
-            }
         }
 
-        // Add this helper method to determine the appropriate library path
-        private string DetermineAppropriateLibraryPath(string filePath, string content)
+        /// <summary>
+        /// Gets the effective persona for the current chat - tab-specific persona overrides default setting
+        /// </summary>
+        private string GetEffectivePersona()
+        {
+            // Check if current tab has a persona set (tab-specific override)
+            if (!string.IsNullOrWhiteSpace(SelectedTab?.CurrentPersona))
+            {
+                return SelectedTab.CurrentPersona;
+            }
+            
+            // Fall back to default persona from settings
+            return _configService?.Provider?.DefaultChatPersona;
+        }
+
+        private string DetectFileType(string content, string filePath)
+        {
+            // PRIMARY: Check for explicit type in frontmatter (type: fiction)
+            string explicitType = GetExplicitFileType(content, filePath);
+            if (!string.IsNullOrEmpty(explicitType))
+            {
+                System.Diagnostics.Debug.WriteLine($"File type detected from frontmatter 'type:' field: {explicitType}");
+                return explicitType;
+            }
+            
+            System.Diagnostics.Debug.WriteLine("No 'type:' field found in frontmatter, file type unknown");
+            
+            // OPTIONAL: Fallback to content-based detection only for legacy files without frontmatter
+            // This is kept for backward compatibility but frontmatter should be the standard
+            /*
+            if (IsOutlineFile(content, filePath))
+                return "outline";
+            if (IsRulesFile(content, filePath))
+                return "rules"; 
+            if (IsFictionFile(content, filePath))
+                return "fiction";
+            if (IsNonFictionFile(content, filePath))
+                return "nonfiction";
+            */
+                
+            return null; // Unknown type - user should add frontmatter with 'type:' field
+        }
+
+        private async Task<BaseLangChainService> CreateServiceByChain(ChainType chainType, string apiKey, string modelName, AIProvider provider, string filePath, string libraryPath, string content, IFileTab currentMarkdownTab)
         {
             try
             {
-                if (string.IsNullOrEmpty(filePath))
-                    return null;
-            
-                // Start with the file's directory
-                string fileDir = Path.GetDirectoryName(filePath);
-            
-                // CRITICAL: Check if content contains references to parent directories
-                if (!string.IsNullOrEmpty(content) && 
-                   (content.Contains("ref rules: ../") || 
-                    content.Contains("ref style: ../") || 
-                    content.Contains("ref outline: ../") ||
-                    // More generic check for any ../ reference
-                    (content.Contains("ref") && content.Contains("../"))))
-                {
-                    Debug.WriteLine("Content contains references to parent directory, adjusting library path");
-                    
-                    // Get the parent directory to accommodate ../ references
-                    string parentDir = Path.GetDirectoryName(fileDir);
-                    if (!string.IsNullOrEmpty(parentDir))
-                    {
-                        Debug.WriteLine($"Setting library path to parent directory: {parentDir}");
-                        return parentDir;
-                    }
-                }
+                BaseLangChainService service = null;
                 
-                // CRITICAL: Check for multiple levels of parent references (../../)
-                if (!string.IsNullOrEmpty(content) && content.Contains("../../"))
+                switch (chainType)
                 {
-                    Debug.WriteLine("Content contains references to grandparent directory, adjusting library path");
-                    
-                    // Get the grandparent directory to accommodate ../../ references
-                    string parentDir = Path.GetDirectoryName(fileDir);
-                    if (!string.IsNullOrEmpty(parentDir))
-                    {
-                        string grandparentDir = Path.GetDirectoryName(parentDir);
-                        if (!string.IsNullOrEmpty(grandparentDir))
+                    case ChainType.Chat:
+                        System.Diagnostics.Debug.WriteLine("Creating GeneralChatService for Chat chain - INDEPENDENT mode, no file content");
+                        // SPLENDID: Determine persona from current tab or default setting
+                        var persona = GetEffectivePersona();
+                        service = new GeneralChatService(apiKey, modelName, provider, false, persona);
+                        // SPLENDID: General Chat should NOT tie to file content - keep it completely independent
+                        // Do NOT call UpdateContextAsync(content) - this keeps it as pure general chat
+                        System.Diagnostics.Debug.WriteLine($"Chat service created with persona: {persona ?? "Default Assistant"}");
+                        break;
+                        
+                    case ChainType.FictionWriting:
+                        System.Diagnostics.Debug.WriteLine("Creating FictionWritingBeta for Fiction Writing chain");
+                        var fictionService = await FictionWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
+                        await fictionService.UpdateContentAndInitialize(content);
+                        if (currentMarkdownTab != null)
                         {
-                            Debug.WriteLine($"Setting library path to grandparent directory: {grandparentDir}");
-                            return grandparentDir;
+                            fictionService.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
                         }
-                    }
+                        service = fictionService;
+                        break;
+                        
+                    case ChainType.Proofreader:
+                        System.Diagnostics.Debug.WriteLine("Creating ProofreadingBeta for Proofreader chain");
+                        var proofreadingService = await ProofreadingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
+                        await proofreadingService.UpdateContentAndInitialize(content);
+                        if (currentMarkdownTab != null)
+                        {
+                            proofreadingService.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
+                        }
+                        service = proofreadingService;
+                        break;
+                        
+                    case ChainType.StoryAnalysis:
+                        System.Diagnostics.Debug.WriteLine("Creating StoryAnalysisBeta for Story Analysis chain");
+                        var storyAnalysisService = await StoryAnalysisBeta.GetInstance(apiKey, modelName, provider, filePath);
+                        await storyAnalysisService.UpdateContentAndInitialize(content);
+                        service = storyAnalysisService;
+                        break;
+                        
+                    case ChainType.OutlineWriter:
+                        System.Diagnostics.Debug.WriteLine("Creating OutlineWritingBeta for Outline Writer chain");
+                        var outlineService = await OutlineWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
+                        await outlineService.UpdateContentAndInitialize(content);
+                        if (currentMarkdownTab != null)
+                        {
+                            outlineService.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
+                        }
+                        service = outlineService;
+                        break;
+                        
+                    case ChainType.RulesWriter:
+                        System.Diagnostics.Debug.WriteLine("Creating RulesWritingBeta for Rules Writer chain");
+                        var rulesService = await RulesWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
+                        await rulesService.UpdateContentAndInitialize(content);
+                        service = rulesService;
+                        break;
+                        
+                    case ChainType.CharacterDevelopment:
+                        System.Diagnostics.Debug.WriteLine("Creating CharacterDevelopmentChain for Character Development chain");
+                        var fileReferenceService = new FileReferenceService(libraryPath);
+                        if (!string.IsNullOrEmpty(filePath))
+                        {
+                            fileReferenceService.SetCurrentFilePath(filePath);
+                        }
+                        var textSearchService = new EnhancedTextSearchService();
+                        var chapterSearchService = new ChapterSearchService(textSearchService);
+                        var characterStoryAnalysisService = new CharacterStoryAnalysisService(chapterSearchService, fileReferenceService, libraryPath);
+                        var characterService = new CharacterDevelopmentChain(apiKey, modelName, provider, fileReferenceService, characterStoryAnalysisService);
+                        await characterService.UpdateContextAsync(content);
+                        // Note: CharacterDevelopmentChain doesn't have UpdateCursorPosition method
+                        service = characterService;
+                        break;
+                        
+                    case ChainType.StyleGuide:
+                        System.Diagnostics.Debug.WriteLine("Creating StyleGuideChain for Style Guide chain");
+                        var styleFileReferenceService = new FileReferenceService(libraryPath);
+                        if (!string.IsNullOrEmpty(filePath))
+                        {
+                            styleFileReferenceService.SetCurrentFilePath(filePath);
+                        }
+                        var styleService = new StyleGuideChain(apiKey, modelName, provider, styleFileReferenceService);
+                        styleService.SetCurrentFilePath(filePath);
+                        await styleService.UpdateContextAsync(content);
+                        service = styleService;
+                        break;
+                        
+                    default:
+                        System.Diagnostics.Debug.WriteLine($"Unknown chain type: {chainType}, falling back to GeneralChatService - INDEPENDENT mode");
+                        var fallbackPersona = GetEffectivePersona();
+                        service = new GeneralChatService(apiKey, modelName, provider, false, fallbackPersona);
+                        // SPLENDID: Default fallback should also be independent general chat
+                        // Do NOT call UpdateContextAsync(content)
+                        System.Diagnostics.Debug.WriteLine($"Fallback chat service created with persona: {fallbackPersona ?? "Default Assistant"}");
+                        break;
                 }
                 
-                // Default to the file directory if no parent references found
-                Debug.WriteLine($"Using file directory as library path: {fileDir}");
-                return fileDir;
+                return service;
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error determining library path: {ex.Message}");
-                // Fallback to file directory
-                return Path.GetDirectoryName(filePath);
-            }
-        }
-
-        // Helper to find markdown tab
-        private IFileTab GetCurrentMarkdownTab()
-        {
-            try
-            {
-                // Try to use the _currentEditor first if it's a markdown tab
-                if (_currentEditor is Views.MarkdownTabAvalon markdownTab)
-                {
-                    Debug.WriteLine($"Using _currentEditor as MarkdownTabAvalon: {markdownTab.FilePath}");
-                    return markdownTab;
-                }
-                else if (_currentEditor is Views.MarkdownTabAvalon markdownTabAvalon)
-                {
-                    Debug.WriteLine($"Using _currentEditor as MarkdownTabAvalon: {markdownTabAvalon.FilePath}");
-                    return markdownTabAvalon;
-                }
-                
-                // Otherwise, try to get it from the main window's tab control
-                var mainWindow = Application.Current.MainWindow as Views.MainWindow;
-                if (mainWindow != null)
-                {
-                    var selectedTabItem = mainWindow.MainTabControl?.SelectedItem as TabItem;
-                    if (selectedTabItem?.Content is Views.MarkdownTabAvalon selectedMarkdownTab)
-                    {
-                        Debug.WriteLine($"Found MarkdownTabAvalon from MainTabControl: {selectedMarkdownTab.FilePath}");
-                        return selectedMarkdownTab;
-                    }
-                    else if (selectedTabItem?.Content is Views.MarkdownTabAvalon selectedMarkdownTabAvalon)
-                    {
-                        Debug.WriteLine($"Found MarkdownTabAvalon from MainTabControl: {selectedMarkdownTabAvalon.FilePath}");
-                        return selectedMarkdownTabAvalon;
-                    }
-                }
-                
-                // Look for any tab with the same filename as in the chat tab name
-                if (SelectedTab != null && SelectedTab.Name.StartsWith("Chat - "))
-                {
-                    string chatFileName = SelectedTab.Name.Substring(7); // Remove "Chat - " prefix
-                    
-                    // Search through all tabs
-                    if (mainWindow != null)
-                    {
-                        foreach (TabItem tabItem in mainWindow.MainTabControl.Items)
-                        {
-                            if (tabItem.Content is Views.MarkdownTabAvalon mdTab)
-                            {
-                                string tabFileName = Path.GetFileName(mdTab.FilePath);
-                                if (tabFileName == chatFileName || SelectedTab.Name.Contains(tabFileName))
-                                {
-                                    Debug.WriteLine($"Found matching MarkdownTabAvalon by filename: {mdTab.FilePath}");
-                                    return mdTab;
-                                }
-                            }
-                            else if (tabItem.Content is Views.MarkdownTabAvalon mdTabAvalon)
-                            {
-                                string tabFileName = Path.GetFileName(mdTabAvalon.FilePath);
-                                if (tabFileName == chatFileName || SelectedTab.Name.Contains(tabFileName))
-                                {
-                                    Debug.WriteLine($"Found matching MarkdownTabAvalon by filename: {mdTabAvalon.FilePath}");
-                                    return mdTabAvalon;
-                                }
-                            }
-                        }
-                    }
-                }
-                
-                Debug.WriteLine("No markdown tab found");
-                return null;
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"Error in GetCurrentMarkdownTab: {ex.Message}`");
+                System.Diagnostics.Debug.WriteLine($"Error creating service for chain {chainType}: {ex}");
                 return null;
             }
         }
@@ -1339,11 +1351,16 @@ namespace Universa.Desktop.ViewModels
                     }
                 }
                 
-                // Immediately update the cursor position in the active service if it's fiction
+                // Immediately update the cursor position in the active service if it supports cursor positions
             if (SelectedTab?.Service is FictionWritingBeta betaService)
             {
                     Debug.WriteLine($"Directly updating cursor position in active FictionWritingBeta service: {newPosition}");
                 betaService.UpdateCursorPosition(newPosition);
+            }
+            else if (SelectedTab?.Service is ProofreadingBeta proofreadingService)
+            {
+                    Debug.WriteLine($"Directly updating cursor position in active ProofreadingBeta service: {newPosition}");
+                proofreadingService.UpdateCursorPosition(newPosition);
                     
                     // Mark context as requiring refresh when cursor moves significantly (more than 50 characters)
                     if (associatedTab != null)
@@ -1437,20 +1454,13 @@ namespace Universa.Desktop.ViewModels
                     }
 
                     // Add user message after API key check to the originating tab
-                    var userMessage = new Models.ChatMessage("user", userInput)
+                    var userMessage = new Models.ChatMessage("user", userInput, true)
                     {
                         ModelName = originatingTab.SelectedModel.Name,
                         Provider = originatingTab.SelectedModel.Provider
                     };
-                    // Add to the correct message collection based on context mode
-                    if (originatingTab.IsContextMode)
-                    {
-                        originatingTab.Messages.Add(userMessage);
-                    }
-                    else
-                    {
-                        originatingTab.ChatModeMessages.Add(userMessage);
-                    }
+                    // Add user message using the tab's AddMessage method (with cleanup)
+                    originatingTab.AddMessage(userMessage);
 
                     // Create response message that will be updated with streaming content
                     var responseMessage = new Models.ChatMessage("assistant", "")
@@ -1460,22 +1470,21 @@ namespace Universa.Desktop.ViewModels
                         IsThinking = true
                     };
                     
-                    // Add to the correct message collection based on context mode
-                    if (originatingTab.IsContextMode)
-                    {
-                        originatingTab.Messages.Add(responseMessage);
-                    }
-                    else
-                    {
-                        originatingTab.ChatModeMessages.Add(responseMessage);
-                    }
+                    // Add response message using the tab's AddMessage method (with cleanup)
+                    originatingTab.AddMessage(responseMessage);
                     
-                    // If this tab is the currently selected one, update the Messages property
+                    // SPLENDID: Only update Messages if the collection reference changed to avoid binding issues
                     if (originatingTab == SelectedTab)
                     {
-                        Messages = originatingTab.IsContextMode ? 
+                        var expectedMessages = originatingTab.IsContextMode ? 
                             originatingTab.Messages : 
                             originatingTab.ChatModeMessages;
+                        
+                        if (Messages != expectedMessages)
+                        {
+                            Messages = expectedMessages;
+                        }
+                        OnPropertyChanged(nameof(Messages));
                     }
 
                     // Create a new cancellation token source for this request
@@ -1536,11 +1545,13 @@ namespace Universa.Desktop.ViewModels
                                 originatingTab.ChatModeMessages;
                                 
                             activeMessages.Remove(responseMessage);
-                            activeMessages.Add(new Models.ChatMessage("system", "Failed to create language service. Please check your settings and try again.", true)
+                            
+                            var errorMessage = new Models.ChatMessage("system", "Failed to create language service. Please check your settings and try again.", true)
                             {
                                 LastUserMessage = userInput,
                                 IsError = true
-                            });
+                            };
+                            originatingTab.AddMessage(errorMessage);
                             
                             // If this tab is the currently selected one, update the Messages property
                             if (originatingTab == SelectedTab)
@@ -1551,42 +1562,71 @@ namespace Universa.Desktop.ViewModels
                         }
                         Debug.WriteLine($"Service created, processing request... Type: {service.GetType().Name}");
                         
-                        // Create a local handler for the streaming updates
+                        // BULLY: Create debounced streaming handler to prevent UI jumping
                         Action<string> contentUpdateHandler = (updatedContent) => {
-                            Application.Current.Dispatcher.InvokeAsync(() => {
-                                // Update the message content as it streams in
-                                responseMessage.Content = updatedContent;
-                                // Auto scroll to new content
-                                ScrollToBottom();
-                            });
+                            try
+                            {
+                                // Use debounced update instead of immediate UI update
+                                Application.Current.Dispatcher.BeginInvoke(new Action(() => {
+                                    try
+                                    {
+                                        // Null check to prevent race condition with error handling
+                                        if (responseMessage != null && updatedContent != null)
+                                        {
+                                            // Queue the update through the debounce system
+                                            QueueStreamingUpdate(updatedContent, responseMessage, originatingTab);
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        Debug.WriteLine($"Error queuing streaming content update: {ex.Message}");
+                                    }
+                                }), System.Windows.Threading.DispatcherPriority.Background);
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Error in debounced contentUpdateHandler: {ex.Message}");
+                            }
                         };
                         
                         // Subscribe to content updates from streaming
                         service.OnContentUpdated += contentUpdateHandler;
                         
-                        // Pass the cancellation token to the service
-                        response = await Task.Run(async () => {
-                            try {
-                                // If we have a FictionWritingBeta service, make sure to directly set _lastUserMessage
-                                // in addition to passing it as the request parameter to ensure triggers work
-                                if (service is FictionWritingBeta fictionBeta)
-                                {
-                                    Debug.WriteLine($"Using FictionWritingBeta service with trigger detection. User message: '{userInput}'");
-                                    // Make sure the user message is passed as the request parameter
-                                    return await service.ProcessRequest(content, userInput, _cancellationTokenSource.Token);
+                        try
+                        {
+                            // Pass the cancellation token to the service
+                            response = await Task.Run(async () => {
+                                try {
+                                    // If we have a FictionWritingBeta service, make sure to directly set _lastUserMessage
+                                    // in addition to passing it as the request parameter to ensure triggers work
+                                    if (service is FictionWritingBeta fictionBeta)
+                                    {
+                                        Debug.WriteLine($"Using FictionWritingBeta service with trigger detection. User message: '{userInput}'");
+                                        // Make sure the user message is passed as the request parameter
+                                        return await service.ProcessRequest(content, userInput, _cancellationTokenSource.Token);
+                                    }
+                                    else
+                                    {
+                                        return await service.ProcessRequest(content, userInput, _cancellationTokenSource.Token);
+                                    }
                                 }
-                                else
-                                {
-                                    return await service.ProcessRequest(content, userInput, _cancellationTokenSource.Token);
+                                catch (OperationCanceledException) {
+                                    return "Request cancelled by user.";
                                 }
+                            });
+                        }
+                        finally
+                        {
+                            // Always unsubscribe from content updates to prevent memory leaks
+                            try
+                            {
+                                service.OnContentUpdated -= contentUpdateHandler;
                             }
-                            catch (OperationCanceledException) {
-                                return "Request cancelled by user.";
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Error unsubscribing from content updates: {ex.Message}");
                             }
-                        });
-                        
-                        // Unsubscribe from content updates
-                        service.OnContentUpdated -= contentUpdateHandler;
+                        }
                         
                         // IMPORTANT: Don't dispose the service here, it will be reused
                     }
@@ -1600,16 +1640,19 @@ namespace Universa.Desktop.ViewModels
                                 originatingTab.ChatModeMessages;
                                 
                             cancelMessages.Remove(responseMessage);
-                            cancelMessages.Add(new Models.ChatMessage("assistant", "Request cancelled by user.")
+                            
+                            var cancelMessage = new Models.ChatMessage("assistant", "Request cancelled by user.")
                             {
                                 ModelName = originatingTab.SelectedModel.Name,
                                 Provider = originatingTab.SelectedModel.Provider
-                            });
+                            };
+                            originatingTab.AddMessage(cancelMessage);
                             
-                            // If this tab is the currently selected one, update the Messages property
+                            // SPLENDID: Update the Messages property and force UI refresh
                             if (originatingTab == SelectedTab)
                             {
                                 Messages = cancelMessages;
+                                OnPropertyChanged(nameof(Messages));
                             }
                             return;
                         }
@@ -1625,37 +1668,46 @@ namespace Universa.Desktop.ViewModels
                         if (ex is HttpRequestException httpEx && 
                             (httpEx.Message.Contains("prematurely") || httpEx.Message.Contains("interrupted")))
                         {
-                            errorMessages.Add(new Models.ChatMessage("system", 
+                            var interruptedMessage = new Models.ChatMessage("system", 
                                 "The response was interrupted. This could be due to network issues or server timeouts. " +
                                 "You can try sending your message again.", true)
                             {
                                 LastUserMessage = userInput,
                                 IsError = true,
                                 CanRetry = true
-                            });
+                            };
+                            originatingTab.AddMessage(interruptedMessage);
                         }
                         else
                         {
-                            errorMessages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true)
+                            var generalErrorMessage = new Models.ChatMessage("system", $"Error: {ex.Message}", true)
                             {
                                 LastUserMessage = userInput,
                                 IsError = true
-                            });
+                            };
+                            originatingTab.AddMessage(generalErrorMessage);
                         }
                         
-                        // If this tab is the currently selected one, update the Messages property
+                        // SPLENDID: Update the Messages property and force UI refresh
                         if (originatingTab == SelectedTab)
                         {
                             Messages = errorMessages;
+                            OnPropertyChanged(nameof(Messages));
                         }
                         return;
                     }
 
-                    // Final update with completed response
+                    // SPLENDID: Final update with completed response and force UI refresh
                     responseMessage.IsThinking = false;
                     responseMessage.Content = response;
                     
-                    // Force scroll to bottom one last time
+                    // Force UI refresh for the completed message
+                    if (originatingTab == SelectedTab)
+                    {
+                        OnPropertyChanged(nameof(Messages));
+                    }
+                    
+                    // SPLENDID: Conditionally scroll to bottom - let ChatSidebar UI decide based on user position
                     ScrollToBottom();
                 }
                 catch (Exception ex)
@@ -1665,16 +1717,18 @@ namespace Universa.Desktop.ViewModels
                         originatingTab.Messages : 
                         originatingTab.ChatModeMessages;
                         
-                    activeMessages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true)
+                    var outerErrorMessage = new Models.ChatMessage("system", $"Error: {ex.Message}", true)
                     {
                         LastUserMessage = userInput,
                         IsError = true
-                    });
+                    };
+                    originatingTab.AddMessage(outerErrorMessage);
                     
-                    // If this tab is the currently selected one, update the Messages property
+                    // SPLENDID: Update the Messages property and force UI refresh
                     if (originatingTab == SelectedTab)
                     {
                         Messages = activeMessages;
+                        OnPropertyChanged(nameof(Messages));
                     }
                 }
                 finally
@@ -1687,132 +1741,61 @@ namespace Universa.Desktop.ViewModels
             catch (Exception ex)
             {
                 Debug.WriteLine($"Error in SendMessageAsync: {ex}");
-                Messages.Add(new Models.ChatMessage("system", $"Error: {ex.Message}", true)
+                var fallbackErrorMessage = new Models.ChatMessage("system", $"Error: {ex.Message}", true)
                 {
                     LastUserMessage = InputText,
                     IsError = true
-                });
+                };
+                SelectedTab?.AddMessage(fallbackErrorMessage);
             }
         }
         
         private void ScrollToBottom()
         {
-            if (ChatScrollViewer != null)
-            {
-                ChatScrollViewer.ScrollToEnd();
-            }
+            // Use the delegate to request scrolling from the UI
+            ScrollToBottomAction?.Invoke();
         }
         
-        /// <summary>
-        /// Restores the scroll position for the current tab and mode
-        /// </summary>
-        private void RestoreScrollPosition()
-        {
-            if (ChatScrollViewer != null && SelectedTab != null)
-            {
-                var targetPosition = SelectedTab.CurrentScrollPosition;
-                System.Diagnostics.Debug.WriteLine($"Restoring scroll position for tab '{SelectedTab.Name}' mode '{(SelectedTab.IsContextMode ? "Context" : "Chat")}': {targetPosition}");
-                
-                if (targetPosition > 0)
-                {
-                    // Multiple attempts with increasing delays to handle window initialization
-                    RestoreScrollPositionWithRetry(targetPosition, 0);
-                }
-            }
-        }
-        
-        /// <summary>
-        /// Attempts to restore scroll position with retry logic for better timing
-        /// </summary>
-        private void RestoreScrollPositionWithRetry(double targetPosition, int attemptCount)
-        {
-            if (ChatScrollViewer == null || SelectedTab == null || attemptCount >= 5)
-            {
-                return;
-            }
-            
-            try
-            {
-                // Check if ScrollViewer has content and is ready
-                if (ChatScrollViewer.ScrollableHeight > 0 && ChatScrollViewer.IsLoaded)
-                {
-                    ChatScrollViewer.ScrollToVerticalOffset(targetPosition);
-                    System.Diagnostics.Debug.WriteLine($"Successfully restored scroll position on attempt {attemptCount + 1}: {targetPosition}");
-                    
-                    // Verify the scroll position was actually set
-                    System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
-                    {
-                        var actualPosition = ChatScrollViewer.VerticalOffset;
-                        if (Math.Abs(actualPosition - targetPosition) > 10) // Allow some tolerance
-                        {
-                            System.Diagnostics.Debug.WriteLine($"Scroll position verification failed. Expected: {targetPosition}, Actual: {actualPosition}. Retrying...");
-                            // Try once more after a longer delay
-                            System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
-                            {
-                                ChatScrollViewer.ScrollToVerticalOffset(targetPosition);
-                            }), System.Windows.Threading.DispatcherPriority.Background);
-                        }
-                    }), System.Windows.Threading.DispatcherPriority.Background);
-                }
-                else
-                {
-                    // Not ready yet, schedule another attempt
-                    var delay = TimeSpan.FromMilliseconds(100 * (attemptCount + 1)); // Increasing delay
-                    System.Diagnostics.Debug.WriteLine($"ScrollViewer not ready for restoration (attempt {attemptCount + 1}). ScrollableHeight: {ChatScrollViewer.ScrollableHeight}, IsLoaded: {ChatScrollViewer.IsLoaded}. Retrying in {delay.TotalMilliseconds}ms");
-                    
-                    var timer = new System.Windows.Threading.DispatcherTimer
-                    {
-                        Interval = delay
-                    };
-                    timer.Tick += (s, e) =>
-                    {
-                        timer.Stop();
-                        RestoreScrollPositionWithRetry(targetPosition, attemptCount + 1);
-                    };
-                    timer.Start();
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"Error in RestoreScrollPositionWithRetry (attempt {attemptCount + 1}): {ex.Message}");
-            }
-        }
-        
-        /// <summary>
-        /// Saves the current scroll position for the active tab
-        /// </summary>
-        private void SaveCurrentScrollPosition()
-        {
-            if (ChatScrollViewer != null && SelectedTab != null)
-            {
-                SelectedTab.CurrentScrollPosition = ChatScrollViewer.VerticalOffset;
-            }
-        }
+
         
         /// <summary>
         /// Handles window state changes (maximize/minimize) to restore scroll position
         /// </summary>
         private void MainWindow_StateChanged(object sender, EventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("MainWindow state changed, scheduling scroll position restoration");
-            // Schedule restoration after window state change completes
-            System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+            // SPLENDID: Only auto-scroll on window state change if there are recent messages
+            // This prevents disrupting users viewing older chat history
+            if (SelectedTab?.Messages.Count > 0)
             {
-                RestoreScrollPosition();
-            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                var lastMessage = SelectedTab.Messages.Last();
+                if (lastMessage.Timestamp > DateTime.Now.AddMinutes(-10)) // Only if recent activity
+                {
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+                    {
+                        ScrollToBottom();
+                    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                }
+            }
         }
         
         /// <summary>
-        /// Handles window size changes to restore scroll position
+        /// Handles window size changes to ensure chat scrolls to bottom
         /// </summary>
         private void MainWindow_SizeChanged(object sender, System.Windows.SizeChangedEventArgs e)
         {
-            System.Diagnostics.Debug.WriteLine("MainWindow size changed, scheduling scroll position restoration");
-            // Schedule restoration after size change completes
-            System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+            // SPLENDID: Only auto-scroll on window resize if there are recent messages
+            // This prevents disrupting users viewing older chat history during window operations
+            if (SelectedTab?.Messages.Count > 0)
             {
-                RestoreScrollPosition();
-            }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                var lastMessage = SelectedTab.Messages.Last();
+                if (lastMessage.Timestamp > DateTime.Now.AddMinutes(-10)) // Only if recent activity
+                {
+                    System.Windows.Application.Current.Dispatcher.BeginInvoke(new System.Action(() =>
+                    {
+                        ScrollToBottom();
+                    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                }
+            }
         }
         
         private async Task RetryMessageAsync(Models.ChatMessage errorMessage)
@@ -1929,7 +1912,11 @@ namespace Universa.Desktop.ViewModels
                         // Only update if original name is generic or doesn't include the file name
                         if (SelectedTab.Name.StartsWith("Chat ") || SelectedTab.Name.StartsWith("New Chat") || SelectedTab.Name == "General Chat")
                         {
-                            SelectedTab.Name = $"Chat - {fileName}";
+                            // SPLENDID: Don't update name here if tab will be locked later - let LockToFileAndChain handle it
+                            if (!SelectedTab.IsLocked)
+                            {
+                                SelectedTab.Name = $"Chat - {fileName}";
+                            }
                         }
                     }
                 }
@@ -1942,6 +1929,15 @@ namespace Universa.Desktop.ViewModels
                     // Make sure to update the cursor position in the service
                     // Update service with current cursor position
                     fictionService.UpdateCursorPosition(cursorPosition);
+                }
+                else if (SelectedTab?.Service is ProofreadingBeta proofreadingService)
+                {
+                    proofreadingService.SetCurrentFilePath(markdownTab.FilePath);
+                    
+                    // Make sure to update the cursor position in the service
+                    // Update service with current cursor position
+                    proofreadingService.UpdateCursorPosition(cursorPosition);
+                    Debug.WriteLine($"Updated ProofreadingBeta cursor position to {cursorPosition} in GetCurrentContent");
                 }
                 
                 // Check if we have a file path and if the file exists
@@ -2030,7 +2026,11 @@ namespace Universa.Desktop.ViewModels
                             // Only update if original name is generic or doesn't include the file name
                             if (SelectedTab.Name.StartsWith("Chat ") || SelectedTab.Name.StartsWith("New Chat") || SelectedTab.Name == "General Chat")
                             {
-                                SelectedTab.Name = $"Chat - {fileName}";
+                                // SPLENDID: Don't update name here if tab will be locked later - let LockToFileAndChain handle it
+                                if (!SelectedTab.IsLocked)
+                                {
+                                    SelectedTab.Name = $"Chat - {fileName}";
+                                }
                             }
                         }
                     }
@@ -2132,6 +2132,88 @@ namespace Universa.Desktop.ViewModels
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
+        
+        /// <summary>
+        /// SPLENDID: Handles property changes from the selected tab to keep UI in sync
+        /// </summary>
+        private void OnSelectedTabPropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            // Forward chain-related property changes to update the UI bindings
+            if (e.PropertyName == nameof(ChatTabViewModel.SelectedChain))
+            {
+                OnPropertyChanged("SelectedTab.SelectedChain");
+                System.Diagnostics.Debug.WriteLine($"Forwarded SelectedChain property change from tab '{SelectedTab?.Name}'");
+            }
+            else if (e.PropertyName == nameof(ChatTabViewModel.AvailableChains))
+            {
+                OnPropertyChanged("SelectedTab.AvailableChains");
+                System.Diagnostics.Debug.WriteLine($"Forwarded AvailableChains property change from tab '{SelectedTab?.Name}'");
+            }
+            else if (e.PropertyName == nameof(ChatTabViewModel.SelectedModel))
+            {
+                OnPropertyChanged(nameof(SelectedModel));
+                System.Diagnostics.Debug.WriteLine($"Forwarded SelectedModel property change from tab '{SelectedTab?.Name}'");
+            }
+            else if (e.PropertyName == nameof(ChatTabViewModel.IsContextMode))
+            {
+                OnPropertyChanged(nameof(IsContextMode));
+                System.Diagnostics.Debug.WriteLine($"Forwarded IsContextMode property change from tab '{SelectedTab?.Name}'");
+            }
+        }
+
+        /// <summary>
+        /// BULLY: Debounced streaming content handler to prevent UI jumping
+        /// Batches streaming updates to max 6-7 times per second for smooth experience
+        /// </summary>
+        private void QueueStreamingUpdate(string content, Models.ChatMessage message, ChatTabViewModel tab)
+        {
+            lock (_streamingLock)
+            {
+                _pendingStreamContent = content;
+                _currentStreamingMessage = message;
+                _currentStreamingTab = tab;
+                
+                // Start or restart the debounce timer
+                _streamingDebounceTimer.Stop();
+                _streamingDebounceTimer.Start();
+            }
+        }
+
+        /// <summary>
+        /// SPLENDID: Timer tick handler that applies debounced streaming updates
+        /// </summary>
+        private void OnStreamingDebounceTimerTick(object sender, EventArgs e)
+        {
+            _streamingDebounceTimer.Stop();
+            
+            lock (_streamingLock)
+            {
+                if (_currentStreamingMessage != null && _pendingStreamContent != null)
+                {
+                    try
+                    {
+                        // Apply the batched content update
+                        _currentStreamingMessage.Content = _pendingStreamContent;
+                        
+                        // SPLENDID: Only scroll if this is the currently selected tab and message is recent
+                        // Avoid disrupting user if they're viewing older messages during streaming
+                        if (_currentStreamingTab == SelectedTab)
+                        {
+                            ScrollToBottom();
+                        }
+                        
+                        // Clear the pending update
+                        _pendingStreamContent = null;
+                        _currentStreamingMessage = null;
+                        _currentStreamingTab = null;
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error in debounced streaming update: {ex.Message}");
+                    }
+                }
+            }
+        }
 
         private AIProvider GetProviderFromModelId(string modelId)
         {
@@ -2149,6 +2231,21 @@ namespace Universa.Desktop.ViewModels
         
             // Assume Ollama for any other model ID
             return AIProvider.Ollama;
+        }
+
+        private async Task SendOrStopAsync()
+        {
+            if (IsBusy)
+            {
+                // Stop the current operation
+                StopThinking(null);
+                IsBusy = false;
+            }
+            else
+            {
+                // Send a new message
+                await SendMessageAsync();
+            }
         }
 
         private void StopThinking(Models.ChatMessage thinkingMessage)
@@ -2208,13 +2305,53 @@ namespace Universa.Desktop.ViewModels
         }
 
         // Add a new tab
-        private void AddNewTab(string name = null)
+        private async void AddNewTab(string name = null)
         {
-            var newTab = new ChatTabViewModel(name ?? $"Chat {Tabs.Count + 1}");
+            // Create tab with generic name initially if not specified
+            var defaultName = name ?? "New Chat";
+            var newTab = new ChatTabViewModel(defaultName);
+            
             // Set initial model based on current selection or default
             newTab.SelectedModel = _selectedModel;
+            
+            // Add tab immediately to UI
             Tabs.Add(newTab);
-            SelectedTab = newTab;
+            SelectedTab = newTab; // This will automatically subscribe to property changes via the SelectedTab setter
+            
+            // Asynchronously detect file type and populate chains if we have a current markdown tab
+            var currentMarkdownTab = GetCurrentMarkdownTab();
+            if (currentMarkdownTab?.FilePath != null)
+            {
+                try
+                {
+                    // Get current content to detect file type asynchronously
+                    var content = await GetCurrentContent();
+                    string detectedFileType = DetectFileType(content, currentMarkdownTab.FilePath);
+                    
+                    // Update the tab with detected file type on UI thread
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        // SPLENDID: Set the associated editor so auto-locking can work
+                        newTab.AssociatedEditor = currentMarkdownTab;
+                        newTab.UpdateFileType(detectedFileType);
+                        
+                        System.Diagnostics.Debug.WriteLine($"New tab created with detected file type: {detectedFileType}");
+                        System.Diagnostics.Debug.WriteLine($"Tab associated with editor: {currentMarkdownTab?.FilePath ?? "None"}");
+                        
+                        // If we detected a specific file type and it's not just generic "Chat", 
+                        // update the name to indicate chain selection is available
+                        if (!string.IsNullOrEmpty(detectedFileType) && name == null)
+                        {
+                            // Keep the generic name until chain selection
+                            newTab.Name = "Select Chain...";
+                        }
+                    });
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Error detecting file type for new tab: {ex.Message}");
+                }
+            }
         }
         
         // Close a tab
@@ -2252,10 +2389,23 @@ namespace Universa.Desktop.ViewModels
                     tab.IsContextMode = tabData.IsContextMode;
                     tab.InputText = tabData.InputText ?? string.Empty;
                     
-                    // Restore scroll positions
-                    tab.ContextModeScrollPosition = tabData.ContextModeScrollPosition;
-                    tab.ChatModeScrollPosition = tabData.ChatModeScrollPosition;
+                    // SPLENDID: Restore locked tab properties
+                    if (tabData.IsLocked && !string.IsNullOrEmpty(tabData.LockedFilePath) && !string.IsNullOrEmpty(tabData.LockedChainType))
+                    {
+                        if (Enum.TryParse<ChainType>(tabData.LockedChainType, out var chainType))
+                        {
+                            tab.LockToFileAndChain(tabData.LockedFilePath, chainType);
+                            System.Diagnostics.Debug.WriteLine($"Restored locked tab: {tab.Name} -> {tabData.LockedFilePath} ({chainType})");
+                        }
+                    }
                     
+                    // SPLENDID: Restore persona setting
+                    if (!string.IsNullOrEmpty(tabData.CurrentPersona))
+                    {
+                        tab.CurrentPersona = tabData.CurrentPersona;
+                        System.Diagnostics.Debug.WriteLine($"Restored persona for tab '{tab.Name}': {tabData.CurrentPersona}");
+                    }
+
                     // Add messages
                     if (tabData.Messages != null)
                     {
@@ -2293,8 +2443,7 @@ namespace Universa.Desktop.ViewModels
                         };
                     }
                     
-                    // Schedule scroll position restoration after UI is fully loaded
-                    // Use a longer delay to account for window state changes during startup
+                    // SPLENDID: Conditionally scroll to bottom after loading tabs - only if recent activity
                     var timer = new System.Windows.Threading.DispatcherTimer
                     {
                         Interval = TimeSpan.FromMilliseconds(500) // Give window time to finish initializing
@@ -2302,8 +2451,21 @@ namespace Universa.Desktop.ViewModels
                     timer.Tick += (s, e) =>
                     {
                         timer.Stop();
-                        System.Diagnostics.Debug.WriteLine("Starting delayed scroll position restoration for app startup");
-                        RestoreScrollPosition();
+                        
+                        // Only scroll if the selected tab has recent messages (within last hour)
+                        if (SelectedTab?.Messages.Count > 0)
+                        {
+                            var lastMessage = SelectedTab.Messages.Last();
+                            if (lastMessage.Timestamp > DateTime.Now.AddHours(-1))
+                            {
+                                ScrollToBottom();
+                            }
+                        }
+                        else if (SelectedTab?.Messages.Count == 0)
+                        {
+                            // Always scroll for empty tabs (ready for new conversation)
+                            ScrollToBottom();
+                        }
                     };
                     timer.Start();
                     
@@ -2322,9 +2484,6 @@ namespace Universa.Desktop.ViewModels
         {
             try
             {
-                // Save current scroll position before saving
-                SaveCurrentScrollPosition();
-                
                 int selectedIndex = SelectedTab != null ? Tabs.IndexOf(SelectedTab) : 0;
                 _chatHistoryService.SaveChatHistory(Tabs, selectedIndex);
             }
@@ -2401,13 +2560,22 @@ namespace Universa.Desktop.ViewModels
             // Check all tabs for associations with this file
             foreach (var tab in Tabs)
             {
+                // SPLENDID: Check for locked tabs first
+                if (tab.IsLocked && tab.LockedFilePath == closedFilePath)
+                {
+                    Debug.WriteLine($"Unlocking tab {tab.Name} because locked file was closed: {closedFilePath}");
+                    tab.Unlock();
+                    // Reset to a generic name since the file is no longer available
+                    tab.Name = "Chat";
+                }
+                
                 if (tab.AssociatedEditor != null && tab.AssociatedFilePath == closedFilePath)
                 {
                     Debug.WriteLine($"Clearing association for tab {tab.Name} because editor was closed");
                     tab.AssociatedEditor = null;
                     
-                    // Optional: Update tab name to remove file reference
-                    if (tab.Name.Contains(System.IO.Path.GetFileName(closedFilePath)))
+                    // Optional: Update tab name to remove file reference if not locked
+                    if (!tab.IsLocked && tab.Name.Contains(System.IO.Path.GetFileName(closedFilePath)))
                     {
                         tab.Name = "Chat";
                     }
@@ -2417,8 +2585,8 @@ namespace Universa.Desktop.ViewModels
                     Debug.WriteLine($"Clearing tag association for tab {tab.Name} because editor was closed");
                     tab.Tag = null;
                     
-                    // Optional: Update tab name to remove file reference
-                    if (tab.Name.Contains(System.IO.Path.GetFileName(closedFilePath)))
+                    // Optional: Update tab name to remove file reference if not locked
+                    if (!tab.IsLocked && tab.Name.Contains(System.IO.Path.GetFileName(closedFilePath)))
                     {
                         tab.Name = "Chat";
                     }
@@ -2591,7 +2759,7 @@ namespace Universa.Desktop.ViewModels
                             if (colonIndex > 0)
                             {
                             string key = line.Substring(0, colonIndex).Trim().ToLowerInvariant();
-                            string value = line.Substring(colonIndex + 1).Trim().ToLowerInvariant();
+                            string value = line.Substring(colonIndex + 1).Trim(); // Preserve original case for file paths
                             
                             frontmatterDict[key] = value;
                             Debug.WriteLine($"Parsed frontmatter: '{key}' = '{value}'");
@@ -2812,7 +2980,7 @@ namespace Universa.Desktop.ViewModels
                         if (colonIndex > 0)
                         {
                             string key = line.Substring(0, colonIndex).Trim().ToLowerInvariant();
-                            string value = line.Substring(colonIndex + 1).Trim().ToLowerInvariant();
+                            string value = line.Substring(colonIndex + 1).Trim(); // Preserve original case for file paths
                             
                             frontmatterDict[key] = value;
                             Debug.WriteLine($"Parsed frontmatter: '{key}' = '{value}'");
@@ -3008,8 +3176,603 @@ namespace Universa.Desktop.ViewModels
                 return false;
             }
         }
+
+        private string GetExplicitFileType(string content, string filePath)
+        {
+            // First, check frontmatter for explicit type declaration
+            if (!string.IsNullOrEmpty(content) && content.StartsWith("---"))
+            {
+                int endIndex = content.IndexOf("\n---", 3);
+                if (endIndex > 0)
+                {
+                    string frontmatter = content.Substring(0, endIndex + 4).ToLowerInvariant();
+                    
+                    // Parse frontmatter for explicit type
+                    var lines = frontmatter.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (string line in lines)
+                    {
+                        int colonIndex = line.IndexOf(':');
+                        if (colonIndex > 0)
+                        {
+                            string key = line.Substring(0, colonIndex).Trim();
+                            string value = line.Substring(colonIndex + 1).Trim();
+                            
+                            if (key == "type")
+                            {
+                                Debug.WriteLine($"Found explicit type in frontmatter: {value}");
+                                return value; // Return exactly what the user specified
+                            }
+                        }
+                    }
+                }
+            }
+            
+            Debug.WriteLine("No explicit type found in frontmatter, will use content-based detection");
+            return null; // No explicit type found
+        }
+
+        private BaseLangChainService CreateServiceByType(string explicitType, string apiKey, string modelName, AIProvider provider, bool isThinkingMode, string filePath, string libraryPath, string content)
+        {
+            switch (explicitType?.ToLowerInvariant())
+            {
+                case "rules":
+                    Debug.WriteLine("Creating RulesWritingBeta service based on explicit frontmatter type");
+                    return RulesWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath).Result;
+                    
+                case "fiction":
+                case "novel":
+                case "story":
+                    Debug.WriteLine("Creating FictionWritingBeta service based on explicit frontmatter type");
+                    return FictionWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath).Result;
+                    
+                case "nonfiction":
+                case "non-fiction":
+                case "biography":
+                case "autobiography":
+                case "memoir":
+                case "history":
+                case "academic":
+                    Debug.WriteLine("Creating NonFictionWritingBeta service based on explicit frontmatter type");
+                    return NonFictionWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath).Result;
+                    
+                case "outline":
+                    Debug.WriteLine("Creating OutlineWritingBeta service based on explicit frontmatter type");
+                    return OutlineWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath).Result;
+                    
+                case "proofreading":
+                case "proofread":
+                case "editing":
+                case "copyedit":
+                case "copy-edit":
+                    Debug.WriteLine("Creating ProofreadingBeta service based on explicit frontmatter type");
+                    return ProofreadingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath).Result;
+                    
+                case "characters":
+                case "character":
+                    Debug.WriteLine("Creating CharacterDevelopmentChain service based on explicit frontmatter type");
+                    var fileReferenceService = new FileReferenceService(libraryPath);
+                    if (!string.IsNullOrEmpty(filePath))
+                    {
+                        fileReferenceService.SetCurrentFilePath(filePath);
+                    }
+                    var textSearchService = new EnhancedTextSearchService();
+                    var chapterSearchService = new ChapterSearchService(textSearchService);
+                    var storyAnalysisService = new CharacterStoryAnalysisService(chapterSearchService, fileReferenceService, libraryPath);
+                    return new CharacterDevelopmentChain(apiKey, modelName, provider, fileReferenceService, storyAnalysisService);
+                    
+                default:
+                    Debug.WriteLine($"Unknown explicit type '{explicitType}', falling back to content-based detection");
+                    return null; // Fall back to content-based detection
+            }
+        }
+
+        private async Task CreateServiceByContentDetection(bool isTabContextMode, IFileTab currentMarkdownTab, string apiKey, string modelName, AIProvider provider, bool isThinkingMode, string filePath, string libraryPath, string content)
+        {
+            // Fallback to content-based detection using the old priority system
+            // Check for outline files first
+            bool isOutline = IsOutlineFile(content, filePath);
+            Debug.WriteLine($"IsOutlineFile result: {isOutline}");
+            
+            if (isOutline)
+            {
+                Debug.WriteLine("Creating OutlineWritingBeta service for outline file");
+                
+                try
+                {
+                    var outlineService = await OutlineWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
+                    SelectedTab.Service = outlineService;
+                    
+                    await SelectedTab.Service.UpdateContextAsync(content);
+                    
+                    if (SelectedTab.Service is OutlineWritingBeta outlineBeta)
+                    {
+                        outlineBeta.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
+                        outlineBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                    }
+                    
+                    Debug.WriteLine("Successfully created OutlineWritingBeta service");
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"Error creating OutlineWritingBeta service: {ex}");
+                    var persona = GetEffectivePersona();
+                    SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode, persona);
+                    // SPLENDID: General chat should be independent, don't pass file content
+                    // await SelectedTab.Service.UpdateContextAsync(content);
+                }
+            }
+            else
+            {
+                // Check for rules files second
+                bool isRules = IsRulesFile(content, filePath);
+                Debug.WriteLine($"IsRulesFile result: {isRules}");
+                
+                if (isRules)
+                {
+                    Debug.WriteLine("Creating RulesWritingBeta service for rules file");
+                    
+                    try
+                    {
+                        var rulesService = await RulesWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
+                        SelectedTab.Service = rulesService;
+                        
+                        await SelectedTab.Service.UpdateContextAsync(content);
+                        
+                        Debug.WriteLine($"Successfully created RulesWritingBeta service");
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error creating RulesWritingBeta service: {ex.Message}");
+                        var persona = GetEffectivePersona();
+                        SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode, persona);
+                        // SPLENDID: General chat should be independent, don't pass file content
+                        // await SelectedTab.Service.UpdateContextAsync(content);
+                    }
+                }
+                else
+                {
+                    // Check for fiction files third
+                    bool isFiction = IsFictionFile(content, filePath);
+                    Debug.WriteLine($"IsFictionFile result: {isFiction}");
+                    
+                    if (isFiction)
+                    {
+                        Debug.WriteLine("Creating FictionWritingBeta service for fiction file");
+                        
+                        try
+                        {
+                            var fictionService = await FictionWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
+                            SelectedTab.Service = fictionService;
+                            
+                            await SelectedTab.Service.UpdateContextAsync(content);
+                            
+                            if (SelectedTab.Service is FictionWritingBeta fictionBeta)
+                            {
+                                fictionBeta.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
+                                fictionBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                            }
+                            
+                            Debug.WriteLine("Successfully created FictionWritingBeta service");
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"Error creating FictionWritingBeta service: {ex}");
+                            var persona = GetEffectivePersona();
+                            SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode, persona);
+                            // SPLENDID: General chat should be independent, don't pass file content
+                            // await SelectedTab.Service.UpdateContextAsync(content);
+                        }
+                    }
+                    else
+                    {
+                        // Check for non-fiction files fourth
+                        bool isNonFiction = IsNonFictionFile(content, filePath);
+                        Debug.WriteLine($"IsNonFictionFile result: {isNonFiction}");
+                        
+                        if (isNonFiction)
+                        {
+                            Debug.WriteLine("Creating NonFictionWritingBeta service for non-fiction file");
+                            
+                            try
+                            {
+                                var nonfictionService = await NonFictionWritingBeta.GetInstance(apiKey, modelName, provider, filePath, libraryPath);
+                                SelectedTab.Service = nonfictionService;
+                                
+                                await SelectedTab.Service.UpdateContextAsync(content);
+                                
+                                if (SelectedTab.Service is NonFictionWritingBeta nonfictionBeta)
+                                {
+                                    nonfictionBeta.UpdateCursorPosition(currentMarkdownTab.LastKnownCursorPosition);
+                                    nonfictionBeta.OnRetryingOverloadedRequest += RetryEventHandler;
+                                }
+                                
+                                Debug.WriteLine("Successfully created NonFictionWritingBeta service");
+                            }
+                            catch (Exception ex)
+                            {
+                                Debug.WriteLine($"Error creating NonFictionWritingBeta service: {ex}");
+                                var persona = GetEffectivePersona();
+                                SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode, persona);
+                                // SPLENDID: General chat should be independent, don't pass file content
+                                // await SelectedTab.Service.UpdateContextAsync(content);
+                            }
+                        }
+                        else
+                        {
+                            Debug.WriteLine("Creating GeneralChatService for markdown file that doesn't match any specific type - INDEPENDENT mode");
+                            var persona = GetEffectivePersona();
+                            SelectedTab.Service = new GeneralChatService(apiKey, modelName, provider, isThinkingMode, persona);
+                            // SPLENDID: Keep general chat independent, do not pass file content
+                            // await SelectedTab.Service.UpdateContextAsync(content);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add this helper method to determine the appropriate library path
+        private string DetermineAppropriateLibraryPath(string filePath, string content)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(filePath))
+                    return null;
+            
+                // Start with the file's directory
+                string fileDir = Path.GetDirectoryName(filePath);
+            
+                // CRITICAL: Check if content contains references to parent directories
+                if (!string.IsNullOrEmpty(content) && 
+                   (content.Contains("ref rules: ../") || 
+                    content.Contains("ref style: ../") || 
+                    content.Contains("ref outline: ../") ||
+                    // More generic check for any ../ reference
+                    (content.Contains("ref") && content.Contains("../"))))
+                {
+                    Debug.WriteLine("Content contains references to parent directory, adjusting library path");
+                    
+                    // Get the parent directory to accommodate ../ references
+                    string parentDir = Path.GetDirectoryName(fileDir);
+                    if (!string.IsNullOrEmpty(parentDir))
+                    {
+                        Debug.WriteLine($"Setting library path to parent directory: {parentDir}");
+                        return parentDir;
+                    }
+                }
+                
+                // CRITICAL: Check for multiple levels of parent references (../../)
+                if (!string.IsNullOrEmpty(content) && content.Contains("../../"))
+                {
+                    Debug.WriteLine("Content contains references to grandparent directory, adjusting library path");
+                    
+                    // Get the grandparent directory to accommodate ../../ references
+                    string parentDir = Path.GetDirectoryName(fileDir);
+                    if (!string.IsNullOrEmpty(parentDir))
+                    {
+                        string grandparentDir = Path.GetDirectoryName(parentDir);
+                        if (!string.IsNullOrEmpty(grandparentDir))
+                        {
+                            Debug.WriteLine($"Setting library path to grandparent directory: {grandparentDir}");
+                            return grandparentDir;
+                        }
+                    }
+                }
+                
+                // Default to the file directory if no parent references found
+                Debug.WriteLine($"Using file directory as library path: {fileDir}");
+                return fileDir;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error determining library path: {ex.Message}");
+                // Fallback to file directory
+                return Path.GetDirectoryName(filePath);
+            }
+        }
+
+        // Helper to find markdown tab
+        private IFileTab GetCurrentMarkdownTab()
+        {
+            try
+            {
+                // Try to use the _currentEditor first if it's a markdown tab
+                if (_currentEditor is Views.MarkdownTabAvalon markdownTab)
+                {
+                    Debug.WriteLine($"Using _currentEditor as MarkdownTabAvalon: {markdownTab.FilePath}");
+                    return markdownTab;
+                }
+                else if (_currentEditor is Views.MarkdownTabAvalon markdownTabAvalon)
+                {
+                    Debug.WriteLine($"Using _currentEditor as MarkdownTabAvalon: {markdownTabAvalon.FilePath}");
+                    return markdownTabAvalon;
+                }
+                
+                // Otherwise, try to get it from the main window's tab control
+                var mainWindow = Application.Current.MainWindow as Views.MainWindow;
+                if (mainWindow != null)
+                {
+                    var selectedTabItem = mainWindow.MainTabControl?.SelectedItem as TabItem;
+                    if (selectedTabItem?.Content is Views.MarkdownTabAvalon selectedMarkdownTab)
+                    {
+                        Debug.WriteLine($"Found MarkdownTabAvalon from MainTabControl: {selectedMarkdownTab.FilePath}");
+                        return selectedMarkdownTab;
+                    }
+                    else if (selectedTabItem?.Content is Views.MarkdownTabAvalon selectedMarkdownTabAvalon)
+                    {
+                        Debug.WriteLine($"Found MarkdownTabAvalon from MainTabControl: {selectedMarkdownTabAvalon.FilePath}");
+                        return selectedMarkdownTabAvalon;
+                    }
+                }
+                
+                // Look for any tab with the same filename as in the chat tab name
+                if (SelectedTab != null && SelectedTab.Name.StartsWith("Chat - "))
+                {
+                    string chatFileName = SelectedTab.Name.Substring(7); // Remove "Chat - " prefix
+                    
+                    // Search through all tabs
+                    if (mainWindow != null)
+                    {
+                        foreach (TabItem tabItem in mainWindow.MainTabControl.Items)
+                        {
+                            if (tabItem.Content is Views.MarkdownTabAvalon mdTab)
+                            {
+                                string tabFileName = Path.GetFileName(mdTab.FilePath);
+                                if (tabFileName == chatFileName || SelectedTab.Name.Contains(tabFileName))
+                                {
+                                    Debug.WriteLine($"Found matching MarkdownTabAvalon by filename: {mdTab.FilePath}");
+                                    return mdTab;
+                                }
+                            }
+                            else if (tabItem.Content is Views.MarkdownTabAvalon mdTabAvalon)
+                            {
+                                string tabFileName = Path.GetFileName(mdTabAvalon.FilePath);
+                                if (tabFileName == chatFileName || SelectedTab.Name.Contains(tabFileName))
+                                {
+                                    Debug.WriteLine($"Found matching MarkdownTabAvalon by filename: {mdTabAvalon.FilePath}");
+                                    return mdTabAvalon;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Debug.WriteLine("No markdown tab found");
+                return null;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in GetCurrentMarkdownTab: {ex.Message}");
+                return null;
+            }
+        }
+
+        // BULLY FIX: Add cleanup method to prevent memory leaks
+        public void Cleanup()
+        {
+            try
+            {
+                Debug.WriteLine("ChatSidebarViewModel: Starting cleanup...");
+                
+                // Unsubscribe from all event handlers
+                if (_modelProvider != null)
+                {
+                    _modelProvider.ModelsChanged -= OnModelsChanged;
+                }
+                
+                if (_mainWindow != null)
+                {
+                    _mainWindow.StateChanged -= MainWindow_StateChanged;
+                    _mainWindow.SizeChanged -= MainWindow_SizeChanged;
+                    
+                    if (_mainWindow.MainTabControl != null)
+                    {
+                        _mainWindow.MainTabControl.SelectionChanged -= MainTabControl_SelectionChanged;
+                        Debug.WriteLine("ChatSidebarViewModel: Unsubscribed from MainTabControl.SelectionChanged");
+                    }
+                }
+                
+                // Clean up auto-save timer
+                if (_autoSaveTimer != null)
+                {
+                    _autoSaveTimer.Stop();
+                    _autoSaveTimer = null;
+                }
+                
+                // Clean up memory monitor timer
+                if (_memoryMonitorTimer != null)
+                {
+                    _memoryMonitorTimer.Stop();
+                    _memoryMonitorTimer = null;
+                }
+                
+                // Clean up streaming debounce timer
+                if (_streamingDebounceTimer != null)
+                {
+                    _streamingDebounceTimer.Stop();
+                    _streamingDebounceTimer = null;
+                }
+                
+                // Clean up cancellation tokens
+                if (_cancellationTokenSource != null)
+                {
+                    try { if (!_cancellationTokenSource.Token.IsCancellationRequested) { _cancellationTokenSource.Cancel(); } } 
+                    catch (ObjectDisposedException) { /* ignore */ }
+                    _cancellationTokenSource = null;
+                }
+                
+                // Clean up message requests
+                foreach (var kvp in _messageRequests)
+                {
+                    try
+                    {
+                        if (kvp.Value != null && !kvp.Value.Token.IsCancellationRequested) { kvp.Value.Cancel(); }
+                        kvp.Value?.Dispose();
+                    }
+                    catch (ObjectDisposedException) { /* ignore */ }
+                }
+                _messageRequests.Clear();
+                
+                // Dispose tab services
+                foreach (var tab in Tabs)
+                {
+                    try
+                    {
+                        tab.Service?.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"Error disposing tab service: {ex.Message}");
+                    }
+                }
+                
+                Debug.WriteLine("ChatSidebarViewModel: Cleanup completed");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error during ChatSidebarViewModel cleanup: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Unlocks a chat tab, allowing it to dynamically adapt to context again
+        /// </summary>
+        private void UnlockTab(ChatTabViewModel tab)
+        {
+            if (tab != null && tab.IsLocked)
+            {
+                System.Diagnostics.Debug.WriteLine($"Manually unlocking tab: {tab.Name}");
+                tab.Unlock();
+                
+                // Reset to generic name and clear service to restart fresh
+                tab.Name = "Chat";
+                tab.Service = null;
+                tab.ContextRequiresRefresh = true;
+                
+                // Clear any association as well
+                tab.AssociatedEditor = null;
+                
+                System.Diagnostics.Debug.WriteLine($"Tab unlocked successfully");
+            }
+        }
+        
+        /// <summary>
+        /// Monitors memory usage and triggers cleanup when needed
+        /// </summary>
+        private void MonitorMemoryUsage(object sender, EventArgs e)
+        {
+            try
+            {
+                // Get current process memory usage
+                var process = System.Diagnostics.Process.GetCurrentProcess();
+                long memoryMB = process.WorkingSet64 / (1024 * 1024);
+                
+                // Threshold for triggering cleanup (1.5 GB)
+                const long MEMORY_THRESHOLD_MB = 1536;
+                
+                // Calculate total estimated memory from all tabs
+                long totalTabMemory = 0;
+                int totalMessages = 0;
+                
+                foreach (var tab in Tabs)
+                {
+                    totalTabMemory += tab.GetEstimatedMemoryUsage();
+                    totalMessages += tab.Messages.Count + tab.ChatModeMessages.Count;
+                }
+                
+                long totalTabMemoryMB = totalTabMemory / (1024 * 1024);
+                
+                System.Diagnostics.Debug.WriteLine($"Memory monitoring: Process={memoryMB}MB, TabMessages={totalTabMemoryMB}MB, TotalMessages={totalMessages}");
+                
+                // Trigger cleanup if memory usage is high
+                if (memoryMB > MEMORY_THRESHOLD_MB || totalTabMemoryMB > 100)
+                {
+                    System.Diagnostics.Debug.WriteLine($"High memory usage detected ({memoryMB}MB), triggering cleanup...");
+                    TriggerMemoryCleanup();
+                }
+                
+                // Optimize message storage every 10 minutes regardless of memory usage
+                if (DateTime.Now.Minute % 10 == 0)
+                {
+                    OptimizeAllTabStorage();
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error in memory monitoring: {ex.Message}");
+            }
+        }
+        
+        /// <summary>
+        /// Triggers memory cleanup across all tabs
+        /// </summary>
+        private void TriggerMemoryCleanup()
+        {
+            int cleanedTabs = 0;
+            
+            foreach (var tab in Tabs)
+            {
+                int messagesBefore = tab.Messages.Count + tab.ChatModeMessages.Count;
+                
+                // Force cleanup if tab has too many messages
+                if (messagesBefore > 30)
+                {
+                    // Trigger cleanup by adding a dummy message and removing it
+                    // This will cause CleanupMessagesIfNeeded to run
+                    var tempMessage = new Models.ChatMessage("system", "temp");
+                    tab.AddMessage(tempMessage);
+                    tab.Messages.Remove(tempMessage);
+                    tab.ChatModeMessages.Remove(tempMessage);
+                    
+                    int messagesAfter = tab.Messages.Count + tab.ChatModeMessages.Count;
+                    if (messagesAfter < messagesBefore)
+                    {
+                        cleanedTabs++;
+                    }
+                }
+            }
+            
+            // Force garbage collection after cleanup
+            if (cleanedTabs > 0)
+            {
+                System.Diagnostics.Debug.WriteLine($"Memory cleanup complete: cleaned {cleanedTabs} tabs");
+                GC.Collect(2, GCCollectionMode.Optimized);
+                GC.WaitForPendingFinalizers();
+            }
+        }
+        
+        /// <summary>
+        /// Optimizes message storage for all tabs
+        /// </summary>
+        private void OptimizeAllTabStorage()
+        {
+            foreach (var tab in Tabs)
+            {
+                tab.OptimizeMessageStorage();
+            }
+            
+            System.Diagnostics.Debug.WriteLine("Completed storage optimization for all tabs");
+        }
+        
+        /// <summary>
+        /// Gets total memory usage statistics for debugging
+        /// </summary>
+        public string GetMemoryUsageStats()
+        {
+            var process = System.Diagnostics.Process.GetCurrentProcess();
+            long processMemoryMB = process.WorkingSet64 / (1024 * 1024);
+            
+            long totalTabMemory = 0;
+            int totalMessages = 0;
+            
+            foreach (var tab in Tabs)
+            {
+                totalTabMemory += tab.GetEstimatedMemoryUsage();
+                totalMessages += tab.Messages.Count + tab.ChatModeMessages.Count;
+            }
+            
+            long totalTabMemoryMB = totalTabMemory / (1024 * 1024);
+            
+            return $"Process: {processMemoryMB}MB | Tab Messages: {totalTabMemoryMB}MB | Total Messages: {totalMessages} | Tabs: {Tabs.Count}";
+        }
     }
 }
-
-
-

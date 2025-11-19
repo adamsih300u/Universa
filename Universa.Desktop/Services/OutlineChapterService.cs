@@ -101,16 +101,7 @@ namespace Universa.Desktop.Services
             context.NextChapter = _parsedOutline.Chapters
                 .FirstOrDefault(c => c.Number == currentChapterNumber + 1);
 
-            // Extract story-wide themes
-            context.StoryWideThemes = _parsedOutline.Themes
-                .Select(t => t.Description)
-                .ToList();
-
-            // Extract critical plot points
-            context.CriticalPlotPoints = _parsedOutline.MajorPlotPoints
-                .Where(p => p.Importance == OutlineParser.PlotImportance.Critical)
-                .Select(p => p.Description)
-                .ToList();
+            // Simplified - skip complex theme and plot point extraction that was causing confusion
 
             // Extract background sections (synopsis, notes, etc.)
             foreach (var section in _parsedOutline.Sections.Values)
@@ -127,13 +118,13 @@ namespace Universa.Desktop.Services
         }
 
         /// <summary>
-        /// Builds an enhanced outline prompt section for chapter generation
+        /// Builds a simple outline prompt section showing raw chapter text
         /// </summary>
         public string BuildChapterOutlinePrompt(ChapterContext context, bool isFullChapterGeneration = false)
         {
-            if (context == null || _parsedOutline == null)
+            // Fallback to raw outline if parsing failed or context is null
+            if (context == null || _parsedOutline == null || string.IsNullOrEmpty(_rawOutline))
             {
-                // Fallback to raw outline if parsing failed
                 if (!string.IsNullOrEmpty(_rawOutline))
                 {
                     return $"\n=== STORY OUTLINE ===\n{_rawOutline}";
@@ -143,12 +134,11 @@ namespace Universa.Desktop.Services
 
             var prompt = new StringBuilder();
 
-            // Story-wide context (condensed for focus)
-            if (context.BackgroundSections.Any() || context.StoryWideThemes.Any())
+            // Story overview (complete synopsis)
+            if (context.BackgroundSections.Any())
             {
                 prompt.AppendLine("\n=== STORY OVERVIEW ===");
                 
-                // Add synopsis/background (condensed)
                 var synopsis = context.BackgroundSections
                     .Where(kvp => kvp.Key.Contains("synopsis", StringComparison.OrdinalIgnoreCase) ||
                                  kvp.Key.Contains("summary", StringComparison.OrdinalIgnoreCase))
@@ -156,143 +146,42 @@ namespace Universa.Desktop.Services
                 
                 if (!string.IsNullOrEmpty(synopsis.Value))
                 {
-                    prompt.AppendLine("Story Synopsis:");
-                    prompt.AppendLine(TruncateForContext(synopsis.Value, 300));
-                }
-
-                // Add key themes
-                if (context.StoryWideThemes.Any())
-                {
-                    prompt.AppendLine("\nKey Themes:");
-                    foreach (var theme in context.StoryWideThemes.Take(3))
-                    {
-                        prompt.AppendLine($"• {theme}");
-                    }
+                    prompt.AppendLine(synopsis.Value);
                 }
             }
 
-            // Current chapter focus (detailed)
+            // Previous Chapter Outline
+            if (context.PreviousChapter != null)
+            {
+                prompt.AppendLine($"\n=== PREVIOUS CHAPTER OUTLINE: Chapter {context.PreviousChapter.Number} ===");
+                if (!string.IsNullOrEmpty(context.PreviousChapter.Title))
+                {
+                    prompt.AppendLine($"Title: {context.PreviousChapter.Title}");
+                }
+                prompt.AppendLine(context.PreviousChapter.Summary);
+            }
+
+            // Current Chapter Outline (raw text)
             if (context.CurrentChapter != null)
             {
-                prompt.AppendLine($"\n=== CURRENT CHAPTER FOCUS: Chapter {context.ChapterNumber} ===");
-                
+                prompt.AppendLine($"\n=== CURRENT CHAPTER OUTLINE: Chapter {context.ChapterNumber} ===");
                 if (!string.IsNullOrEmpty(context.ChapterTitle))
                 {
                     prompt.AppendLine($"Title: {context.ChapterTitle}");
                 }
-
-                // Key events for this chapter
-                if (context.CurrentChapter.KeyEvents.Any())
-                {
-                    prompt.AppendLine("\n🎯 STRUCTURAL OBJECTIVES (Create scenes that accomplish these goals):");
-                    foreach (var evt in context.CurrentChapter.KeyEvents)
-                    {
-                        prompt.AppendLine($"• ACHIEVE: {evt.Description}");
-                    }
-                    prompt.AppendLine("📝 Transform these objectives into original prose - do NOT expand the text above directly.");
-                }
-
-                // Characters expected in this chapter
-                if (context.CurrentChapter.CharactersPresent.Any())
-                {
-                    prompt.AppendLine("\nCharacters Present:");
-                    foreach (var character in context.CurrentChapter.CharactersPresent)
-                    {
-                        prompt.AppendLine($"• {character}");
-                    }
-                }
-
-                // Locations for this chapter
-                if (context.CurrentChapter.Locations.Any())
-                {
-                    prompt.AppendLine("\nLocations/Settings:");
-                    foreach (var location in context.CurrentChapter.Locations)
-                    {
-                        prompt.AppendLine($"• {location}");
-                    }
-                }
-
-                // POV information
-                if (!string.IsNullOrEmpty(context.CurrentChapter.PointOfView))
-                {
-                    prompt.AppendLine($"\nPoint of View: {context.CurrentChapter.PointOfView}");
-                }
-
-                // Scene structure if available
-                if (context.CurrentChapter.Scenes.Any())
-                {
-                    prompt.AppendLine("\n🎬 SCENE OBJECTIVES (Creative goals to achieve, not text to expand):");
-                    foreach (var scene in context.CurrentChapter.Scenes)
-                    {
-                        prompt.AppendLine($"• TARGET: {scene.Title}");
-                        if (!string.IsNullOrEmpty(scene.Focus))
-                        {
-                            prompt.AppendLine($"  PURPOSE: {scene.Focus}");
-                        }
-                        if (scene.KeyActions.Any())
-                        {
-                            prompt.AppendLine($"  ACCOMPLISH: {string.Join("; ", scene.KeyActions.Take(2))}");
-                        }
-                    }
-                    prompt.AppendLine("🎨 Create original narrative content that accomplishes these scene purposes.");
-                }
-
-                // Chapter summary/notes
-                if (!string.IsNullOrEmpty(context.CurrentChapter.Summary))
-                {
-                    prompt.AppendLine("\nChapter Notes:");
-                    prompt.AppendLine(context.CurrentChapter.Summary);
-                }
+                prompt.AppendLine(context.CurrentChapter.Summary);
             }
 
-            // Chapter continuity context
-            prompt.AppendLine("\n=== CHAPTER CONTINUITY ===");
-            
-            if (context.PreviousChapter != null)
-            {
-                prompt.AppendLine($"Previous Chapter {context.PreviousChapter.Number}: {context.PreviousChapter.Title}");
-                if (!string.IsNullOrEmpty(context.PreviousChapter.Summary))
-                {
-                    prompt.AppendLine($"  Summary: {TruncateForContext(context.PreviousChapter.Summary, 150)}");
-                }
-            }
-
+            // Next Chapter Outline
             if (context.NextChapter != null)
             {
-                prompt.AppendLine($"Next Chapter {context.NextChapter.Number}: {context.NextChapter.Title}");
-                if (!string.IsNullOrEmpty(context.NextChapter.Summary))
+                prompt.AppendLine($"\n=== NEXT CHAPTER OUTLINE: Chapter {context.NextChapter.Number} ===");
+                if (!string.IsNullOrEmpty(context.NextChapter.Title))
                 {
-                    prompt.AppendLine($"  Preview: {TruncateForContext(context.NextChapter.Summary, 150)}");
+                    prompt.AppendLine($"Title: {context.NextChapter.Title}");
                 }
+                prompt.AppendLine(context.NextChapter.Summary);
             }
-
-            // Critical plot points for reference
-            if (context.CriticalPlotPoints.Any())
-            {
-                prompt.AppendLine("\n=== CRITICAL PLOT POINTS (Overall Story) ===");
-                foreach (var plotPoint in context.CriticalPlotPoints.Take(5))
-                {
-                    prompt.AppendLine($"• {plotPoint}");
-                }
-            }
-
-            // Special instructions for full chapter generation
-            if (isFullChapterGeneration)
-            {
-                prompt.AppendLine("\n=== CHAPTER GENERATION CONTEXT ===");
-                prompt.AppendLine("You are creating a complete chapter based on the outline structure above.");
-            }
-
-            // Add full outline reference (condensed)
-            if (!string.IsNullOrEmpty(_rawOutline))
-            {
-                prompt.AppendLine("\n=== FULL OUTLINE (STRUCTURAL REFERENCE ONLY) ===");
-                prompt.AppendLine("📋 Complete outline for broader context - USE AS GUIDANCE, NOT SOURCE TEXT:");
-                prompt.AppendLine(_rawOutline);
-                prompt.AppendLine("\n⚠️ CRITICAL: This outline is for structure only. Create completely original prose that achieves these plot objectives.");
-            }
-
-            // Removed hardcoded scene creation mandate - relying on style guide content instead
 
             return prompt.ToString();
         }
@@ -311,23 +200,7 @@ namespace Universa.Desktop.Services
             if (outlineChapter == null)
                 return issues;
 
-            // Check for expected characters
-            foreach (var expectedChar in outlineChapter.CharactersPresent)
-            {
-                if (!generatedChapter.Contains(expectedChar, StringComparison.OrdinalIgnoreCase))
-                {
-                    issues.Add($"Missing expected character: {expectedChar}");
-                }
-            }
-
-            // Check for expected locations
-            foreach (var expectedLocation in outlineChapter.Locations)
-            {
-                if (!generatedChapter.Contains(expectedLocation, StringComparison.OrdinalIgnoreCase))
-                {
-                    issues.Add($"Missing expected location: {expectedLocation}");
-                }
-            }
+            // Note: Character and location validation disabled due to parsing issues
 
             // Check for key events (basic keyword matching)
             foreach (var keyEvent in outlineChapter.KeyEvents)
@@ -369,15 +242,7 @@ namespace Universa.Desktop.Services
                 }
             }
 
-            if (chapter.CharactersPresent.Any())
-            {
-                summary.AppendLine($"Characters: {string.Join(", ", chapter.CharactersPresent)}");
-            }
-
-            if (chapter.Locations.Any())
-            {
-                summary.AppendLine($"Locations: {string.Join(", ", chapter.Locations)}");
-            }
+            // Note: Character and location parsing has been simplified to avoid extraction errors
 
             return summary.ToString();
         }

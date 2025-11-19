@@ -171,6 +171,12 @@ namespace Universa.Desktop.Library
                     Debug.WriteLine("LibraryNavigator: Jellyfin settings changed, refreshing items");
                     await RefreshItems(false);
                 }
+                // Refresh when Audiobookshelf settings change
+                else if (e.Key.StartsWith("services.audiobookshelf"))
+                {
+                    Debug.WriteLine("LibraryNavigator: Audiobookshelf settings changed, refreshing items");
+                    await RefreshItems(false);
+                }
             }
             catch (Exception ex)
             {
@@ -505,6 +511,30 @@ namespace Universa.Desktop.Library
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"LibraryNavigator: Error adding Jellyfin service - {ex.Message}");
+                }
+
+                try
+                {
+                    // Audiobookshelf
+                    Debug.WriteLine($"LibraryNavigator: Checking Audiobookshelf configuration - URL: {!string.IsNullOrEmpty(config.AudiobookshelfUrl)}, Username: {!string.IsNullOrEmpty(config.AudiobookshelfUsername)}, Password: {!string.IsNullOrEmpty(config.AudiobookshelfPassword)}");
+                    if (!string.IsNullOrEmpty(config.AudiobookshelfUrl) && 
+                        !string.IsNullOrEmpty(config.AudiobookshelfUsername) && 
+                        !string.IsNullOrEmpty(config.AudiobookshelfPassword))
+                    {
+                        Debug.WriteLine("LibraryNavigator: Adding Audiobookshelf service");
+                        servicesItem.Children.Add(new LibraryTreeItem
+                        {
+                            Name = !string.IsNullOrEmpty(config.AudiobookshelfName) ? config.AudiobookshelfName : "Audiobookshelf",
+                            Type = Models.LibraryItemType.Service,
+                            Icon = "📚",
+                            Path = "services://audiobookshelf",
+                            Tag = "audiobookshelf"
+                        });
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"LibraryNavigator: Error adding Audiobookshelf service - {ex.Message}");
                 }
 
                 // Only add the services item if it has any children
@@ -918,14 +948,17 @@ namespace Universa.Desktop.Library
             rulesTemplate.AppendLine($"# Rules: {projectTitle}");
             rulesTemplate.AppendLine();
             
-            // Character section optimized for RulesParser
-            rulesTemplate.AppendLine("[Characters]");
+            // Universe rules section
+            rulesTemplate.AppendLine("[Universe Rules]");
             rulesTemplate.AppendLine();
-            rulesTemplate.AppendLine("# Main Character");
-            rulesTemplate.AppendLine("- Age: (current age)");
-            rulesTemplate.AppendLine("- Role: protagonist");
-            rulesTemplate.AppendLine("- Background: (character background)");
-            rulesTemplate.AppendLine("- Personality: (key personality traits)");
+            rulesTemplate.AppendLine("# Magic System / Technology");
+            rulesTemplate.AppendLine("- (Define magic/technology rules and limitations)");
+            rulesTemplate.AppendLine();
+            rulesTemplate.AppendLine("# Social Structure");
+            rulesTemplate.AppendLine("- (Define hierarchies, cultural norms, and social rules)");
+            rulesTemplate.AppendLine();
+            rulesTemplate.AppendLine("# Character References");
+            rulesTemplate.AppendLine("- (Reference character profiles: ref_character_[name]: path/to/character.md)");
             rulesTemplate.AppendLine();
             
             if (!string.IsNullOrEmpty(seriesName))
@@ -940,9 +973,9 @@ namespace Universa.Desktop.Library
             
             rulesTemplate.AppendLine("[Critical Facts]");
             rulesTemplate.AppendLine();
-            rulesTemplate.AppendLine("- (Important world-building facts)");
-            rulesTemplate.AppendLine("- (Character relationships)");
-            rulesTemplate.AppendLine("- (Magic system/technology rules)");
+            rulesTemplate.AppendLine("- (Important world-building facts and constraints)");
+            rulesTemplate.AppendLine("- (Universe laws and limitations)");
+            rulesTemplate.AppendLine("- (Historical events and their consequences)");
             rulesTemplate.AppendLine();
             
             rulesTemplate.AppendLine("[Locations]");

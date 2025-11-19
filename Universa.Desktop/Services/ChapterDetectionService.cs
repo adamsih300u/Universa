@@ -13,26 +13,20 @@ namespace Universa.Desktop.Services
     public static class ChapterDetectionService
     {
         // Comprehensive regex pattern for chapter detection
-        // Matches: "## Chapter 1", "## Chapter 1: Title", "##Chapter 1", etc.
+        // Matches: "## Chapter 1", "## Chapter 1: Title", "##Chapter 1", "##Chapter1", etc.
         private static readonly Regex ChapterPattern = new Regex(
-            @"^##\s*Chapter\s+(\d+)(?:\s*[:]\s*.*)?$", 
+            @"^##\s*Chapter\s*(\d+)(?:\s*[:]\s*.*)?$", 
             RegexOptions.IgnoreCase | RegexOptions.Compiled
         );
 
         // Additional patterns for other heading types (for content boundary detection)
         private static readonly List<Regex> BoundaryPatterns = new List<Regex>
         {
-            // Main chapter pattern (numbered)
-            new Regex(@"^##\s*Chapter\s+(\d+)(?:\s*[:]\s*.*)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
+            // Main chapter pattern (numbered chapters only)
+            new Regex(@"^##\s*Chapter\s*(\d+)(?:\s*[:]\s*.*)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
             
-            // Generic level 2 headings (for content boundaries)
-            new Regex(@"^##\s+(.+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-            
-            // Part/Section headings
-            new Regex(@"^(Part|Section)\s+(\d+)(?:\s*[:]\s*.*)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled),
-            
-            // Standalone chapter/part/section words
-            new Regex(@"^(CHAPTER|Part|Section)$", RegexOptions.IgnoreCase | RegexOptions.Compiled)
+            // Part/Section headings (numbered)
+            new Regex(@"^##\s*(Part|Section)\s+(\d+)(?:\s*[:]\s*.*)?$", RegexOptions.IgnoreCase | RegexOptions.Compiled)
         };
 
         /// <summary>

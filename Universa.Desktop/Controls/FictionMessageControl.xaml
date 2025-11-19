@@ -171,7 +171,7 @@
         </Style>
     </UserControl.Resources>
     
-    <ItemsControl ItemsSource="{Binding Content, Converter={StaticResource FictionTextBlockConverter}}">
+    <ItemsControl x:Name="ItemsContainer">
         <ItemsControl.ItemTemplate>
             <DataTemplate>
                 <StackPanel>
@@ -203,6 +203,7 @@
                                         Click="OriginalTextButton_Click"
                                         Tag="{Binding OriginalText}"
                                         ToolTip="Click to navigate to this text in the editor"
+                                        IsEnabled="True"
                                         Margin="0,0,0,8"/>
                                 
                                 <!-- Changed to label -->
@@ -221,7 +222,8 @@
                                         Style="{StaticResource ApplyChangesButtonStyle}"
                                         Click="ApplyChangesButton_Click"
                                         Tag="{Binding}"
-                                        ToolTip="Click to replace the original text with this revision in the editor"/>
+                                        ToolTip="Click to replace the original text with this revision in the editor"
+                                        IsEnabled="True"/>
                             </StackPanel>
                             
                             <!-- Content for Insertions -->
@@ -243,6 +245,7 @@
                                         Click="AnchorTextButton_Click"
                                         Tag="{Binding AnchorText}"
                                         ToolTip="Click to navigate to the anchor text in the editor"
+                                        IsEnabled="True"
                                         Margin="0,0,0,8"/>
                                 
                                 <!-- New text label -->
@@ -261,7 +264,8 @@
                                         Style="{StaticResource ApplyChangesButtonStyle}"
                                         Click="ApplyInsertionButton_Click"
                                         Tag="{Binding}"
-                                        ToolTip="Click to insert the new text after the anchor text in the editor"/>
+                                        ToolTip="Click to insert the new text after the anchor text in the editor"
+                                        IsEnabled="True"/>
                             </StackPanel>
                         </StackPanel>
                     </Border>

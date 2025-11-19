@@ -5,6 +5,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:local="clr-namespace:Universa.Desktop"
              xmlns:viewModels="clr-namespace:Universa.Desktop.ViewModels"
+             xmlns:controls="clr-namespace:Universa.Desktop.Controls"
+             xmlns:converters="clr-namespace:Universa.Desktop.Converters"
              mc:Ignorable="d" 
              d:DesignHeight="450" d:DesignWidth="300"
              Background="{DynamicResource WindowBackgroundBrush}">
@@ -52,144 +54,200 @@
     
     <Grid>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/> <!-- Tab control for chat tabs -->
+            <RowDefinition Height="*"/> <!-- Messages list -->
+            <RowDefinition Height="Auto"/> <!-- Text input and buttons -->
+            <RowDefinition Height="Auto"/> <!-- Model and Chain dropdowns -->
         </Grid.RowDefinitions>
 
-        <ComboBox Grid.Row="0"
-                  ItemsSource="{Binding AvailableModels}"
-                  SelectedItem="{Binding SelectedModel}"
-                  Style="{StaticResource ChatSidebarComboBoxStyle}"
-                  Background="{DynamicResource WindowBackgroundBrush}"
-                  Foreground="{DynamicResource TextBrush}"
-                  Margin="5">
-            <ComboBox.ItemTemplate>
-                <DataTemplate>
-                    <TextBlock Text="{Binding DisplayName}" 
-                             TextTrimming="CharacterEllipsis"
-                             Margin="0,0,20,0"/>
-                </DataTemplate>
-            </ComboBox.ItemTemplate>
-            <ComboBox.Template>
-                <ControlTemplate TargetType="ComboBox">
-                    <Grid>
-                        <ToggleButton x:Name="MainToggleButton"
-                                    IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
-                                    Background="Transparent"
-                                    BorderThickness="0">
-                            <ToggleButton.Template>
-                                <ControlTemplate TargetType="ToggleButton">
-                                    <Border Background="{TemplateBinding Background}">
-                                        <Border x:Name="PART_Border"
-                                                Background="{DynamicResource WindowBackgroundBrush}"
-                                                BorderBrush="{DynamicResource BorderBrush}"
-                                                BorderThickness="1"
-                                                CornerRadius="3">
-                                            <Grid>
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="30"/>
-                                                </Grid.ColumnDefinitions>
-                                                <ContentPresenter x:Name="PART_ContentPresenter"
-                                                                Grid.Column="0"
-                                                                Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
-                                                                ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
-                                                                Margin="8,0,0,0"
-                                                                VerticalAlignment="Center"/>
-                                                <Path x:Name="Arrow"
-                                                      Grid.Column="1"
-                                                      Data="M0,0 L4,4 L8,0"
-                                                      Stroke="{DynamicResource TextBrush}"
-                                                      StrokeThickness="2"
-                                                      HorizontalAlignment="Center"
-                                                      VerticalAlignment="Center"/>
-                                            </Grid>
-                                        </Border>
+        <!-- Tab control for chat tabs with Add button -->
+        <Grid Grid.Row="0" Margin="5,0,5,5">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            
+            <TabControl Grid.Column="0"
+                        x:Name="ChatTabControl"
+                        ItemsSource="{Binding Tabs}"
+                        SelectedItem="{Binding SelectedTab}"
+                        Background="{DynamicResource WindowBackgroundBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}">
+                <TabControl.Template>
+                    <ControlTemplate TargetType="TabControl">
+                        <!-- Only show tab headers, no content area -->
+                        <TabPanel x:Name="HeaderPanel"
+                                  IsItemsHost="True"
+                                  Background="Transparent"/>
+                    </ControlTemplate>
+                </TabControl.Template>
+                <TabControl.ItemContainerStyle>
+                    <Style TargetType="TabItem">
+                        <Setter Property="Background" Value="{DynamicResource TabBackground}"/>
+                        <Setter Property="Foreground" Value="{DynamicResource TabForeground}"/>
+                        <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
+                        <Setter Property="BorderThickness" Value="1,1,1,0"/>
+                        <Setter Property="Padding" Value="8,4"/>
+                        <Setter Property="Margin" Value="0,0,2,0"/>
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="TabItem">
+                                    <Border x:Name="HeaderBorder"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            Background="{TemplateBinding Background}"
+                                            Margin="{TemplateBinding Margin}"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter x:Name="HeaderContent"
+                                                        ContentSource="Header"
+                                                        TextBlock.Foreground="{TemplateBinding Foreground}"
+                                                        RecognizesAccessKey="True"/>
                                     </Border>
                                     <ControlTemplate.Triggers>
-                                        <Trigger Property="IsChecked" Value="True">
-                                            <Setter TargetName="Arrow" Property="Data" Value="M0,4 L4,0 L8,4"/>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource SelectedTabBackgroundBrush}"/>
+                                            <Setter TargetName="HeaderBorder" Property="BorderThickness" Value="1,1,1,0"/>
+                                            <Setter Property="Foreground" Value="{DynamicResource ActiveTabForeground}"/>
+                                            <Setter Property="Panel.ZIndex" Value="1"/>
                                         </Trigger>
+                                        <MultiTrigger>
+                                            <MultiTrigger.Conditions>
+                                                <Condition Property="IsMouseOver" Value="True"/>
+                                                <Condition Property="IsSelected" Value="False"/>
+                                            </MultiTrigger.Conditions>
+                                            <Setter TargetName="HeaderBorder" Property="Background" Value="{DynamicResource ListItemHoverBackgroundBrush}"/>
+                                        </MultiTrigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
-                            </ToggleButton.Template>
-                        </ToggleButton>
-                        <Popup x:Name="PART_Popup"
-                               AllowsTransparency="True"
-                               IsOpen="{TemplateBinding IsDropDownOpen}"
-                               Placement="Bottom"
-                               PopupAnimation="Slide">
-                            <Border Background="{DynamicResource WindowBackgroundBrush}"
-                                    BorderBrush="{DynamicResource BorderBrush}"
-                                    BorderThickness="1"
-                                    MaxHeight="{TemplateBinding MaxDropDownHeight}"
-                                    MinWidth="{Binding ActualWidth, ElementName=MainToggleButton}">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <ItemsPresenter/>
-                                </ScrollViewer>
-                            </Border>
-                        </Popup>
-                    </Grid>
-                </ControlTemplate>
-            </ComboBox.Template>
-        </ComboBox>
-
-        <ScrollViewer x:Name="MessageScrollViewer" 
-                      Grid.Row="1" 
-                      VerticalScrollBarVisibility="Auto"
-                      Background="{DynamicResource WindowBackgroundBrush}"
-                      ScrollChanged="MessageScrollViewer_ScrollChanged">
-            <ItemsControl x:Name="MessageList" ItemsSource="{Binding Messages}">
-                <ItemsControl.ItemTemplate>
+                            </Setter.Value>
+                        </Setter>
+                    </Style>
+                </TabControl.ItemContainerStyle>
+                <TabControl.ItemTemplate>
                     <DataTemplate>
-                        <Border Margin="5" 
-                                Padding="10"
-                                BorderThickness="1"
-                                BorderBrush="{DynamicResource BorderBrush}"
-                                Background="{DynamicResource WindowBackgroundBrush}"
-                                CornerRadius="5">
-                            <StackPanel>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0"
-                                               Text="{Binding Role}" 
-                                               FontWeight="Bold"
-                                               Foreground="{DynamicResource TextBrush}"/>
-                                    <Button Grid.Column="1"
-                                            Content="Retry"
-                                            Command="{Binding DataContext.RetryCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                            CommandParameter="{Binding}"
-                                            Visibility="{Binding IsError, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                            Margin="0,0,0,5"
-                                            Padding="5,2"
-                                            Background="{DynamicResource ListItemSelectedBackgroundBrush}"
-                                            Foreground="{DynamicResource TextBrush}"
-                                            BorderBrush="{DynamicResource BorderBrush}"/>
-                                </Grid>
-                                <TextBox Text="{Binding Content, Mode=OneWay}" 
-                                         TextWrapping="Wrap"
-                                         Margin="0,5,0,0"
-                                         Foreground="{DynamicResource TextBrush}"
-                                         Background="Transparent"
-                                         BorderThickness="0"
-                                         IsReadOnly="True"
-                                         IsHitTestVisible="True"
-                                         Focusable="True"/>
-                            </StackPanel>
-                        </Border>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Name}" 
+                                       VerticalAlignment="Center"
+                                       Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}"/>
+                            <Button Content="×"
+                                    Command="{Binding DataContext.CloseTabCommand, RelativeSource={RelativeSource AncestorType=TabControl}}"
+                                    CommandParameter="{Binding}"
+                                    Margin="5,0,0,0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    FontWeight="Bold"
+                                    Padding="5,0"
+                                    VerticalAlignment="Center"
+                                    Foreground="{Binding RelativeSource={RelativeSource AncestorType=TabItem}, Path=Foreground}"/>
+                        </StackPanel>
                     </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+                </TabControl.ItemTemplate>
+
+            </TabControl>
+            
+            <!-- Add Tab Button -->
+            <Button Grid.Column="1"
+                    Content="+"
+                    Command="{Binding AddTabCommand}"
+                    Background="{DynamicResource ListItemSelectedBackgroundBrush}"
+                    Foreground="{DynamicResource TextBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    Padding="8,4"
+                    Margin="5,0,0,0"
+                    ToolTip="Add new chat tab"
+                    FontWeight="Bold"
+                    VerticalAlignment="Top"/>
+        </Grid>
+
+        <ListView x:Name="MessageList" 
+                  Grid.Row="1"
+                  ItemsSource="{Binding Messages}"
+                  Background="{DynamicResource WindowBackgroundBrush}"
+                  BorderThickness="0"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                  ScrollViewer.CanContentScroll="False"
+                  VirtualizingPanel.IsVirtualizing="True"
+                  VirtualizingPanel.VirtualizationMode="Recycling"
+                  VirtualizingPanel.ScrollUnit="Pixel"
+                  VirtualizingPanel.CacheLength="10,20"
+                  VirtualizingPanel.CacheLengthUnit="Item"
+                  VirtualizingPanel.IsContainerVirtualizable="True"
+                  ScrollViewer.IsDeferredScrollingEnabled="False"
+                  UseLayoutRounding="True">
+            <ListView.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel VirtualizationMode="Recycling"
+                                          IsItemsHost="True"
+                                          ScrollUnit="Pixel"
+                                          CacheLength="10,20" 
+                                          CacheLengthUnit="Item"/>
+                </ItemsPanelTemplate>
+            </ListView.ItemsPanel>
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListViewItem">
+                                <ContentPresenter />
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                    <Setter Property="Padding" Value="0"/>
+                    <Setter Property="Margin" Value="0"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    <Setter Property="VerticalContentAlignment" Value="Top"/>
+                    <Setter Property="IsEnabled" Value="True"/>
+                    <Setter Property="Focusable" Value="True"/>
+                    <!-- SPLENDID: Help virtualization engine estimate sizes -->
+                    <Setter Property="MinHeight" Value="60"/>
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.ItemTemplate>
+                <DataTemplate>
+                    <Border Margin="5" 
+                            Padding="10"
+                            BorderThickness="1"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            Background="{DynamicResource WindowBackgroundBrush}"
+                            CornerRadius="5">
+                        <StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding Role}" 
+                                           FontWeight="Bold"
+                                           Foreground="{DynamicResource TextBrush}"/>
+                                <Button Grid.Column="1"
+                                        Content="Retry"
+                                        Command="{Binding DataContext.RetryCommand, RelativeSource={RelativeSource AncestorType=ListView}}"
+                                        CommandParameter="{Binding}"
+                                        Visibility="{Binding IsError, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                        Margin="0,0,0,5"
+                                        Padding="5,2"
+                                        Background="{DynamicResource ListItemSelectedBackgroundBrush}"
+                                        Foreground="{DynamicResource TextBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"/>
+                            </Grid>
+                            <!-- SPLENDID: Unified message content control - virtualization-friendly -->
+                            <controls:MessageContentControl Margin="0,5,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ListView.ItemTemplate>
+        </ListView>
 
         <Grid Grid.Row="2" Margin="5">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <TextBox Text="{Binding InputText, UpdateSourceTrigger=PropertyChanged, Mode=TwoWay}"
@@ -204,118 +262,248 @@
                      BorderBrush="{DynamicResource BorderBrush}"
                      PreviewKeyDown="InputTextBox_PreviewKeyDown"/>
             <Button Grid.Column="1" 
-                    Content="Send"
-                    Command="{Binding SendCommand}"
+                    x:Name="TTSButton"
+                    Content="🔊"
+                    Click="TTSButton_Click"
                     Margin="5,0,0,0"
                     Style="{StaticResource {x:Type Button}}"
                     Background="{DynamicResource ListItemSelectedBackgroundBrush}"
                     Foreground="{DynamicResource TextBrush}"
                     BorderBrush="{DynamicResource BorderBrush}"
+                    ToolTip="Speak last AI response"
                     Padding="10,5"/>
+            <!-- Unified Send/Stop Button -->
+            <Button Grid.Column="3" 
+                    Command="{Binding SendOrStopCommand}"
+                    Margin="5,0,0,0"
+                    Style="{StaticResource {x:Type Button}}"
+                    Foreground="{DynamicResource TextBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    Padding="10,5">
+                <Button.Content>
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Icon for Send/Stop -->
+                        <TextBlock FontFamily="Segoe MDL2 Assets" 
+                                   FontSize="14" 
+                                   Margin="0,0,5,0"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Text>
+                                <Binding Path="IsBusy">
+                                    <Binding.Converter>
+                                        <converters:BoolToIconConverter TrueValue="&#xE71A;" FalseValue="&#xE724;" />
+                                    </Binding.Converter>
+                                </Binding>
+                            </TextBlock.Text>
+                        </TextBlock>
+                        <!-- Text for Send/Stop -->
+                        <TextBlock VerticalAlignment="Center">
+                            <TextBlock.Text>
+                                <Binding Path="IsBusy">
+                                    <Binding.Converter>
+                                        <converters:BoolToStringConverter TrueValue="Stop" FalseValue="Send" />
+                                    </Binding.Converter>
+                                </Binding>
+                            </TextBlock.Text>
+                        </TextBlock>
+                    </StackPanel>
+                </Button.Content>
+                <Button.Background>
+                    <Binding Path="IsBusy">
+                        <Binding.Converter>
+                            <converters:BoolToColorConverter 
+                                TrueValue="#E74C3C" 
+                                FalseValue="#3A3A3C" />
+                        </Binding.Converter>
+                    </Binding>
+                </Button.Background>
+                <Button.ToolTip>
+                    <Binding Path="IsBusy">
+                        <Binding.Converter>
+                            <converters:BoolToStringConverter TrueValue="Cancel AI response" FalseValue="Send message" />
+                        </Binding.Converter>
+                    </Binding>
+                </Button.ToolTip>
+            </Button>
         </Grid>
 
+        <!-- Model and Chain Selection Side by Side -->
         <Grid Grid.Row="3" Margin="5">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="2*"/> <!-- Model gets more space to show full names -->
+                <ColumnDefinition Width="1.5*"/> <!-- Chain gets slightly less space -->
             </Grid.ColumnDefinitions>
 
-            <StackPanel Grid.Column="1" 
-                        Orientation="Horizontal" 
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Center">
-                <TextBlock Text="Context" 
-                         Margin="0,0,5,0" 
-                         VerticalAlignment="Center"
-                         Foreground="{DynamicResource TextBrush}"/>
-                <ToggleButton x:Name="ModeToggle"
-                            IsChecked="{Binding IsContextMode}"
-                            Margin="0,0,5,0"
-                            Command="{Binding ToggleModeCommand}"
-                            ToolTip="Toggle between Context and Chat modes">
-                    <ToggleButton.Style>
-                        <Style TargetType="ToggleButton">
-                            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>
-                            <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
+            <!-- Model Selection Dropdown -->
+            <ComboBox Grid.Column="0"
+                      ItemsSource="{Binding AvailableModels}"
+                      SelectedItem="{Binding SelectedModel}"
+                      Background="{DynamicResource WindowBackgroundBrush}"
+                      Foreground="{DynamicResource TextBrush}"
+                      Margin="0,0,2.5,0"
+                      MinWidth="120">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DisplayName}" 
+                                 TextTrimming="CharacterEllipsis"
+                                 Margin="0,0,20,0"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+                <ComboBox.Template>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="MainToggleButton"
+                                        IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                        Background="Transparent"
+                                        BorderThickness="0">
+                                <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
-                                        <Border x:Name="ToggleBorder" 
-                                                Width="40" 
-                                                Height="20"
-                                                Background="{TemplateBinding Background}"
-                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                BorderThickness="1"
-                                                CornerRadius="10">
-                                            <Grid>
-                                                <TextBlock x:Name="ModeText"
-                                                         Text="Chat"
-                                                         FontSize="8"
-                                                         HorizontalAlignment="Right"
-                                                         VerticalAlignment="Center"
-                                                         Margin="0,0,3,0"
-                                                         Foreground="{DynamicResource TextBrush}"
-                                                         Opacity="0"/>
-                                                <Ellipse x:Name="Thumb"
-                                                         Width="16" 
-                                                         Height="16"
-                                                         Fill="{DynamicResource TextBrush}"
-                                                         HorizontalAlignment="Left"
-                                                         Margin="2,0,0,0"
-                                                         RenderTransformOrigin="0.5,0.5">
-                                                    <Ellipse.Effect>
-                                                        <DropShadowEffect ShadowDepth="1" 
-                                                                        BlurRadius="2" 
-                                                                        Opacity="0.3"/>
-                                                    </Ellipse.Effect>
-                                                    <Ellipse.RenderTransform>
-                                                        <TranslateTransform/>
-                                                    </Ellipse.RenderTransform>
-                                                </Ellipse>
-                                            </Grid>
+                                        <Border Background="{TemplateBinding Background}">
+                                            <Border x:Name="PART_Border"
+                                                    Background="{DynamicResource WindowBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="3">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="30"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0"
+                                                             Text="Model: "
+                                                             FontSize="10"
+                                                             Opacity="0.7"
+                                                             VerticalAlignment="Center"
+                                                             Margin="8,0,4,0"/>
+                                                    <ContentPresenter x:Name="PART_ContentPresenter"
+                                                                    Grid.Column="1"
+                                                                    Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                    ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                    VerticalAlignment="Center"/>
+                                                    <Path x:Name="Arrow"
+                                                          Grid.Column="2"
+                                                          Data="M0,0 L4,4 L8,0"
+                                                          Stroke="{DynamicResource TextBrush}"
+                                                          StrokeThickness="2"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </Border>
                                         </Border>
                                         <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="{DynamicResource AccentBrush}"/>
-                                                <Setter TargetName="ModeText" Property="Opacity" Value="1"/>
-                                            </Trigger>
                                             <Trigger Property="IsChecked" Value="True">
-                                                <Setter TargetName="Thumb" Property="RenderTransform">
-                                                    <Setter.Value>
-                                                        <TranslateTransform X="20"/>
-                                                    </Setter.Value>
-                                                </Setter>
-                                                <Setter TargetName="ModeText" Property="Text" Value="Context"/>
-                                                <Setter TargetName="ModeText" Property="HorizontalAlignment" Value="Left"/>
-                                                <Setter TargetName="ModeText" Property="Margin" Value="3,0,0,0"/>
-                                                <Setter TargetName="ToggleBorder" Property="Background" Value="{DynamicResource AccentBrush}"/>
-                                                <Setter TargetName="Thumb" Property="Fill" Value="{DynamicResource WindowBackgroundBrush}"/>
-                                            </Trigger>
-                                            <Trigger Property="IsChecked" Value="False">
-                                                <Setter TargetName="Thumb" Property="RenderTransform">
-                                                    <Setter.Value>
-                                                        <TranslateTransform X="0"/>
-                                                    </Setter.Value>
-                                                </Setter>
-                                                <Setter TargetName="ModeText" Property="Text" Value="Chat"/>
-                                                <Setter TargetName="ModeText" Property="HorizontalAlignment" Value="Right"/>
-                                                <Setter TargetName="ModeText" Property="Margin" Value="0,0,3,0"/>
-                                                <Setter TargetName="ToggleBorder" Property="Background" Value="{DynamicResource WindowBackgroundBrush}"/>
-                                                <Setter TargetName="Thumb" Property="Fill" Value="{DynamicResource TextBrush}"/>
+                                                <Setter TargetName="Arrow" Property="Data" Value="M0,4 L4,0 L8,4"/>
                                             </Trigger>
                                         </ControlTemplate.Triggers>
                                     </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </ToggleButton.Style>
-                </ToggleButton>
-                <TextBlock Text="Chat" 
-                         Margin="0,0,10,0" 
-                         VerticalAlignment="Center"
-                         Foreground="{DynamicResource TextBrush}"/>
-            </StackPanel>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Slide">
+                                <Border Background="{DynamicResource WindowBackgroundBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        MinWidth="250">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </ComboBox.Template>
+            </ComboBox>
+
+            <!-- Chain Selection Dropdown -->
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{Binding SelectedTab.AvailableChains}"
+                      SelectedItem="{Binding SelectedTab.SelectedChain}"
+                      Background="{DynamicResource WindowBackgroundBrush}"
+                      Foreground="{DynamicResource TextBrush}"
+                      Margin="2.5,0,0,0"
+                      MinWidth="100">
+                <ComboBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding DisplayName}" 
+                                 TextTrimming="CharacterEllipsis"
+                                 VerticalAlignment="Center"/>
+                    </DataTemplate>
+                </ComboBox.ItemTemplate>
+                <ComboBox.Template>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ChainToggleButton"
+                                        IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                        Background="Transparent"
+                                        BorderThickness="0">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="{TemplateBinding Background}">
+                                            <Border x:Name="PART_Border"
+                                                    Background="{DynamicResource WindowBackgroundBrush}"
+                                                    BorderBrush="{DynamicResource BorderBrush}"
+                                                    BorderThickness="1"
+                                                    CornerRadius="3">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="30"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Grid.Column="0"
+                                                             Text="Chain: "
+                                                             FontSize="10"
+                                                             Opacity="0.7"
+                                                             VerticalAlignment="Center"
+                                                             Margin="8,0,4,0"/>
+                                                    <ContentPresenter x:Name="PART_ContentPresenter"
+                                                                    Grid.Column="1"
+                                                                    Content="{Binding SelectionBoxItem, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                    ContentTemplate="{Binding SelectionBoxItemTemplate, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                                    VerticalAlignment="Center"/>
+                                                    <Path x:Name="Arrow"
+                                                          Grid.Column="2"
+                                                          Data="M0,0 L4,4 L8,0"
+                                                          Stroke="{DynamicResource TextBrush}"
+                                                          StrokeThickness="2"
+                                                          HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </Border>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Arrow" Property="Data" Value="M0,4 L4,0 L8,4"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <Popup x:Name="PART_Popup"
+                                   AllowsTransparency="True"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom"
+                                   PopupAnimation="Slide">
+                                <Border Background="{DynamicResource WindowBackgroundBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                        MinWidth="{Binding ActualWidth, ElementName=ChainToggleButton}">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </ComboBox.Template>
+            </ComboBox>
         </Grid>
+
+
     </Grid>
 </UserControl> 

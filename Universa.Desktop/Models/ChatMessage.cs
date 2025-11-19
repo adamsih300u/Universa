@@ -26,6 +26,8 @@ namespace Universa.Desktop.Models
         private string _lastUserMessage;
         private bool _isThinking;
         private FlowDocument _formattedContent;
+        private string _reasoning;
+        private object _reasoningDetails;
 
         public string Role
         {
@@ -49,6 +51,8 @@ namespace Universa.Desktop.Models
                 {
                     _content = value;
                     OnPropertyChanged();
+                    // CRITICAL: Also notify that HasFictionText may have changed
+                    OnPropertyChanged(nameof(HasFictionText));
                 }
             }
         }
@@ -185,6 +189,58 @@ namespace Universa.Desktop.Models
                     _formattedContent = value;
                     OnPropertyChanged();
                 }
+            }
+        }
+
+        public string Reasoning
+        {
+            get => _reasoning;
+            set
+            {
+                if (_reasoning != value)
+                {
+                    _reasoning = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public object ReasoningDetails
+        {
+            get => _reasoningDetails;
+            set
+            {
+                if (_reasoningDetails != value)
+                {
+                    _reasoningDetails = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        /// <summary>
+        /// Indicates whether this message contains Fiction chain content with revision blocks
+        /// </summary>
+        public bool HasFictionText
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(_content))
+                    return false;
+                    
+                // Check for structured JSON format (new format)
+                if (_content.Contains("\"response_type\""))
+                    return true;
+                    
+                // Check for legacy markdown patterns
+                bool result = _content.Contains("Original text:") || 
+                       _content.Contains("Changed to:") ||
+                       _content.Contains("Insert after:") ||
+                       _content.Contains("New text:");
+                       
+                // Debug output removed to prevent UI performance issues during streaming
+                
+                return result;
             }
         }
 

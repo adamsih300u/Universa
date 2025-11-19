@@ -45,7 +45,9 @@ namespace Universa.Desktop.Helpers
     <Color name=""Header5"" foreground=""#592E83"" fontWeight=""bold"" />
     <Color name=""Header6"" foreground=""#4A4A4A"" fontWeight=""bold"" />
     <Color name=""Bold"" fontWeight=""bold"" />
+    <Color name=""BoldDelimiter"" foreground=""#6C757D"" fontWeight=""bold"" />
     <Color name=""Italic"" fontStyle=""italic"" />
+    <Color name=""ItalicDelimiter"" foreground=""#6C757D"" fontStyle=""italic"" />
     <Color name=""Code"" foreground=""#D63384"" fontFamily=""Consolas"" background=""#F8F9FA"" />
     <Color name=""Link"" foreground=""#0D6EFD"" textDecorations=""Underline"" />
     <Color name=""Quote"" foreground=""#6C757D"" fontStyle=""italic"" />
@@ -72,20 +74,48 @@ namespace Universa.Desktop.Helpers
             ^#{6}\s+.*$
         </Rule>
         
-        <!-- Bold text -->
+        <!-- Bold text - must come before italic to take precedence -->
         <Rule color=""Bold"">
-            \*\*[^*]+\*\*
+            \*\*(?=\S)([^*]|\*(?!\*))+(?&lt;=\S)\*\*
         </Rule>
         <Rule color=""Bold"">
-            __[^_]+__
+            __(?=\S)([^_]|_(?!_))+(?&lt;=\S)__
         </Rule>
         
-        <!-- Italic text -->
+        <!-- Bold delimiters with specific coloring -->
+        <Rule color=""BoldDelimiter"">
+            (?&lt;=^|\s|\W)\*\*(?=\S)
+        </Rule>
+        <Rule color=""BoldDelimiter"">
+            (?&lt;=\S)\*\*(?=\s|\W|$)
+        </Rule>
+        <Rule color=""BoldDelimiter"">
+            (?&lt;=^|\s|\W)__(?=\S)
+        </Rule>
+        <Rule color=""BoldDelimiter"">
+            (?&lt;=\S)__(?=\s|\W|$)
+        </Rule>
+        
+        <!-- Italic text - comes after bold to avoid conflicts -->
         <Rule color=""Italic"">
-            \*[^*]+\*
+            (?&lt;![\*\\])\*(?=\S)([^*])+(?&lt;=\S)\*(?!\*)
         </Rule>
         <Rule color=""Italic"">
-            _[^_]+_
+            (?&lt;![_\\])_(?=\S)([^_])+(?&lt;=\S)_(?!_)
+        </Rule>
+        
+        <!-- Italic delimiters with specific coloring -->
+        <Rule color=""ItalicDelimiter"">
+            (?&lt;=^|\s|\W)(?&lt;!\*)\*(?=\S)(?!\*)
+        </Rule>
+        <Rule color=""ItalicDelimiter"">
+            (?&lt;=\S)\*(?!\*)(?=\s|\W|$)
+        </Rule>
+        <Rule color=""ItalicDelimiter"">
+            (?&lt;=^|\s|\W)(?&lt;!_)_(?=\S)(?!_)
+        </Rule>
+        <Rule color=""ItalicDelimiter"">
+            (?&lt;=\S)_(?!_)(?=\s|\W|$)
         </Rule>
         
         <!-- Inline code -->

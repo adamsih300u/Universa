@@ -12,13 +12,15 @@ namespace Universa.Desktop.Services
     {
         private readonly IConfigurationService _configService;
         private readonly ConfigurationProvider _config;
+        private readonly ModelCapabilitiesService _capabilitiesService;
         public event EventHandler<List<AIModelInfo>> ModelsChanged;
 
-        public ModelProvider(IConfigurationService configService)
+        public ModelProvider(IConfigurationService configService, ModelCapabilitiesService capabilitiesService = null)
         {
             _configService = configService;
             _config = _configService.Provider;
-            Debug.WriteLine($"ModelProvider initialized with config: {_configService != null}, provider: {_config != null}");
+            _capabilitiesService = capabilitiesService ?? new ModelCapabilitiesService();
+            Debug.WriteLine($"ModelProvider initialized with config: {_configService != null}, provider: {_config != null}, capabilities service: {_capabilitiesService != null}");
 
             // Subscribe to configuration changes
             _configService.ConfigurationChanged += OnConfigurationChanged;
@@ -151,7 +153,9 @@ namespace Universa.Desktop.Services
                 try
                 {
                     Debug.WriteLine("Loading OpenRouter models...");
-                    var openRouterService = new OpenRouterService(_config.OpenRouterApiKey);
+                    var enabledModels = _config.OpenRouterModels ?? new List<string>();
+                    Debug.WriteLine($"OpenRouter enabled models: {string.Join(", ", enabledModels)}");
+                    var openRouterService = new OpenRouterService(_config.OpenRouterApiKey, _capabilitiesService, enabledModels);
                     var openRouterModels = await openRouterService.GetAvailableModels();
                     
                     // Filter models based on user selection if any are saved

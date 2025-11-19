@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Universa.Desktop.Models;
 using Universa.Desktop.Managers;
 using Universa.Desktop.Services;
+using Universa.Desktop.Interfaces;
 using System.Diagnostics;
 
 namespace Universa.Desktop.Controls
@@ -322,7 +323,7 @@ namespace Universa.Desktop.Controls
             }
         }
 
-        public async void StartPlayback(AudiobookshelfService service, AudiobookItem audiobook)
+        public async void StartPlayback(IAudiobookshelfService service, AudiobookItem audiobook)
         {
             if (_mediaPlayerManager != null && audiobook != null)
             {

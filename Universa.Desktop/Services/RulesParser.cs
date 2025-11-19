@@ -251,27 +251,54 @@ namespace Universa.Desktop.Services
             filteredContent.AppendLine("=== UNIVERSE CORE ===");
             filteredContent.AppendLine(BuildUniverseCoreContent(parsedRules.Core));
 
-            // Include relevant Arc context
-            var relevantArc = FindRelevantArc(parsedRules.Arcs, currentBook, currentEra, protagonistGeneration);
-            if (relevantArc != null)
+            // For rules development, include ALL arcs to ensure comprehensive understanding
+            // rather than limiting to just one "relevant" arc
+            if (parsedRules.Arcs.Any())
             {
-                filteredContent.AppendLine("\n=== CURRENT ARC CONTEXT ===");
-                filteredContent.AppendLine(BuildArcContent(relevantArc, currentBook));
+                filteredContent.AppendLine("\n=== ALL SERIES ARCS ===");
+                filteredContent.AppendLine("Complete arc structure for comprehensive universe understanding:");
+                filteredContent.AppendLine();
+                
+                foreach (var arc in parsedRules.Arcs.OrderBy(a => a.BookNumbers.FirstOrDefault()))
+                {
+                    filteredContent.AppendLine($"**{arc.Name}**");
+                    filteredContent.AppendLine($"Books: {string.Join(", ", arc.BookNumbers)}");
+                    if (!string.IsNullOrEmpty(arc.PrimaryProtagonist))
+                    {
+                        filteredContent.AppendLine($"Primary Protagonist: {arc.PrimaryProtagonist}");
+                    }
+                    if (arc.ArcThemes.Any())
+                    {
+                        filteredContent.AppendLine($"Themes: {string.Join(", ", arc.ArcThemes)}");
+                    }
+                    filteredContent.AppendLine();
+                }
             }
 
-            // Include specific book context if relevant
+            // Include specific book context if relevant, but don't limit it
             if (currentBook > 0 && parsedRules.BookDetails.ContainsKey(currentBook))
             {
-                filteredContent.AppendLine("\n=== CURRENT BOOK CONTEXT ===");
+                filteredContent.AppendLine("\n=== CURRENT FOCUS BOOK ===");
                 filteredContent.AppendLine(BuildBookSpecificContent(parsedRules.BookDetails[currentBook]));
             }
 
-            // Include adjacent book context for continuity
+            // Include complete series synopsis (our previous fix)
             var adjacentContext = BuildAdjacentBookContext(parsedRules, currentBook);
             if (!string.IsNullOrEmpty(adjacentContext))
             {
-                filteredContent.AppendLine("\n=== ADJACENT BOOKS ===");
+                filteredContent.AppendLine("\n=== COMPLETE SERIES CONTEXT ===");
                 filteredContent.AppendLine(adjacentContext);
+            }
+            
+            // Add comprehensive universe connections
+            if (parsedRules.PlotConnections.Any())
+            {
+                filteredContent.AppendLine("\n=== UNIVERSE CONNECTIONS ===");
+                filteredContent.AppendLine("Cross-book plot and character connections:");
+                foreach (var connection in parsedRules.PlotConnections.Take(10)) // Limit to top 10 to avoid overwhelming
+                {
+                    filteredContent.AppendLine($"- {connection.Element}: {connection.ConnectionType} (Books {connection.FirstBook}-{connection.ConnectedBook})");
+                }
             }
 
             return filteredContent.ToString();
@@ -281,28 +308,45 @@ namespace Universa.Desktop.Services
         {
             var sections = new List<string>();
             
-            // Split by section headers [Section Name]
-            var matches = Regex.Matches(content, @"^\[([^\]]+)\]", RegexOptions.Multiline);
+            // Parse markdown headers (# ## ###) - much better than bracket format!
+            var headerMatches = Regex.Matches(content, @"^(#{1,3})\s+(.+)$", RegexOptions.Multiline);
             
-            for (int i = 0; i < matches.Count; i++)
+            for (int i = 0; i < headerMatches.Count; i++)
             {
-                var start = matches[i].Index;
-                var end = (i < matches.Count - 1) ? matches[i + 1].Index : content.Length;
-                sections.Add(content.Substring(start, end - start));
+                var currentMatch = headerMatches[i];
+                var currentLevel = currentMatch.Groups[1].Value.Length; // Number of # symbols
+                var start = currentMatch.Index;
+                
+                // Find the end of this section by looking for the next header at same or higher level
+                int end = content.Length;
+                for (int j = i + 1; j < headerMatches.Count; j++)
+                {
+                    var nextMatch = headerMatches[j];
+                    var nextLevel = nextMatch.Groups[1].Value.Length;
+                    
+                    // If we find a header at the same level or higher (fewer #), that's our boundary
+                    if (nextLevel <= currentLevel)
+                    {
+                        end = nextMatch.Index;
+                        break;
+                    }
+                }
+                
+                var sectionContent = content.Substring(start, end - start).Trim();
+                if (!string.IsNullOrWhiteSpace(sectionContent))
+                {
+                    sections.Add(sectionContent);
+                }
             }
             
-            // Also look for # Character Name patterns
-            var characterMatches = Regex.Matches(content, @"^#\s+(.+?)(?:\s+-\s+.+)?$", RegexOptions.Multiline);
-            foreach (Match match in characterMatches)
+            // If no markdown headers found, fall back to looking for old bracket format for compatibility
+            if (!sections.Any())
             {
-                // Extract character section
-                var start = match.Index;
-                var nextMatch = characterMatches.Cast<Match>()
-                    .FirstOrDefault(m => m.Index > start);
-                var end = nextMatch?.Index ?? content.Length;
-                
-                if (!sections.Any(s => s.Contains(content.Substring(start, Math.Min(100, end - start)))))
+                var bracketMatches = Regex.Matches(content, @"^\[([^\]]+)\]", RegexOptions.Multiline);
+                for (int i = 0; i < bracketMatches.Count; i++)
                 {
+                    var start = bracketMatches[i].Index;
+                    var end = (i < bracketMatches.Count - 1) ? bracketMatches[i + 1].Index : content.Length;
                     sections.Add(content.Substring(start, end - start));
                 }
             }
@@ -314,19 +358,33 @@ namespace Universa.Desktop.Services
         {
             var section = new RuleSection();
             
-            // Extract title
-            var titleMatch = Regex.Match(sectionContent, @"^\[([^\]]+)\]", RegexOptions.Multiline);
-            if (titleMatch.Success)
+            // Extract title from markdown headers (preferred format)
+            var markdownHeaderMatch = Regex.Match(sectionContent, @"^(#{1,3})\s+(.+)$", RegexOptions.Multiline);
+            if (markdownHeaderMatch.Success)
             {
-                section.Title = titleMatch.Groups[1].Value.Trim();
+                var headerLevel = markdownHeaderMatch.Groups[1].Value.Length;
+                var title = markdownHeaderMatch.Groups[2].Value.Trim();
+                
+                // Clean up title - remove any trailing formatting
+                title = Regex.Replace(title, @"\s*[-–—]\s*.+$", ""); // Remove subtitle after dash
+                section.Title = title;
             }
             else
             {
-                // Check for character header
-                var charMatch = Regex.Match(sectionContent, @"^#\s+(.+?)(?:\s+-\s+.+)?$", RegexOptions.Multiline);
-                if (charMatch.Success)
+                // Fall back to old bracket format for compatibility
+                var bracketMatch = Regex.Match(sectionContent, @"^\[([^\]]+)\]", RegexOptions.Multiline);
+                if (bracketMatch.Success)
                 {
-                    section.Title = charMatch.Groups[1].Value.Trim();
+                    section.Title = bracketMatch.Groups[1].Value.Trim();
+                }
+                else
+                {
+                    // Last resort: try to extract from character-style headers
+                    var charMatch = Regex.Match(sectionContent, @"^#\s+(.+?)(?:\s+-\s+.+)?$", RegexOptions.Multiline);
+                    if (charMatch.Success)
+                    {
+                        section.Title = charMatch.Groups[1].Value.Trim();
+                    }
                 }
             }
             
@@ -341,110 +399,286 @@ namespace Universa.Desktop.Services
         {
             var timeline = new SeriesTimeline();
             
-            // Parse book entries
-            var bookMatches = Regex.Matches(synopsisSection, 
-                @"Book\s+(\d+)\s*-\s*([^(]+)\s*\(([^)]+)\)\s*(?:-\s*(.+?))?(?=Book\s+\d+|$)", 
-                RegexOptions.Singleline);
+            // Look for book entries in markdown format: "## Book X - Title" 
+            var bookHeaderMatches = Regex.Matches(synopsisSection, 
+                @"^##\s+Book\s+(\d+(?:\.\d+)?)\s*-?\s*([^\r\n]*)", 
+                RegexOptions.Multiline | RegexOptions.IgnoreCase);
             
-            foreach (Match match in bookMatches)
+            foreach (Match headerMatch in bookHeaderMatches)
             {
-                var book = new Book
-                {
-                    Number = int.Parse(match.Groups[1].Value),
-                    Title = match.Groups[2].Value.Trim(),
-                    IsWritten = !match.Groups[3].Value.Contains("not written", StringComparison.OrdinalIgnoreCase),
-                    Synopsis = match.Groups[4].Value.Trim()
-                };
+                var bookNumberStr = headerMatch.Groups[1].Value;
+                var bookTitle = headerMatch.Groups[2].Value.Trim();
                 
-                // Extract introduced characters
-                var introMatches = Regex.Matches(book.Synopsis, @"Introduces?\s+([^,]+?)(?:\s+as\s+|,|\.|$)");
-                foreach (Match intro in introMatches)
+                // Handle decimal book numbers (like Book 3.5)
+                if (decimal.TryParse(bookNumberStr, out var bookDecimal))
                 {
-                    book.IntroducedCharacters.Add(ExtractCharacterName(intro.Groups[1].Value));
+                    var bookNumber = (int)Math.Floor(bookDecimal); // Convert 3.5 to 3 for primary tracking
+                    
+                    // Extract the content under this book header
+                    var start = headerMatch.Index + headerMatch.Length;
+                    var nextBookMatch = bookHeaderMatches.Cast<Match>()
+                        .FirstOrDefault(m => m.Index > headerMatch.Index);
+                    var end = nextBookMatch?.Index ?? synopsisSection.Length;
+                    
+                    var bookContent = synopsisSection.Substring(start, end - start).Trim();
+                    
+                    // Determine if book is written based on common patterns
+                    bool isWritten = !bookContent.Contains("not written", StringComparison.OrdinalIgnoreCase) &&
+                                   !bookContent.Contains("Not written", StringComparison.OrdinalIgnoreCase) &&
+                                   !bookTitle.Contains("not written", StringComparison.OrdinalIgnoreCase);
+                    
+                    var book = new Book
+                    {
+                        Number = bookNumber,
+                        Title = string.IsNullOrWhiteSpace(bookTitle) ? $"Book {bookNumberStr}" : bookTitle,
+                        IsWritten = isWritten,
+                        Synopsis = bookContent
+                    };
+                    
+                    // Extract introduced characters from bullet points and content
+                    var introMatches = Regex.Matches(bookContent, @"(?:Introduces?|introduces?)\s+([^,\r\n]+?)(?:\s+as\s+|,|\.|$)");
+                    foreach (Match intro in introMatches)
+                    {
+                        var characterName = ExtractCharacterName(intro.Groups[1].Value);
+                        if (!string.IsNullOrWhiteSpace(characterName))
+                        {
+                            book.IntroducedCharacters.Add(characterName);
+                        }
+                    }
+                    
+                    // Extract key events from bullet points
+                    var bulletPoints = Regex.Matches(bookContent, @"^\s*[-•]\s*(.+)$", RegexOptions.Multiline);
+                    foreach (Match bullet in bulletPoints)
+                    {
+                        var eventText = bullet.Groups[1].Value.Trim();
+                        if (eventText.Length > 20) // Only substantial events
+                        {
+                            book.KeyEvents.Add(eventText);
+                        }
+                    }
+                    
+                    // Extract locations
+                    var locationMatches = Regex.Matches(bookContent, @"(?:in|at|to)\s+([A-Z][a-zA-Z\s]+?)(?:\s+where|\s+to|\s*,|\s*\.|\s*$)", RegexOptions.IgnoreCase);
+                    foreach (Match loc in locationMatches)
+                    {
+                        var location = loc.Groups[1].Value.Trim();
+                        if (IsValidLocation(location))
+                        {
+                            book.Locations.Add(location);
+                        }
+                    }
+                    
+                    timeline.Books.Add(book);
                 }
-                
-                // Extract key events
-                var sentences = book.Synopsis.Split(new[] { '.', '!', '?' }, StringSplitOptions.RemoveEmptyEntries);
-                book.KeyEvents.AddRange(sentences.Select(s => s.Trim()).Where(s => s.Length > 20));
-                
-                // Extract locations
-                var locationMatches = Regex.Matches(book.Synopsis, @"in\s+([A-Z][^,\s]+(?:\s+[A-Z][^,\s]+)*)", RegexOptions.IgnoreCase);
-                foreach (Match loc in locationMatches)
-                {
-                    book.Locations.Add(loc.Groups[1].Value);
-                }
-                
-                timeline.Books.Add(book);
             }
+            
+            // Sort books by number to ensure proper order
+            timeline.Books = timeline.Books.OrderBy(b => b.Number).ToList();
             
             return timeline;
         }
 
         private void ParseCharacters(string characterSection, Dictionary<string, Character> characters)
         {
-            // Parse detailed character profiles
-            var charMatches = Regex.Matches(characterSection, @"^#\s+(.+?)$", RegexOptions.Multiline);
+            // Parse character and organization profiles using markdown headers (## Name)
+            var profileMatches = Regex.Matches(characterSection, @"^##\s+(.+?)(?:\s+-\s+(.+?))?$", RegexOptions.Multiline);
             
-            foreach (Match match in charMatches)
+            foreach (Match match in profileMatches)
             {
-                var charName = match.Groups[1].Value.Trim();
-                var character = ParseCharacterDetails(characterSection, match.Index);
+                var profileName = match.Groups[1].Value.Trim();
+                var profileSubtitle = match.Groups[2].Success ? match.Groups[2].Value.Trim() : "";
+                
+                // Skip if this looks like a book entry (contains "Book" followed by number)
+                if (Regex.IsMatch(profileName, @"Book\s+\d+", RegexOptions.IgnoreCase))
+                    continue;
+                
+                var character = ParseCharacterDetails(characterSection, match.Index, profileName);
                 
                 if (character != null)
                 {
-                    characters[charName] = character;
+                    // Use the full profile name as the key, handling both characters and organizations
+                    characters[profileName] = character;
+                    
+                    // If there's a subtitle, store it as additional context
+                    if (!string.IsNullOrWhiteSpace(profileSubtitle))
+                    {
+                        character.Background = $"{profileSubtitle}. {character.Background}".Trim();
+                    }
+                }
+            }
+            
+            // Also look for # headers for compatibility (single # character headers)
+            var singleHeaderMatches = Regex.Matches(characterSection, @"^#\s+(.+?)(?:\s+-\s+(.+?))?$", RegexOptions.Multiline);
+            foreach (Match match in singleHeaderMatches)
+            {
+                var profileName = match.Groups[1].Value.Trim();
+                
+                // Skip if already processed or if this is a major section header
+                if (characters.ContainsKey(profileName) || 
+                    profileName.Contains("Character", StringComparison.OrdinalIgnoreCase) ||
+                    profileName.Contains("Profile", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                
+                var character = ParseCharacterDetails(characterSection, match.Index, profileName);
+                if (character != null && !characters.ContainsKey(profileName))
+                {
+                    characters[profileName] = character;
                 }
             }
         }
 
-        private Character ParseCharacterDetails(string content, int startIndex)
+        private Character ParseCharacterDetails(string content, int startIndex, string profileName = null)
         {
             var character = new Character();
             
-            // Extract character section
-            var nextCharIndex = content.IndexOf("\n#", startIndex + 1);
-            var endIndex = nextCharIndex > 0 ? nextCharIndex : content.Length;
-            var charSection = content.Substring(startIndex, endIndex - startIndex);
+            // Find the end of this character/organization section
+            var nextProfileIndex = content.IndexOf("\n##", startIndex + 1);
+            if (nextProfileIndex == -1)
+                nextProfileIndex = content.IndexOf("\n#", startIndex + 1);
+            var endIndex = nextProfileIndex > 0 ? nextProfileIndex : content.Length;
+            var profileSection = content.Substring(startIndex, endIndex - startIndex);
             
-            // Parse name
-            var nameMatch = Regex.Match(charSection, @"^#\s+(.+?)(?:\s+-\s+(.+))?$", RegexOptions.Multiline);
-            if (nameMatch.Success)
+            // Set the name from parameter or extract from content
+            if (!string.IsNullOrWhiteSpace(profileName))
             {
-                character.Name = nameMatch.Groups[1].Value.Trim();
-                character.FullName = nameMatch.Groups[2].Success ? nameMatch.Groups[2].Value : character.Name;
+                character.Name = profileName;
+                character.FullName = profileName;
+                
+                // Clean up name - remove any "- Expanded Character Profile" type suffixes
+                character.Name = Regex.Replace(character.Name, @"\s*-\s*.*(?:Profile|Character).*$", "", RegexOptions.IgnoreCase).Trim();
+                if (string.IsNullOrWhiteSpace(character.Name))
+                    character.Name = profileName; // Fallback to original if cleaning removed everything
+            }
+            else
+            {
+                // Fallback: extract from header in content
+                var nameMatch = Regex.Match(profileSection, @"^#{1,2}\s+(.+?)(?:\s+-\s+(.+))?$", RegexOptions.Multiline);
+                if (nameMatch.Success)
+                {
+                    character.Name = nameMatch.Groups[1].Value.Trim();
+                    character.FullName = nameMatch.Groups[2].Success ? nameMatch.Groups[2].Value : character.Name;
+                }
             }
             
-            // Parse age progression
-            var ageMatches = Regex.Matches(charSection, @"(\d+)\s*\(Book\s+(\d+)\)");
+            // Parse subsections using ### headers
+            var subsections = Regex.Matches(profileSection, @"^###\s+(.+?)$", RegexOptions.Multiline);
+            foreach (Match subsection in subsections)
+            {
+                var subsectionTitle = subsection.Groups[1].Value.Trim().ToLowerInvariant();
+                var subsectionStart = subsection.Index;
+                var nextSubsection = subsections.Cast<Match>()
+                    .FirstOrDefault(m => m.Index > subsectionStart);
+                var subsectionEnd = nextSubsection?.Index ?? profileSection.Length;
+                var subsectionContent = profileSection.Substring(subsectionStart, subsectionEnd - subsectionStart);
+                
+                // Parse different types of subsections
+                switch (subsectionTitle)
+                {
+                    case "core characteristics":
+                    case "characteristics":
+                        ParseCharacteristics(subsectionContent, character);
+                        break;
+                    case "background":
+                    case "background & education":
+                        character.Background = ExtractParagraphContent(subsectionContent);
+                        break;
+                    case "career progression":
+                    case "career":
+                    case "professional":
+                        character.SpecialSkills = ExtractParagraphContent(subsectionContent);
+                        break;
+                    case "physical appearance":
+                    case "appearance":
+                        character.PhysicalTraits = ExtractBulletPoints(subsectionContent);
+                        break;
+                    case "personality":
+                    case "personality traits":
+                        character.PersonalityTraits = ExtractBulletPoints(subsectionContent);
+                        break;
+                }
+            }
+            
+            // Parse age progression patterns anywhere in the section
+            var ageMatches = Regex.Matches(profileSection, @"(\d+)\s*\(Book\s+(\d+)\)");
             foreach (Match ageMatch in ageMatches)
             {
-                character.AgeByBook[int.Parse(ageMatch.Groups[2].Value)] = int.Parse(ageMatch.Groups[1].Value);
+                if (int.TryParse(ageMatch.Groups[1].Value, out var age) &&
+                    int.TryParse(ageMatch.Groups[2].Value, out var bookNum))
+                {
+                    character.AgeByBook[bookNum] = age;
+                }
             }
             
-            // Parse physical traits
-            var physicalMatch = Regex.Match(charSection, @"Physical appearance:\s*([^-]+)", RegexOptions.IgnoreCase);
-            if (physicalMatch.Success)
-            {
-                character.PhysicalTraits = physicalMatch.Groups[1].Value
-                    .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(t => t.Trim())
-                    .ToList();
-            }
-            
-            // Parse personality
-            var personalityMatch = Regex.Match(charSection, @"Personality:\s*([^-]+)", RegexOptions.IgnoreCase);
-            if (personalityMatch.Success)
-            {
-                character.PersonalityTraits = personalityMatch.Groups[1].Value
-                    .Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(t => t.Trim())
-                    .ToList();
-            }
-            
-            // Determine character type
-            character.Type = DetermineCharacterType(character.Name, charSection);
+            // Determine character type (works for organizations too)
+            character.Type = DetermineCharacterType(character.Name, profileSection);
             
             return character;
+        }
+
+        private void ParseCharacteristics(string content, Character character)
+        {
+            // Extract age information
+            var ageMatches = Regex.Matches(content, @"Age:\s*(.+?)(?:\n|$)");
+            foreach (Match match in ageMatches)
+            {
+                var ageInfo = match.Groups[1].Value.Trim();
+                // Parse age progression if present
+                var progressionMatches = Regex.Matches(ageInfo, @"(\d+)\s*\(Book\s+(\d+)\)");
+                foreach (Match progression in progressionMatches)
+                {
+                    if (int.TryParse(progression.Groups[1].Value, out var age) &&
+                        int.TryParse(progression.Groups[2].Value, out var bookNum))
+                    {
+                        character.AgeByBook[bookNum] = age;
+                    }
+                }
+            }
+            
+            // Extract physical traits
+            var physicalMatches = Regex.Matches(content, @"Physical.*?:\s*(.+?)(?:\n\n|\n-|\n\*|$)", RegexOptions.IgnoreCase | RegexOptions.Singleline);
+            foreach (Match match in physicalMatches)
+            {
+                var traits = match.Groups[1].Value.Split(',', ';')
+                    .Select(t => t.Trim())
+                    .Where(t => !string.IsNullOrWhiteSpace(t))
+                    .ToList();
+                character.PhysicalTraits.AddRange(traits);
+            }
+            
+            // Extract other bullet points as general characteristics
+            var bulletPoints = ExtractBulletPoints(content);
+            character.PersonalityTraits.AddRange(bulletPoints.Where(bp => 
+                !bp.Contains("Age:", StringComparison.OrdinalIgnoreCase) &&
+                !bp.Contains("Physical", StringComparison.OrdinalIgnoreCase)));
+        }
+        
+        private string ExtractParagraphContent(string content)
+        {
+            // Remove the header line and extract paragraph content
+            var lines = content.Split('\n');
+            var contentLines = lines.Skip(1) // Skip the ### header
+                .Where(line => !string.IsNullOrWhiteSpace(line))
+                .Select(line => line.Trim())
+                .ToList();
+                
+            return string.Join(" ", contentLines).Trim();
+        }
+        
+        private List<string> ExtractBulletPoints(string content)
+        {
+            var bulletPoints = new List<string>();
+            var matches = Regex.Matches(content, @"^\s*[-•*]\s*(.+)$", RegexOptions.Multiline);
+            
+            foreach (Match match in matches)
+            {
+                var point = match.Groups[1].Value.Trim();
+                if (!string.IsNullOrWhiteSpace(point))
+                {
+                    bulletPoints.Add(point);
+                }
+            }
+            
+            return bulletPoints;
         }
 
         private List<PlotConnection> BuildPlotConnections(ParsedRules rules)
@@ -853,27 +1087,6 @@ namespace Universa.Desktop.Services
             return "Current Generation";
         }
 
-        /// <summary>
-        /// Finds the most relevant arc for the current context
-        /// </summary>
-        private SeriesArc FindRelevantArc(List<SeriesArc> arcs, int currentBook, string currentEra, string protagonistGeneration)
-        {
-            // First priority: Arc containing the current book
-            var arcByBook = arcs.FirstOrDefault(a => a.BookNumbers.Contains(currentBook));
-            if (arcByBook != null) return arcByBook;
-
-            // Second priority: Arc matching the current era
-            var arcByEra = arcs.FirstOrDefault(a => a.TimeRange?.Era?.Contains(currentEra, StringComparison.OrdinalIgnoreCase) == true);
-            if (arcByEra != null) return arcByEra;
-
-            // Third priority: Arc matching the protagonist generation
-            var arcByProtagonist = arcs.FirstOrDefault(a => a.Name.Contains(protagonistGeneration, StringComparison.OrdinalIgnoreCase));
-            if (arcByProtagonist != null) return arcByProtagonist;
-
-            // Fallback: First arc or null
-            return arcs.FirstOrDefault();
-        }
-
         // Content building methods for filtered output
         private string BuildUniverseCoreContent(UniverseCore core)
         {
@@ -992,21 +1205,36 @@ namespace Universa.Desktop.Services
         {
             var content = new StringBuilder();
             
-            // Previous book
-            var previousBook = parsedRules.Timeline.Books.FirstOrDefault(b => b.Number == currentBook - 1);
-            if (previousBook != null)
+            // For rules files, include the complete series synopsis to ensure comprehensive context
+            // This ensures users can ask about any book regardless of cursor position
+            content.AppendLine("**COMPLETE SERIES SYNOPSIS:**");
+            
+            foreach (var book in parsedRules.Timeline.Books.OrderBy(b => b.Number))
             {
-                content.AppendLine($"**Previous Book {previousBook.Number}: {previousBook.Title}**");
-                content.AppendLine($"Summary: {previousBook.Synopsis.Substring(0, Math.Min(200, previousBook.Synopsis.Length))}...");
-                content.AppendLine();
+                content.AppendLine($"**Book {book.Number} - {book.Title}** ({(book.IsWritten ? "Written" : "Not written yet")})");
+                
+                // Include full synopsis for comprehensive context
+                if (!string.IsNullOrEmpty(book.Synopsis))
+                {
+                    content.AppendLine(book.Synopsis);
+                }
+                
+                if (book.IntroducedCharacters.Any())
+                {
+                    content.AppendLine($"Introduces: {string.Join(", ", book.IntroducedCharacters)}");
+                }
+                
+                content.AppendLine(); // Add spacing between books
             }
-
-            // Next book
-            var nextBook = parsedRules.Timeline.Books.FirstOrDefault(b => b.Number == currentBook + 1);
-            if (nextBook != null)
+            
+            // If there's a specific current book, highlight it
+            if (currentBook > 0)
             {
-                content.AppendLine($"**Next Book {nextBook.Number}: {nextBook.Title}**");
-                content.AppendLine($"Summary: {nextBook.Synopsis.Substring(0, Math.Min(200, nextBook.Synopsis.Length))}...");
+                var currentBookInfo = parsedRules.Timeline.Books.FirstOrDefault(b => b.Number == currentBook);
+                if (currentBookInfo != null)
+                {
+                    content.AppendLine($"**CURRENT FOCUS: Book {currentBook} - {currentBookInfo.Title}**");
+                }
             }
 
             return content.ToString();

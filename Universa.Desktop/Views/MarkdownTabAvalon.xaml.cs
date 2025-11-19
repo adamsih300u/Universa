@@ -50,9 +50,17 @@ namespace Universa.Desktop.Views
         private const int SEARCH_DEBOUNCE_MS = 300;
         private bool _isSearching = false;
         private string _lastSearchTerm = string.Empty;
+        
+        // Word count debouncing
+        private readonly DispatcherTimer _statusDebounceTimer;
+        private const int STATUS_DEBOUNCE_MS = 250;
+        private int _lastContentLength = 0;
         private SearchPanel _searchPanelInstance;
         private List<SearchResult> _searchResults = new List<SearchResult>();
         private int _currentSearchResultIndex = -1;
+
+        private DispatcherTimer _chapterNavigationTimer; // Track the feedback timer
+        private string _originalStatusText; // Store original text for restoration
         #endregion
 
         #region Services
@@ -176,6 +184,17 @@ namespace Universa.Desktop.Views
                 InitializeComponent();
                 DataContext = this;
                 
+                // CRITICAL DEBUG: Check if WordCountText is available after InitializeComponent
+                if (WordCountText != null)
+                {
+                    Debug.WriteLine("Constructor: WordCountText control found and available");
+                    WordCountText.Text = "Initializing...";
+                }
+                else
+                {
+                    Debug.WriteLine("CRITICAL ERROR: WordCountText control is NULL after InitializeComponent!");
+                }
+                
                 // Initialize services using ServiceLocator
                 _configService = ServiceLocator.Instance.GetService<IConfigurationService>();
                 _frontmatterProcessor = frontmatterProcessor ?? ServiceLocator.Instance.GetService<IFrontmatterProcessor>();
@@ -187,12 +206,20 @@ namespace Universa.Desktop.Views
                 _statusManager = statusManager ?? ServiceLocator.Instance.GetService<IMarkdownStatusManager>();
                 _editorSetupService = editorSetupService ?? ServiceLocator.Instance.GetService<IMarkdownEditorSetupService>();
 
-                // Initialize search debounce timer
-                _searchDebounceTimer = new DispatcherTimer
-                {
-                    Interval = TimeSpan.FromMilliseconds(SEARCH_DEBOUNCE_MS)
-                };
-                _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
+                            // Initialize search debounce timer
+            _searchDebounceTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(SEARCH_DEBOUNCE_MS)
+            };
+            _searchDebounceTimer.Tick += SearchDebounceTimer_Tick;
+            
+            // Initialize status debounce timer
+            _statusDebounceTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromMilliseconds(STATUS_DEBOUNCE_MS)
+            };
+            _statusDebounceTimer.Tick += StatusDebounceTimer_Tick;
+            Debug.WriteLine($"Status debounce timer initialized with {STATUS_DEBOUNCE_MS}ms interval");
 
                 InitializeEditor();
                 SetupServices();
@@ -225,11 +252,17 @@ namespace Universa.Desktop.Views
                 // Ensure status is shown after UI is fully loaded
                 this.Loaded += (s, e) => 
                 {
-                    UpdateStatusManually();
-                    Debug.WriteLine("Status updated on Loaded event");
+                    Debug.WriteLine("MarkdownTabAvalon Loaded event fired");
+                    
+                    // Debug the WordCountText control state
+
+                    
+                    // Force immediate status update on load
+                    Dispatcher.BeginInvoke(new Action(() => 
+                    {
+                        UpdateStatusManually();
+                    }), DispatcherPriority.Loaded);
                 };
-                
-                Debug.WriteLine("MarkdownTabAvalon constructor completed");
                 
                 _isLoadingContent = false;
             }
@@ -305,32 +338,32 @@ namespace Universa.Desktop.Views
                 LastKnownCursorPosition = MarkdownEditor.CaretOffset;
             };
             
-            // Update status on text changes
+            // Update status on text changes (debounced for performance with large pastes)
             MarkdownEditor.Document.TextChanged += (s, e) =>
             {
                 if (!_isLoadingContent)
                 {
+                    // Restart the debounce timer for status updates - this handles large paste operations efficiently
                     try
                     {
-                        if (_statusManager != null)
+                        if (_statusDebounceTimer != null)
                         {
-                            _statusManager.UpdateStatus(MarkdownEditor.Text);
+                            _statusDebounceTimer.Stop();
+                            _statusDebounceTimer.Start();
                         }
                         else
                         {
-                            // Fallback to manual update
                             UpdateStatusManually();
                         }
-                        
-                        // Update fiction file status when content changes (e.g., when adding frontmatter)
-                        UpdateFictionFileStatus();
                     }
-                    catch (Exception ex)
+                    catch (Exception timerEx)
                     {
-                        Debug.WriteLine($"Error updating status on text change: {ex.Message}");
-                        // Fallback to manual update
+                        Debug.WriteLine($"Error with status timer: {timerEx.Message}");
                         UpdateStatusManually();
                     }
+                    
+                    // Update fiction file status immediately (this is lightweight)
+                    UpdateFictionFileStatus();
                 }
             };
             
@@ -481,16 +514,23 @@ namespace Universa.Desktop.Views
                 UpdateFictionFileStatus();
                 
                 // Ensure status is updated after loading content
+                Debug.WriteLine("LoadFileAsync: Updating status after content load");
                 try
                 {
                     if (_statusManager != null)
                     {
+                        Debug.WriteLine("LoadFileAsync: Using status manager");
                         _statusManager.UpdateStatus(MarkdownDocument.Text);
                     }
                     else
                     {
+                        Debug.WriteLine("LoadFileAsync: No status manager, using manual update");
                         UpdateStatusManually();
                     }
+                    
+                    // FORCE an additional manual update to ensure it works
+                    Debug.WriteLine("LoadFileAsync: Forcing additional manual status update");
+                    UpdateStatusManually();
                 }
                 catch (Exception statusEx)
                 {
@@ -656,20 +696,62 @@ namespace Universa.Desktop.Views
             // Show feedback in status
             if (WordCountText != null)
             {
-                var originalText = WordCountText.Text;
+                Debug.WriteLine($"OnChapterNavigationFeedback: Showing message '{e.Message}'");
+                
+                // Stop any existing timer to prevent conflicts
+                if (_chapterNavigationTimer != null)
+                {
+                    _chapterNavigationTimer.Stop();
+                    _chapterNavigationTimer = null;
+                }
+                
+                // Store original text before changing it
+                _originalStatusText = WordCountText.Text;
+                
+                // Set the navigation message
                 WordCountText.Text = e.Message;
                 WordCountText.Foreground = e.IsSuccess ? 
                     new SolidColorBrush(Colors.Orange) : 
                     new SolidColorBrush(Colors.Red);
                 
-                var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-                timer.Tick += (s, timerE) =>
+                // Create new timer for restoration
+                _chapterNavigationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) }; // Reduced from 2 seconds
+                _chapterNavigationTimer.Tick += (s, timerE) =>
                 {
-                    timer.Stop();
+                    _chapterNavigationTimer.Stop();
+                    _chapterNavigationTimer = null;
+                    
+                    Debug.WriteLine("OnChapterNavigationFeedback: Timer elapsed, restoring status");
                     WordCountText.Foreground = (Brush)Application.Current.Resources["TextBrush"];
-                    _statusManager?.UpdateStatus(MarkdownEditor.Text);
+                    
+                    // BULLY IMPROVED RESTORATION: Use current live status instead of cached text
+                    try
+                    {
+                        // Always get fresh status instead of using possibly stale cached text
+                        if (_statusManager != null)
+                        {
+                            Debug.WriteLine("OnChapterNavigationFeedback: Using status manager for fresh update");
+                            _statusManager.UpdateStatus(MarkdownEditor.Text);
+                        }
+                        else
+                        {
+                            Debug.WriteLine("OnChapterNavigationFeedback: Using manual update for fresh status");
+                            UpdateStatusManually();
+                        }
+                        
+                        // Force a UI refresh to ensure the update takes effect
+                        Application.Current.Dispatcher.BeginInvoke(new Action(() => {
+                            // This ensures the UI thread processes the status update
+                        }), DispatcherPriority.Background);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.WriteLine($"OnChapterNavigationFeedback: Error during restoration: {ex.Message}");
+                        // Fallback to manual update if there's any issue
+                        UpdateStatusManually();
+                    }
                 };
-                timer.Start();
+                _chapterNavigationTimer.Start();
             }
         }
 
@@ -699,6 +781,14 @@ namespace Universa.Desktop.Views
             
             // Cleanup timers
             _searchDebounceTimer?.Stop();
+            _statusDebounceTimer?.Stop();
+            
+            // BULLY FIX: Cleanup chapter navigation timer to prevent memory leaks
+            if (_chapterNavigationTimer != null)
+            {
+                _chapterNavigationTimer.Stop();
+                _chapterNavigationTimer = null;
+            }
             
             // Unsubscribe from events
             if (_chapterNavigationService != null)
@@ -781,11 +871,47 @@ namespace Universa.Desktop.Views
             }
         }
         
-        private void TTSButton_Click(object sender, RoutedEventArgs e) 
+        private async void TTSButton_Click(object sender, RoutedEventArgs e) 
         { 
-            // TTS functionality removed for simplicity
-            MessageBox.Show("TTS functionality has been simplified and removed from this version.", 
-                "TTS Not Available", MessageBoxButton.OK, MessageBoxImage.Information);
+            try
+            {
+                // Try OpenAI TTS first if available
+                var openAITTS = new OpenAITTSService();
+                if (openAITTS.IsAvailable())
+                {
+                    var selectedText = MarkdownEditor.SelectedText;
+                    var textToSpeak = string.IsNullOrEmpty(selectedText) ? MarkdownEditor.Text : selectedText;
+
+                    if (string.IsNullOrWhiteSpace(textToSpeak))
+                    {
+                        MessageBox.Show("No text to speak.", "Empty Text", MessageBoxButton.OK, MessageBoxImage.Information);
+                        return;
+                    }
+
+                    // Check if already playing, then stop
+                    if (openAITTS.IsPlaying)
+                    {
+                        openAITTS.Stop();
+                        IsPlaying = false;
+                        return;
+                    }
+
+                    // Start TTS
+                    IsPlaying = true;
+                    await openAITTS.SpeakAsync(textToSpeak);
+                    IsPlaying = false;
+                }
+                else
+                {
+                    MessageBox.Show("OpenAI TTS is not configured. Please set your OpenAI API key in Settings.", 
+                        "TTS Not Available", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                IsPlaying = false;
+                MessageBox.Show($"Error during TTS: {ex.Message}", "TTS Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
         
         private void FrontmatterButton_Click(object sender, RoutedEventArgs e) 
@@ -872,6 +998,35 @@ namespace Universa.Desktop.Views
         { 
             _searchDebounceTimer.Stop();
             PerformSearch();
+        }
+        
+        private void StatusDebounceTimer_Tick(object sender, EventArgs e)
+        {
+            _statusDebounceTimer.Stop();
+            
+            try
+            {
+                if (_statusManager != null)
+                {
+                    var originalText = WordCountText?.Text;
+                    _statusManager.UpdateStatus(MarkdownEditor.Text);
+                    
+                    // Only force manual update if the status manager failed to update the UI
+                    if (WordCountText != null && WordCountText.Text == originalText)
+                    {
+                        UpdateStatusManually();
+                    }
+                }
+                else
+                {
+                    UpdateStatusManually();
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in status update: {ex.Message}");
+                UpdateStatusManually();
+            }
         }
         #endregion
 
@@ -1266,11 +1421,37 @@ namespace Universa.Desktop.Views
 
         public void OnTabSelected()
         {
-            _statusManager?.UpdateStatus(MarkdownEditor.Text);
+            Debug.WriteLine("OnTabSelected called - forcing status update");
             
-            // Ensure status is displayed even if status manager failed
-            if (WordCountText != null && string.IsNullOrEmpty(WordCountText.Text))
+            try
             {
+                // FORCE status update regardless of status manager - the user is seeing logs but no UI updates
+                Debug.WriteLine("OnTabSelected: FORCING manual status update to debug UI issue");
+                UpdateStatusManually();
+                
+                // Also try the status manager if available
+                if (_statusManager != null)
+                {
+                    Debug.WriteLine("OnTabSelected: Also trying status manager");
+                    _statusManager.UpdateStatus(MarkdownEditor.Text);
+                }
+                
+                // Double check the UI state
+                if (WordCountText != null)
+                {
+                    Debug.WriteLine($"OnTabSelected: Final WordCountText.Text: '{WordCountText.Text}'");
+                    Debug.WriteLine($"OnTabSelected: WordCountText.IsLoaded: {WordCountText.IsLoaded}");
+                    Debug.WriteLine($"OnTabSelected: WordCountText.Parent: {WordCountText.Parent?.GetType().Name}");
+                }
+                else
+                {
+                    Debug.WriteLine("OnTabSelected: WordCountText is null!");
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error in OnTabSelected: {ex.Message}");
+                Debug.WriteLine($"OnTabSelected error stack trace: {ex.StackTrace}");
                 UpdateStatusManually();
             }
         }
@@ -1327,27 +1508,78 @@ namespace Universa.Desktop.Views
 
         private void UpdateStatusManually()
         {
+            Debug.WriteLine("UpdateStatusManually called");
+            
+                            // ALWAYS ensure we're on the UI thread for UI updates
+            if (!Dispatcher.CheckAccess())
+            {
+                Debug.WriteLine("UpdateStatusManually: Not on UI thread, invoking on UI thread");
+                Dispatcher.Invoke(() => UpdateStatusManually());
+                return;
+            }
+            
+            // Avoid excessive updates if content hasn't changed significantly
+            var content = MarkdownEditor?.Text ?? string.Empty;
+            if (content.Length > 0 && Math.Abs(content.Length - _lastContentLength) < 10)
+            {
+                // Content length changed by less than 10 chars, debounce the update
+                return;
+            }
+            _lastContentLength = content.Length;
+            
             try
             {
                 if (WordCountText == null) 
                 {
-                    Debug.WriteLine("WordCountText control is null - cannot update status");
+                    Debug.WriteLine("ERROR: WordCountText control is null - cannot update status");
                     return;
                 }
                 
-                var content = MarkdownEditor?.Text ?? string.Empty;
-                var wordCount = CalculateWordCountManual(content);
-                var characterCount = content.Length;
-                var readingTime = CalculateReadingTimeManual(wordCount);
+                Debug.WriteLine($"UpdateStatusManually: Content length: {content.Length}");
                 
-                var statusText = $"Words: {wordCount:N0} | Characters: {characterCount:N0} | Reading: {readingTime}";
-                WordCountText.Text = statusText;
-                
-                Debug.WriteLine($"Manual status update: {statusText}");
+                // For very large documents (paste operations), show immediate feedback
+                if (content.Length > 50000) // 50k+ characters
+                {
+                    WordCountText.Text = "Calculating word count...";
+                    Debug.WriteLine("UpdateStatusManually: Set temporary 'Calculating...' text");
+                    
+                    // Use Dispatcher to allow UI to update, then calculate
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try
+                        {
+                            var wordCount = CalculateWordCountManual(content);
+                            var characterCount = content.Length;
+                            var readingTime = CalculateReadingTimeManual(wordCount);
+                            
+                            var statusText = $"Words: {wordCount:N0} | Characters: {characterCount:N0} | Reading: {readingTime}";
+                            WordCountText.Text = statusText;
+                            Debug.WriteLine($"Large document status update completed: {statusText}");
+                            Debug.WriteLine($"WordCountText.Text after large update: '{WordCountText.Text}'");
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.WriteLine($"ERROR calculating large document status: {ex.Message}");
+                            WordCountText.Text = "Words: Error | Characters: Error | Reading: Error";
+                        }
+                    }), DispatcherPriority.Background);
+                }
+                else
+                {
+                    // Normal processing for smaller documents - force immediate UI update
+                    var wordCount = CalculateWordCountManual(content);
+                    var characterCount = content.Length;
+                    var readingTime = CalculateReadingTimeManual(wordCount);
+                    
+                    var statusText = $"Words: {wordCount:N0} | Characters: {characterCount:N0} | Reading: {readingTime}";
+                    
+                    WordCountText.Text = statusText;
+                }
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error in manual status update: {ex.Message}");
+                Debug.WriteLine($"ERROR in manual status update: {ex.Message}");
+                Debug.WriteLine($"ERROR stack trace: {ex.StackTrace}");
                 if (WordCountText != null)
                 {
                     WordCountText.Text = "Words: 0 | Characters: 0 | Reading: 0 min";
@@ -1360,7 +1592,7 @@ namespace Universa.Desktop.Views
             if (string.IsNullOrWhiteSpace(content))
                 return 0;
 
-            // Remove markdown formatting for more accurate word count
+            // Remove markdown formatting for more accurate word count using the same logic as AvalonEditStatusManager
             var cleanContent = RemoveMarkdownFormattingManual(content);
             
             // Split by whitespace and count non-empty entries
@@ -1394,23 +1626,32 @@ namespace Universa.Desktop.Views
             if (string.IsNullOrEmpty(content))
                 return string.Empty;
 
-            // Remove common markdown formatting
-            var result = content
-                .Replace("**", "") // Bold
-                .Replace("*", "")  // Italic
-                .Replace("~~", "") // Strikethrough
-                .Replace("`", ""); // Code
-                
-            // Remove headers (# ## ### etc.)
-            result = Regex.Replace(result, @"^#+\s*", "", RegexOptions.Multiline);
+            // Use the same comprehensive markdown removal logic as AvalonEditStatusManager for consistency
+            var cleaned = content;
             
-            // Remove links [text](url)
-            result = Regex.Replace(result, @"\[([^\]]+)\]\([^\)]+\)", "$1");
+            // Remove headers
+            cleaned = Regex.Replace(cleaned, @"^#{1,6}\s+", "", RegexOptions.Multiline);
             
-            // Remove images ![alt](url)
-            result = Regex.Replace(result, @"!\[([^\]]*)\]\([^\)]+\)", "");
+            // Remove bold and italic
+            cleaned = Regex.Replace(cleaned, @"\*\*([^*]+)\*\*", "$1");
+            cleaned = Regex.Replace(cleaned, @"\*([^*]+)\*", "$1");
+            cleaned = Regex.Replace(cleaned, @"__([^_]+)__", "$1");
+            cleaned = Regex.Replace(cleaned, @"_([^_]+)_", "$1");
             
-            return result;
+            // Remove inline code
+            cleaned = Regex.Replace(cleaned, @"`([^`]+)`", "$1");
+            
+            // Remove links
+            cleaned = Regex.Replace(cleaned, @"\[([^\]]*)\]\([^)]*\)", "$1");
+            
+            // Remove blockquotes
+            cleaned = Regex.Replace(cleaned, @"^>\s*", "", RegexOptions.Multiline);
+            
+            // Remove list markers
+            cleaned = Regex.Replace(cleaned, @"^\s*[-*+]\s+", "", RegexOptions.Multiline);
+            cleaned = Regex.Replace(cleaned, @"^\s*\d+\.\s+", "", RegexOptions.Multiline);
+
+            return cleaned;
         }
         #endregion
     }

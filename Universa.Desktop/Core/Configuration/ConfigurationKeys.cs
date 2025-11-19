@@ -12,6 +12,17 @@ namespace Universa.Desktop.Core.Configuration
             public const string IntervalMinutes = "sync.intervalMinutes";
         }
 
+        // WebDAV Sync Settings
+        public static class WebDav
+        {
+            public const string ServerUrl = "webdav.serverUrl";
+            public const string Username = "webdav.username";
+            public const string Password = "webdav.password";
+            public const string RemoteFolder = "webdav.remoteFolder";
+            public const string AutoSync = "webdav.autoSync";
+            public const string IntervalMinutes = "webdav.intervalMinutes";
+        }
+
         // Weather Settings
         public static class Weather
         {
@@ -39,6 +50,7 @@ namespace Universa.Desktop.Core.Configuration
             public const string LocalEmbeddingsEnabled = "ai.embeddings.enabled";
             public const string ChatEnabled = "ai.chat.enabled";
             public const string UseBetaChains = "ai.chat.useBetaChains";
+            public const string DefaultChatPersona = "ai.chat.defaultPersona";
         }
 
         // Theme Settings

@@ -229,6 +229,216 @@ namespace Universa.Desktop.Services
             }
         }
 
+        /// <summary>
+        /// Validates if an anchor text position is appropriate for insertion (not in middle of paragraphs/quotes)
+        /// </summary>
+        public bool ValidateAnchorTextForInsertion(string content, string anchorText, out string errorMessage, out string suggestedAnchorText)
+        {
+            errorMessage = null;
+            suggestedAnchorText = null;
+
+            if (string.IsNullOrEmpty(content) || string.IsNullOrEmpty(anchorText))
+            {
+                errorMessage = "Content or anchor text is empty";
+                return false;
+            }
+
+            var searchResult = FindTextInContent(content, anchorText);
+            if (searchResult.Index < 0)
+            {
+                errorMessage = "Anchor text not found in document";
+                return false;
+            }
+
+            int insertionPoint = searchResult.Index + searchResult.Length;
+            
+            // First check if the anchor text itself is complete (ends appropriately)
+            bool anchorEndsWell = DoesAnchorTextEndAppropriately(anchorText);
+            
+            // Then check if insertion point is at the end of a logical text unit
+            bool isAppropriate = IsInsertionPointAppropriate(content, insertionPoint);
+            
+            if (!anchorEndsWell || !isAppropriate)
+            {
+                // Try to find a better anchor text that ends at a sentence/paragraph boundary
+                string betterAnchor = FindBetterAnchorText(content, anchorText, searchResult.Index);
+                if (!string.IsNullOrEmpty(betterAnchor))
+                {
+                    suggestedAnchorText = betterAnchor;
+                    
+                    if (!anchorEndsWell)
+                        errorMessage = "Anchor text appears incomplete (doesn't end at sentence/paragraph boundary). Better anchor text suggested.";
+                    else
+                        errorMessage = "Insertion would occur in middle of paragraph/sentence. Better anchor text suggested.";
+                    
+                    return false;
+                }
+                else
+                {
+                    if (!anchorEndsWell)
+                        errorMessage = "Anchor text appears incomplete (doesn't end at natural boundary) and no better anchor found";
+                    else
+                        errorMessage = "Insertion point is inappropriate (middle of paragraph/sentence) and no better anchor found";
+                    
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Checks if anchor text ends at appropriate boundaries (sentence ending, paragraph break, etc.)
+        /// </summary>
+        private bool DoesAnchorTextEndAppropriately(string anchorText)
+        {
+            if (string.IsNullOrEmpty(anchorText))
+                return false;
+
+            string trimmed = anchorText.TrimEnd();
+            
+            // Check if ends with sentence punctuation
+            if (trimmed.EndsWith(".") || trimmed.EndsWith("!") || trimmed.EndsWith("?"))
+                return true;
+            
+            // Check if ends with dialogue
+            if (trimmed.EndsWith("\"") || trimmed.EndsWith("'"))
+                return true;
+            
+            // Check if ends with dialogue tag after quote
+            if (System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"""[^""]*""\s*(he|she|they|it|\w+)\s+(said|whispered|shouted|asked|replied|answered|muttered|declared|announced)\w*\.?\s*$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                return true;
+            
+            // Check if it's a short anchor (less than 15 chars) which might be intentionally minimal
+            if (trimmed.Length < 15)
+                return true; // Give benefit of doubt for very short anchors
+            
+            // Check if ends with paragraph break
+            if (anchorText.EndsWith("\n\n") || anchorText.EndsWith("\r\n\r\n"))
+                return true;
+                
+            return false; // Likely incomplete
+        }
+
+        /// <summary>
+        /// Checks if an insertion point is at an appropriate location (sentence/paragraph end)
+        /// </summary>
+        private bool IsInsertionPointAppropriate(string content, int insertionPoint)
+        {
+            if (insertionPoint >= content.Length)
+                return true; // End of document is always appropriate
+
+            // Look ahead to see what comes after the insertion point
+            int lookAheadLength = Math.Min(100, content.Length - insertionPoint);
+            string afterText = content.Substring(insertionPoint, lookAheadLength);
+            
+            // Look behind to see what comes before
+            int lookBehindStart = Math.Max(0, insertionPoint - 100);
+            int lookBehindLength = insertionPoint - lookBehindStart;
+            string beforeText = content.Substring(lookBehindStart, lookBehindLength);
+
+            // Check if we're at the end of a sentence (followed by space and capital letter)
+            if (Regex.IsMatch(afterText, @"^\s+[A-Z]"))
+                return true;
+
+            // Check if we're at the end of a paragraph (followed by double newline)
+            if (Regex.IsMatch(afterText, @"^\s*\n\s*\n"))
+                return true;
+
+            // Check if we're at the end of a quote
+            if (beforeText.TrimEnd().EndsWith("\"") && Regex.IsMatch(afterText, @"^\s+[A-Z]"))
+                return true;
+
+            // Check if we're at the end of dialogue
+            if (beforeText.TrimEnd().EndsWith("\"") && Regex.IsMatch(afterText, @"^\s*\n"))
+                return true;
+
+            // Check if we're in the middle of a quote (bad)
+            string surroundingText = beforeText + afterText;
+            int quotesBefore = beforeText.Count(c => c == '\"');
+            int quotesAfter = afterText.Count(c => c == '\"');
+            
+            // If odd number of quotes before us, we're inside a quote
+            if (quotesBefore % 2 == 1)
+                return false;
+
+            // Check if we're in the middle of a sentence (no period, question, or exclamation before next capital)
+            string textAroundInsertion = content.Substring(
+                Math.Max(0, insertionPoint - 200), 
+                Math.Min(400, content.Length - Math.Max(0, insertionPoint - 200))
+            );
+            
+            int relativePosition = Math.Min(200, insertionPoint);
+            
+            // Look for sentence ending punctuation before the next capital letter
+            var afterInsertionText = textAroundInsertion.Substring(relativePosition);
+            var nextCapitalMatch = Regex.Match(afterInsertionText, @"[A-Z]");
+            
+            if (nextCapitalMatch.Success)
+            {
+                string textToNextCapital = afterInsertionText.Substring(0, nextCapitalMatch.Index);
+                // If there's no sentence-ending punctuation before the next capital, we're mid-sentence
+                if (!Regex.IsMatch(textToNextCapital, @"[.!?]"))
+                    return false;
+            }
+
+            return true;
+        }
+
+        /// <summary>
+        /// Tries to find a better anchor text that ends at a sentence or paragraph boundary
+        /// </summary>
+        private string FindBetterAnchorText(string content, string originalAnchor, int originalIndex)
+        {
+            // Start from the original position and look for the next sentence/paragraph ending
+            int searchStart = originalIndex + originalAnchor.Length;
+            int maxSearchDistance = 500; // Don't search too far
+            
+            for (int i = searchStart; i < Math.Min(content.Length, searchStart + maxSearchDistance); i++)
+            {
+                char currentChar = content[i];
+                
+                // Found sentence ending
+                if (currentChar == '.' || currentChar == '!' || currentChar == '?')
+                {
+                    // Make sure it's followed by whitespace and not part of abbreviation
+                    if (i + 1 < content.Length && char.IsWhiteSpace(content[i + 1]))
+                    {
+                        // Include the punctuation in the anchor text
+                        int betterAnchorStart = Math.Max(0, originalIndex - 50); // Include some context before
+                        int betterAnchorLength = (i + 1) - betterAnchorStart;
+                        
+                        if (betterAnchorLength > 0 && betterAnchorStart + betterAnchorLength <= content.Length)
+                        {
+                            string betterAnchor = content.Substring(betterAnchorStart, betterAnchorLength).Trim();
+                            if (betterAnchor.Length >= 10) // Ensure meaningful anchor text
+                            {
+                                return betterAnchor;
+                            }
+                        }
+                    }
+                }
+                
+                // Found paragraph ending (double newline)
+                if (currentChar == '\n' && i + 1 < content.Length && content[i + 1] == '\n')
+                {
+                    int betterAnchorStart = Math.Max(0, originalIndex - 50);
+                    int betterAnchorLength = i - betterAnchorStart;
+                    
+                    if (betterAnchorLength > 0 && betterAnchorStart + betterAnchorLength <= content.Length)
+                    {
+                        string betterAnchor = content.Substring(betterAnchorStart, betterAnchorLength).Trim();
+                        if (betterAnchor.Length >= 10)
+                        {
+                            return betterAnchor;
+                        }
+                    }
+                }
+            }
+
+            return null; // No better anchor found
+        }
+
         private SearchResult FindExactMatch(string content, string searchText)
         {
             int index = content.IndexOf(searchText, StringComparison.Ordinal);

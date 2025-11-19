@@ -144,15 +144,15 @@ namespace Universa.Desktop.Services
             // Process references
             foreach (var reference in references)
             {
-                switch (reference.Type.ToLowerInvariant())
+                switch (reference.Type)
                 {
-                    case "style":
+                    case FileReferenceType.Style:
                         styleLines.Add(reference.Content);
                         break;
-                    case "rules":
+                    case FileReferenceType.Rules:
                         rulesLines.Add(reference.Content);
                         break;
-                    case "outline":
+                    case FileReferenceType.Outline:
                         outlineLines.Add(reference.Content);
                         break;
                 }

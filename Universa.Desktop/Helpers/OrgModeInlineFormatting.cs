@@ -17,11 +17,11 @@ namespace Universa.Desktop.Helpers
     {
         private static readonly List<FormattingRule> Rules = new List<FormattingRule>
         {
-            // Bold: **text**
-            new FormattingRule(@"\*\*([^\*]+)\*\*", FontWeights.Bold, Colors.White),
+            // Bold: **text** - Updated regex for better handling
+            new FormattingRule(@"\*\*(?=\S)([^*]|\*(?!\*))+(?<=\S)\*\*", FontWeights.Bold, Colors.White),
             
-            // Italic: *text* (but not when surrounded by word characters)
-            new FormattingRule(@"(?<!\w)\*([^\*\s][^\*]*[^\*\s]|\w)\*(?!\w)", FontWeights.Normal, Colors.LightBlue, FontStyles.Italic),
+            // Italic: *text* - Updated regex to avoid conflicts with bold
+            new FormattingRule(@"(?<![\*\\])\*(?=\S)([^*])+(?<=\S)\*(?!\*)", FontWeights.Normal, Colors.LightBlue, FontStyles.Italic),
             
             // Code: =text=
             new FormattingRule(@"=([^=]+)=", FontWeights.Normal, Colors.Orange, FontStyles.Normal, "Consolas"),
@@ -29,8 +29,8 @@ namespace Universa.Desktop.Helpers
             // Verbatim: ~text~
             new FormattingRule(@"~([^~]+)~", FontWeights.Normal, Colors.LightGreen, FontStyles.Normal, "Consolas"),
             
-            // Underlined: _text_
-            new FormattingRule(@"(?<!\w)_([^_\s][^_]*[^_\s]|\w)_(?!\w)", FontWeights.Normal, Colors.Yellow, FontStyles.Normal, null, true),
+            // Underlined: _text_ - Updated regex for consistency
+            new FormattingRule(@"(?<![_\\])_(?=\S)([^_])+(?<=\S)_(?!_)", FontWeights.Normal, Colors.Yellow, FontStyles.Normal, null, true),
             
             // Strikethrough: +text+
             new FormattingRule(@"\+([^+]+)\+", FontWeights.Normal, Colors.Gray, FontStyles.Normal, null, false, true),
@@ -39,13 +39,13 @@ namespace Universa.Desktop.Helpers
             new FormattingRule(@"\[\[([^\]]+)\](?:\[([^\]]+)\])?\]", FontWeights.Normal, Colors.CornflowerBlue, FontStyles.Normal, null, true),
             
             // Timestamps: <2024-01-15> or <2024-01-15 Mon>
-            new FormattingRule(@"<\d{4}-\d{2}-\d{2}[^>]*>", FontWeights.Normal, Colors.LightGreen),
+            new FormattingRule(@"<\d{4}-\d{2}-\d{2}(?:\s+\w{3})?(?:\s+\d{2}:\d{2}(?:-\d{2}:\d{2})?)?(?:\s+\+\d+[dwmy])*>", FontWeights.Normal, Colors.Green),
             
-            // Priority markers: [#A], [#B], [#C]
-            new FormattingRule(@"\[#[ABC]\]", FontWeights.Bold, Colors.Orange),
+            // Tags: :tag1:tag2:
+            new FormattingRule(@":[a-zA-Z_@#%][a-zA-Z0-9_@#%]*:", FontWeights.Normal, Colors.Purple),
             
-            // Tags: :tag:tag2:
-            new FormattingRule(@":[a-zA-Z0-9_@#%]+:", FontWeights.Normal, Colors.Violet),
+            // TODO keywords (dynamic based on configuration)
+            new FormattingRule(@"\b(?:TODO|NEXT|WAITING|PROJECT|DONE|CANCELLED)\b", FontWeights.Bold, Colors.Red)
         };
 
         // TODO keywords will be handled separately with dynamic colors

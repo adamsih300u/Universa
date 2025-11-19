@@ -19,6 +19,7 @@ namespace Universa.Desktop.Services
         protected readonly Models.AIProvider _provider;
         protected readonly List<MemoryMessage> _memory;
         protected readonly HttpClient _httpClient;
+        protected readonly ModelCapabilitiesService _capabilitiesService;
         protected const int MAX_HISTORY_ITEMS = 25;
         protected string _currentContext;
         protected bool _disposed;
@@ -30,6 +31,8 @@ namespace Universa.Desktop.Services
             public string Content { get; set; }
             public string Model { get; set; }
             public DateTime Timestamp { get; set; }
+            public string Reasoning { get; set; }
+            public object ReasoningDetails { get; set; }
 
             public MemoryMessage(string role, string content)
             {
@@ -51,13 +54,14 @@ namespace Universa.Desktop.Services
             }
         }
 
-        protected BaseLangChainService(string apiKey, string model = "gpt-4", Models.AIProvider provider = Models.AIProvider.OpenAI, bool isThinkingMode = false)
+        protected BaseLangChainService(string apiKey, string model = "gpt-4", Models.AIProvider provider = Models.AIProvider.OpenAI, bool isThinkingMode = false, ModelCapabilitiesService capabilitiesService = null)
         {
             _apiKey = apiKey;
             _model = model;
             _provider = provider;
             _memory = new List<MemoryMessage>();
             _isThinkingMode = isThinkingMode;
+            _capabilitiesService = capabilitiesService ?? new ModelCapabilitiesService();
             _httpClient = new HttpClient();
 
             // Configure HTTP client based on provider
@@ -160,6 +164,10 @@ Please provide specific and helpful suggestions.";
                 System.Diagnostics.Debug.WriteLine($"{msg.Role}: {msg.Content}");
             }
 
+            // Get dynamic max tokens for this model
+            var maxTokens = await _capabilitiesService.GetMaxOutputTokensAsync(_model, _provider);
+            System.Diagnostics.Debug.WriteLine($"Using dynamic max_tokens: {maxTokens}");
+
             // Convert memory to messages array
             var messages = _memory.Select(m => new { role = m.Role.ToLower(), content = m.Content }).ToList();
 
@@ -174,7 +182,7 @@ Please provide specific and helpful suggestions.";
                 model = _model,
                 messages = messages.ToArray(),
                 temperature = 0.7,
-                max_tokens = 16384
+                max_tokens = maxTokens
             };
 
             var jsonContent = JsonSerializer.Serialize(requestBody);
@@ -231,6 +239,10 @@ Please provide specific and helpful suggestions.";
                 Debug.WriteLine($"{msg.role}: {msg.content}");
             }
 
+            // Get dynamic max tokens for this model
+            var maxTokens = await _capabilitiesService.GetMaxOutputTokensAsync(_model, _provider);
+            Debug.WriteLine($"Using dynamic max_tokens: {maxTokens}");
+
             // Create the request body with or without thinking mode
             object requestBody;
             
@@ -240,7 +252,7 @@ Please provide specific and helpful suggestions.";
                 {
                     model = _model,
                     messages = messages.Select(m => new { role = m.role, content = m.content }).ToArray(),
-                    max_tokens = 16384,
+                    max_tokens = maxTokens,
                     temperature = 0.7,
                     system = systemMessage?.Content ?? string.Empty,
                     tool_choice = new { type = "thinking" }
@@ -253,7 +265,7 @@ Please provide specific and helpful suggestions.";
                 {
                     model = _model,
                     messages = messages.Select(m => new { role = m.role, content = m.content }).ToArray(),
-                    max_tokens = 16384,
+                    max_tokens = maxTokens,
                     temperature = 0.7,
                     system = systemMessage?.Content ?? string.Empty
                 };
@@ -300,12 +312,16 @@ Please provide specific and helpful suggestions.";
 
         private async Task<string> ExecuteOllamaPrompt(string prompt, CancellationToken cancellationToken)
         {
+            // Get dynamic max tokens for this model
+            var maxTokens = await _capabilitiesService.GetMaxOutputTokensAsync(_model, _provider);
+            Debug.WriteLine($"Using dynamic num_predict: {maxTokens}");
+
             var requestBody = new
             {
                 model = _model,
                 prompt = $"You are a helpful AI assistant specialized in the task at hand. Follow the given instructions precisely.\n\n{prompt}",
                 temperature = 0.7,
-                num_predict = 4096
+                num_predict = maxTokens
             };
 
             var response = await _httpClient.PostAsync(
@@ -384,8 +400,8 @@ Please provide specific and helpful suggestions.";
             {
                 Debug.WriteLine($"Executing OpenRouter prompt with model: {_model}");
                 
-                // Create a new OpenRouterService
-                var openRouterService = new OpenRouterService(_apiKey);
+                // Create a new OpenRouterService with capabilities service
+                var openRouterService = new OpenRouterService(_apiKey, _capabilitiesService);
                 
                 // Prepare the messages for the OpenRouter API
                 var messages = new List<OpenRouterService.ChatMessage>();
@@ -401,14 +417,37 @@ Please provide specific and helpful suggestions.";
                     });
                 }
                 
-                // Add user and assistant messages
-                foreach (var message in _memory.Where(m => m.Role != "system"))
+                // Add user and assistant messages, preserving reasoning_details ONLY for the most recent assistant message
+                var nonSystemMessages = _memory.Where(m => m.Role != "system").ToList();
+                var lastAssistantIndex = nonSystemMessages.FindLastIndex(m => m.Role == "assistant");
+                
+                for (int i = 0; i < nonSystemMessages.Count; i++)
                 {
-                    messages.Add(new OpenRouterService.ChatMessage
+                    var message = nonSystemMessages[i];
+                    var apiMessage = new OpenRouterService.ChatMessage
                     {
                         Role = message.Role,
                         Content = message.Content
-                    });
+                    };
+
+                    // Only preserve reasoning_details for the MOST RECENT assistant message to avoid context bloat
+                    // This maintains chain-of-thought continuity without growing exponentially
+                    if (message.Role == "assistant" && i == lastAssistantIndex)
+                    {
+                        if (message.ReasoningDetails != null)
+                        {
+                            apiMessage.ReasoningDetails = message.ReasoningDetails;
+                            Debug.WriteLine($"✓ REASONING INCLUDED IN REQUEST: Including reasoning_details from most recent assistant message ({message.ReasoningDetails.GetType().Name})");
+                        }
+
+                        if (!string.IsNullOrEmpty(message.Reasoning))
+                        {
+                            apiMessage.Reasoning = message.Reasoning;
+                            Debug.WriteLine($"✓ REASONING TEXT INCLUDED: {message.Reasoning.Length} characters of reasoning text");
+                        }
+                    }
+
+                    messages.Add(apiMessage);
                 }
                 
                 // Add the current prompt if not empty
@@ -421,10 +460,60 @@ Please provide specific and helpful suggestions.";
                     });
                 }
                 
-                // Use streaming by default
-                return await openRouterService.StreamChatMessage(messages, _model, 
+                // Check if model supports reasoning and enable it automatically
+                var capabilities = await _capabilitiesService.GetModelCapabilitiesAsync(_model, _provider);
+                OpenRouterService.ReasoningConfig reasoningConfig = null;
+                
+                if (capabilities.SupportsReasoning)
+                {
+                    // Enable reasoning with medium effort for supported models
+                    reasoningConfig = new OpenRouterService.ReasoningConfig
+                    {
+                        Effort = "medium" // Can be "high", "medium", "low", "minimal", or null for default
+                    };
+                    Debug.WriteLine($"✓ REASONING ENABLED: Model {_model} supports reasoning tokens - enabling with medium effort");
+                }
+                else
+                {
+                    Debug.WriteLine($"✗ REASONING NOT SUPPORTED: Model {_model} does not support reasoning tokens");
+                }
+                
+                // Track reasoning for context preservation
+                string accumulatedReasoning = null;
+                object accumulatedReasoningDetails = null;
+                bool reasoningReceived = false;
+                
+                // Use streaming by default, capturing reasoning for context preservation
+                var result = await openRouterService.StreamChatMessage(messages, _model, 
                     content => OnContentUpdated?.Invoke(content), 
-                    cancellationToken);
+                    cancellationToken,
+                    reasoningConfig, // Enable reasoning if model supports it
+                    (reasoning, reasoningDetails) =>
+                    {
+                        // Accumulate reasoning as it streams in
+                        if (!string.IsNullOrEmpty(reasoning) || reasoningDetails != null)
+                        {
+                            reasoningReceived = true;
+                            accumulatedReasoning = reasoning;
+                            accumulatedReasoningDetails = reasoningDetails;
+                            Debug.WriteLine($"✓ REASONING RECEIVED: {reasoning?.Length ?? 0} chars of reasoning, {reasoningDetails != null} reasoning_details");
+                        }
+                    });
+                
+                // Store reasoning in the last assistant message in memory if present
+                var lastAssistantMessage = _memory.LastOrDefault(m => m.Role == "assistant");
+                if (lastAssistantMessage != null && (!string.IsNullOrEmpty(accumulatedReasoning) || accumulatedReasoningDetails != null))
+                {
+                    lastAssistantMessage.Reasoning = accumulatedReasoning;
+                    lastAssistantMessage.ReasoningDetails = accumulatedReasoningDetails;
+                    Debug.WriteLine($"✓ REASONING STORED: Preserved reasoning in memory for chain-of-thought context");
+                }
+                else if (reasoningConfig != null && !reasoningReceived)
+                {
+                    Debug.WriteLine($"⚠ REASONING REQUESTED BUT NOT RECEIVED: Model may not have generated reasoning tokens");
+                }
+                
+                return result;
             }
             catch (Exception ex)
             {
@@ -460,6 +549,19 @@ Please provide specific and helpful suggestions.";
         public void AddAssistantMessage(string content)
         {
             _memory.Add(new MemoryMessage("assistant", content, _model));
+            
+            // Trim memory if needed, but preserve system message
+            TrimMemory();
+        }
+
+        public void AddAssistantMessage(string content, string reasoning, object reasoningDetails)
+        {
+            var message = new MemoryMessage("assistant", content, _model)
+            {
+                Reasoning = reasoning,
+                ReasoningDetails = reasoningDetails
+            };
+            _memory.Add(message);
             
             // Trim memory if needed, but preserve system message
             TrimMemory();

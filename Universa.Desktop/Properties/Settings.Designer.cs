@@ -1030,5 +1030,77 @@ namespace Universa.Desktop.Properties {
                 this["UseBetaChains"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string WebDavServerUrl {
+            get {
+                return ((string)(this["WebDavServerUrl"]));
+            }
+            set {
+                this["WebDavServerUrl"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string WebDavUsername {
+            get {
+                return ((string)(this["WebDavUsername"]));
+            }
+            set {
+                this["WebDavUsername"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string WebDavPassword {
+            get {
+                return ((string)(this["WebDavPassword"]));
+            }
+            set {
+                this["WebDavPassword"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("")]
+        public string WebDavRemoteFolder {
+            get {
+                return ((string)(this["WebDavRemoteFolder"]));
+            }
+            set {
+                this["WebDavRemoteFolder"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("False")]
+        public bool WebDavAutoSync {
+            get {
+                return ((bool)(this["WebDavAutoSync"]));
+            }
+            set {
+                this["WebDavAutoSync"] = value;
+            }
+        }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("15")]
+        public int WebDavSyncIntervalMinutes {
+            get {
+                return ((int)(this["WebDavSyncIntervalMinutes"]));
+            }
+            set {
+                this["WebDavSyncIntervalMinutes"] = value;
+            }
+        }
     }
 }

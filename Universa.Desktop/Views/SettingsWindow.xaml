@@ -876,7 +876,18 @@
 
                         <GroupBox Header="AI Features" Margin="0,10">
                             <StackPanel Margin="5">
-                                <!-- Remove the AI Characterization checkbox -->
+                                <TextBlock Text="Default Chat Persona:" Margin="0,5"/>
+                                <TextBox Text="{Binding DefaultChatPersona, UpdateSourceTrigger=PropertyChanged}" 
+                                         Background="{DynamicResource TextBoxBackgroundBrush}"
+                                         Foreground="{DynamicResource TextBrush}"
+                                         BorderBrush="{DynamicResource BorderBrush}"
+                                         Margin="0,0,0,5"/>
+                                <TextBlock Text="Examples: Winston Churchill, Marie Curie, Sherlock Holmes (leave blank for standard assistant)" 
+                                          FontStyle="Italic" 
+                                          FontSize="10"
+                                          Foreground="Gray" 
+                                          TextWrapping="Wrap"
+                                          Margin="0,0,0,5"/>
                             </StackPanel>
                         </GroupBox>
                     </StackPanel>
@@ -886,23 +897,54 @@
             <TabItem Header="Sync">
                 <ScrollViewer>
                     <StackPanel Margin="10">
-                        <TextBlock Text="Server URL:" Margin="0,0,0,5"/>
-                        <TextBox Text="{Binding SyncServerUrl, UpdateSourceTrigger=PropertyChanged}"/>
-                        
-                        <TextBlock Text="Username:" Margin="0,10,0,5"/>
-                        <TextBox Text="{Binding SyncUsername, UpdateSourceTrigger=PropertyChanged}"/>
-                        
-                        <TextBlock Text="Password:" Margin="0,10,0,5"/>
-                        <PasswordBox x:Name="SyncPasswordBox"/>
+                        <GroupBox Header="WebDAV Sync" Margin="0,0,0,15">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Server URL:" Margin="0,5,0,5"/>
+                                <TextBox Text="{Binding WebDavServerUrl, UpdateSourceTrigger=PropertyChanged}" 
+                                         ToolTip="Example: https://webdav.example.com"/>
+                                
+                                <TextBlock Text="Username:" Margin="0,10,0,5"/>
+                                <TextBox Text="{Binding WebDavUsername, UpdateSourceTrigger=PropertyChanged}"/>
+                                
+                                <TextBlock Text="Password:" Margin="0,10,0,5"/>
+                                <PasswordBox x:Name="WebDavPasswordBox"/>
 
-                        <CheckBox Content="Enable Auto Sync" IsChecked="{Binding AutoSync}" Margin="0,10"/>
-                        
-                        <DockPanel Margin="0,5">
-                            <TextBlock Text="Sync Interval (minutes):" VerticalAlignment="Center"/>
-                            <TextBox Text="{Binding SyncIntervalMinutes}" Margin="5,0" Width="60"/>
-                        </DockPanel>
+                                <TextBlock Text="Remote Folder (optional):" Margin="0,10,0,5"/>
+                                <TextBox Text="{Binding WebDavRemoteFolder, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Example: /universa or leave empty for root"/>
 
-                        <Button Content="Test Connection" Command="{Binding TestConnectionCommand}" Margin="0,10"/>
+                                <CheckBox Content="Enable Auto Sync" IsChecked="{Binding WebDavAutoSync}" Margin="0,10"/>
+                                
+                                <DockPanel Margin="0,5">
+                                    <TextBlock Text="Sync Interval (minutes):" VerticalAlignment="Center"/>
+                                    <TextBox Text="{Binding WebDavSyncIntervalMinutes}" Margin="5,0" Width="60"/>
+                                </DockPanel>
+
+                                <Button Content="Test WebDAV Connection" Command="{Binding TestWebDavConnectionCommand}" Margin="0,10"/>
+                            </StackPanel>
+                        </GroupBox>
+
+                        <GroupBox Header="Legacy Sync (Universa.Sync)" Margin="0,0,0,10">
+                            <StackPanel Margin="5">
+                                <TextBlock Text="Server URL:" Margin="0,5,0,5"/>
+                                <TextBox Text="{Binding SyncServerUrl, UpdateSourceTrigger=PropertyChanged}"/>
+                                
+                                <TextBlock Text="Username:" Margin="0,10,0,5"/>
+                                <TextBox Text="{Binding SyncUsername, UpdateSourceTrigger=PropertyChanged}"/>
+                                
+                                <TextBlock Text="Password:" Margin="0,10,0,5"/>
+                                <PasswordBox x:Name="SyncPasswordBox"/>
+
+                                <CheckBox Content="Enable Auto Sync" IsChecked="{Binding AutoSync}" Margin="0,10"/>
+                                
+                                <DockPanel Margin="0,5">
+                                    <TextBlock Text="Sync Interval (minutes):" VerticalAlignment="Center"/>
+                                    <TextBox Text="{Binding SyncIntervalMinutes}" Margin="5,0" Width="60"/>
+                                </DockPanel>
+
+                                <Button Content="Test Connection" Command="{Binding TestConnectionCommand}" Margin="0,10"/>
+                            </StackPanel>
+                        </GroupBox>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
